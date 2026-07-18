@@ -9,6 +9,7 @@ pub struct ParameterState {
     gate_threshold_db: AtomicU32,
     input_gain_db: AtomicU32,
     output_gain_db: AtomicU32,
+    master_ceiling_db: AtomicU32,
     limiter_enabled: AtomicBool,
     bypass: AtomicBool,
     muted: AtomicBool,
@@ -24,6 +25,7 @@ impl Default for ParameterState {
             gate_threshold_db: AtomicU32::new(parameters.gate_threshold_db.to_bits()),
             input_gain_db: AtomicU32::new(parameters.input_gain_db.to_bits()),
             output_gain_db: AtomicU32::new(parameters.output_gain_db.to_bits()),
+            master_ceiling_db: AtomicU32::new(parameters.master_ceiling_db.to_bits()),
             limiter_enabled: AtomicBool::new(parameters.limiter_enabled),
             bypass: AtomicBool::new(parameters.bypass),
             muted: AtomicBool::new(parameters.muted),
@@ -46,6 +48,8 @@ impl ParameterState {
             .store(parameters.input_gain_db.to_bits(), Ordering::Release);
         self.output_gain_db
             .store(parameters.output_gain_db.to_bits(), Ordering::Release);
+        self.master_ceiling_db
+            .store(parameters.master_ceiling_db.to_bits(), Ordering::Release);
         self.limiter_enabled
             .store(parameters.limiter_enabled, Ordering::Release);
         self.bypass.store(parameters.bypass, Ordering::Release);
@@ -61,6 +65,7 @@ impl ParameterState {
             gate_threshold_db: f32::from_bits(self.gate_threshold_db.load(Ordering::Acquire)),
             input_gain_db: f32::from_bits(self.input_gain_db.load(Ordering::Acquire)),
             output_gain_db: f32::from_bits(self.output_gain_db.load(Ordering::Acquire)),
+            master_ceiling_db: f32::from_bits(self.master_ceiling_db.load(Ordering::Acquire)),
             limiter_enabled: self.limiter_enabled.load(Ordering::Acquire),
             bypass: self.bypass.load(Ordering::Acquire),
             muted: self.muted.load(Ordering::Acquire),
@@ -83,6 +88,7 @@ mod tests {
             gate_threshold_db: -45.0,
             input_gain_db: 3.0,
             output_gain_db: -6.0,
+            master_ceiling_db: -3.0,
             limiter_enabled: false,
             bypass: true,
             muted: true,
@@ -99,3 +105,4 @@ mod tests {
         assert_eq!(state.snapshot(), parameters);
     }
 }
+

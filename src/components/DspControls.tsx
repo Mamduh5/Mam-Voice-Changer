@@ -102,11 +102,21 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
         label="Output gain"
         value={parameters.outputGainDb}
         min={-24}
-        max={24}
+        max={12}
         step={0.5}
         unit="dB"
         disabled={disabled}
         onChange={(outputGainDb) => onChange({ outputGainDb })}
+      />
+      <SliderControl
+        label="Master ceiling"
+        value={parameters.masterCeilingDb}
+        min={-12}
+        max={-1}
+        step={0.5}
+        unit="dBFS"
+        disabled={disabled || !parameters.limiterEnabled}
+        onChange={(masterCeilingDb) => onChange({ masterCeilingDb })}
       />
       <div className="dsp-switches">
         <label className="limiter-toggle">
@@ -125,7 +135,7 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
             disabled={disabled}
             onChange={(event) => onChange({ limiterEnabled: event.target.checked })}
           />
-          Soft limiter
+          Master limiter
         </label>
         <button
           type="button"
@@ -149,3 +159,4 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
     </section>
   );
 }
+

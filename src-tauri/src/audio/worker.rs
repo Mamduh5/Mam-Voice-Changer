@@ -40,7 +40,10 @@ impl DspWorker {
         channels: usize,
         block_frames: usize,
     ) -> Result<(Self, SyncSender<()>, usize), AudioError> {
-        let processing_latency_frames = DspChain::default().latency_frames() + block_frames;
+        let mut chain = DspChain::default();
+        chain.prepare(sample_rate, channels, block_frames);
+        chain.reset();
+        let processing_latency_frames = chain.latency_frames() + block_frames;
         let (wake_tx, wake_rx) = mpsc::sync_channel(WAKE_CAPACITY);
         let (stop_tx, stop_rx) = mpsc::sync_channel(STOP_CAPACITY);
         let join = thread::Builder::new()
@@ -54,9 +57,9 @@ impl DspWorker {
                     parameters,
                     metrics,
                     runtime_events,
-                    sample_rate,
                     channels,
                     block_frames,
+                    chain,
                 )
             })
             .map_err(|error| AudioError::DspWorkerStart(error.to_string()))?;
@@ -90,16 +93,12 @@ fn run(
     parameters: Arc<ParameterState>,
     metrics: Arc<SharedMetrics>,
     runtime_events: SyncSender<RuntimeEvent>,
-    sample_rate: u32,
     channels: usize,
     block_frames: usize,
+    mut chain: DspChain,
 ) {
     let block_samples = block_frames.max(1) * channels.max(1);
     let mut block = vec![0.0_f32; block_samples];
-    let mut chain = DspChain::default();
-    chain.prepare(sample_rate, channels, block_frames);
-    chain.reset();
-
     loop {
         if stop.try_recv().is_ok() {
             break;
@@ -185,3 +184,4 @@ mod tests {
         assert!(status.dsp_output_overruns >= 1);
     }
 }
+

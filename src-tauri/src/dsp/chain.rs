@@ -4,7 +4,9 @@ use super::{
     dry_wet::{DelayLine, DryWetMixer},
     gain::Gain,
     high_pass::HighPass,
-    limiter::SoftLimiter,
+    master_limiter::{
+        MasterLimiter, DEFAULT_MASTER_CEILING_DB, MAX_MASTER_CEILING_DB, MIN_MASTER_CEILING_DB,
+    },
     noise_gate::{
         NoiseGate, DEFAULT_GATE_THRESHOLD_DB, MAX_GATE_THRESHOLD_DB, MIN_GATE_THRESHOLD_DB,
     },
@@ -14,7 +16,8 @@ use super::{
 };
 
 pub const MIN_GAIN_DB: f32 = -24.0;
-pub const MAX_GAIN_DB: f32 = 24.0;
+pub const MAX_INPUT_GAIN_DB: f32 = 24.0;
+pub const MAX_OUTPUT_GAIN_DB: f32 = 12.0;
 pub const MIN_PITCH_SEMITONES: f32 = -12.0;
 pub const MAX_PITCH_SEMITONES: f32 = 12.0;
 const TRANSITION_RAMP_MS: f32 = 10.0;
@@ -28,6 +31,7 @@ pub struct DspParameters {
     pub gate_threshold_db: f32,
     pub input_gain_db: f32,
     pub output_gain_db: f32,
+    pub master_ceiling_db: f32,
     pub limiter_enabled: bool,
     pub bypass: bool,
     pub muted: bool,
@@ -37,11 +41,12 @@ impl Default for DspParameters {
     fn default() -> Self {
         Self {
             pitch_semitones: 0.0,
-            dry_wet: 1.0,
-            gate_enabled: true,
+            dry_wet: 0.35,
+            gate_enabled: false,
             gate_threshold_db: DEFAULT_GATE_THRESHOLD_DB,
             input_gain_db: 0.0,
-            output_gain_db: 0.0,
+            output_gain_db: -6.0,
+            master_ceiling_db: DEFAULT_MASTER_CEILING_DB,
             limiter_enabled: true,
             bypass: false,
             muted: false,
@@ -70,15 +75,22 @@ impl DspParameters {
             "Input gain",
             self.input_gain_db,
             MIN_GAIN_DB,
-            MAX_GAIN_DB,
+            MAX_INPUT_GAIN_DB,
             "dB",
         )?;
         validate_range(
             "Output gain",
             self.output_gain_db,
             MIN_GAIN_DB,
-            MAX_GAIN_DB,
+            MAX_OUTPUT_GAIN_DB,
             "dB",
+        )?;
+        validate_range(
+            "Master ceiling",
+            self.master_ceiling_db,
+            MIN_MASTER_CEILING_DB,
+            MAX_MASTER_CEILING_DB,
+            "dBFS",
         )?;
         Ok(self)
     }
@@ -110,7 +122,7 @@ pub struct DspChain {
     bypass_mix: SmoothedValue,
     mute_gain: SmoothedValue,
     output_gain: Gain,
-    limiter: SoftLimiter,
+    limiter: MasterLimiter,
     dry_scratch: Vec<f32>,
     delayed_dry_scratch: Vec<f32>,
     bypass_scratch: Vec<f32>,
@@ -134,7 +146,7 @@ impl Default for DspChain {
             bypass_mix: SmoothedValue::new(0.0),
             mute_gain: SmoothedValue::new(1.0),
             output_gain: Gain::new(parameters.output_gain_db),
-            limiter: SoftLimiter,
+            limiter: MasterLimiter::default(),
             dry_scratch: Vec::new(),
             delayed_dry_scratch: Vec::new(),
             bypass_scratch: Vec::new(),
@@ -157,10 +169,12 @@ impl DspChain {
         self.mute_gain
             .set_target(if parameters.muted { 0.0 } else { 1.0 });
         self.output_gain.set_gain_db(parameters.output_gain_db);
+        self.limiter.set_enabled(parameters.limiter_enabled);
+        self.limiter.set_ceiling_db(parameters.master_ceiling_db);
     }
 
     pub fn latency_frames(&self) -> usize {
-        self.dry_wet.latency_frames()
+        self.dry_wet.latency_frames() + self.limiter.latency_frames()
     }
 }
 
@@ -216,15 +230,18 @@ impl AudioProcessor for DspChain {
             .zip(self.delayed_bypass_scratch[..len].chunks(self.channels))
         {
             let bypass = self.bypass_mix.next();
-            let mute = self.mute_gain.next();
             for (sample, bypass_sample) in frame.iter_mut().zip(bypass_frame) {
-                *sample = (*sample * (1.0 - bypass) + *bypass_sample * bypass) * mute;
+                *sample = *sample * (1.0 - bypass) + *bypass_sample * bypass;
             }
         }
 
         self.output_gain.process(samples);
-        if self.parameters.limiter_enabled {
-            self.limiter.process(samples);
+        self.limiter.process(samples);
+        for frame in samples.chunks_mut(self.channels) {
+            let mute = self.mute_gain.next();
+            for sample in frame {
+                *sample *= mute;
+            }
         }
     }
 
@@ -325,10 +342,11 @@ mod tests {
         .validate()
         .is_err());
         assert!(DspParameters {
-            output_gain_db: 24.1,
+            output_gain_db: 12.1,
             ..DspParameters::default()
         }
         .validate()
         .is_err());
     }
 }
+

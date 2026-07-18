@@ -25,10 +25,11 @@ Implemented and automated-testable:
 - Stateful STFT pitch shifting from -12 to +12 semitones
 - Latency-aligned dry/wet mixing and smoothed live parameter transitions
 - Dedicated bounded DSP processing worker outside the device callbacks
+- Stateful multichannel-coherent noise gate with smoothed attack and release
 
 Not implemented yet:
 
-- Noise gate, preset persistence, or recording
+- Preset persistence or recording
 - Resampling between devices with no common sample rate
 - Discord, OBS, or TikTok Live Studio compatibility verification
 

@@ -124,7 +124,7 @@ fn run(
             chain.set_parameters(parameters.snapshot());
             chain.process(&mut block);
             if block.iter().any(|sample| !sample.is_finite()) {
-                let _ = runtime_events.try_send(RuntimeEvent::DspProcessingFailed);
+                let _ = runtime_events.try_send(RuntimeEvent::DspProducedInvalidAudio);
                 return;
             }
 

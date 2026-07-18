@@ -47,9 +47,9 @@ enum EngineCommand {
 
 #[derive(Clone, Copy)]
 pub enum RuntimeEvent {
-    InputStreamFailed,
-    OutputStreamFailed,
-    DspProcessingFailed,
+    InputDeviceStopped,
+    OutputDeviceStopped,
+    DspProducedInvalidAudio,
 }
 
 pub struct EngineController {
@@ -143,13 +143,13 @@ fn worker_loop(
                 streams = None;
                 runtime_events = None;
                 let message = match event {
-                    RuntimeEvent::InputStreamFailed => {
+                    RuntimeEvent::InputDeviceStopped => {
                         "The input device stopped responding. Refresh devices and restart the engine."
                     }
-                    RuntimeEvent::OutputStreamFailed => {
+                    RuntimeEvent::OutputDeviceStopped => {
                         "The output device stopped responding or was disconnected. Refresh devices and restart the engine."
                     }
-                    RuntimeEvent::DspProcessingFailed => {
+                    RuntimeEvent::DspProducedInvalidAudio => {
                         "DSP processing produced invalid audio. Restart the engine or reset the processing controls."
                     }
                 };

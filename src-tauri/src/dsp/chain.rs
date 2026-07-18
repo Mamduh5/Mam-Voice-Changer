@@ -1,8 +1,16 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    dry_wet::DryWetMixer, gain::Gain, high_pass::HighPass, limiter::SoftLimiter,
-    pitch::PitchShifter, processor::AudioProcessor, smoothing::SmoothedValue,
+    dry_wet::{DelayLine, DryWetMixer},
+    gain::Gain,
+    high_pass::HighPass,
+    limiter::SoftLimiter,
+    noise_gate::{
+        NoiseGate, DEFAULT_GATE_THRESHOLD_DB, MAX_GATE_THRESHOLD_DB, MIN_GATE_THRESHOLD_DB,
+    },
+    pitch::PitchShifter,
+    processor::AudioProcessor,
+    smoothing::SmoothedValue,
 };
 
 pub const MIN_GAIN_DB: f32 = -24.0;
@@ -16,6 +24,8 @@ const TRANSITION_RAMP_MS: f32 = 10.0;
 pub struct DspParameters {
     pub pitch_semitones: f32,
     pub dry_wet: f32,
+    pub gate_enabled: bool,
+    pub gate_threshold_db: f32,
     pub input_gain_db: f32,
     pub output_gain_db: f32,
     pub limiter_enabled: bool,
@@ -28,6 +38,8 @@ impl Default for DspParameters {
         Self {
             pitch_semitones: 0.0,
             dry_wet: 1.0,
+            gate_enabled: true,
+            gate_threshold_db: DEFAULT_GATE_THRESHOLD_DB,
             input_gain_db: 0.0,
             output_gain_db: 0.0,
             limiter_enabled: true,
@@ -47,6 +59,13 @@ impl DspParameters {
             "semitones",
         )?;
         validate_range("Dry/wet", self.dry_wet, 0.0, 1.0, "")?;
+        validate_range(
+            "Gate threshold",
+            self.gate_threshold_db,
+            MIN_GATE_THRESHOLD_DB,
+            MAX_GATE_THRESHOLD_DB,
+            "dBFS",
+        )?;
         validate_range(
             "Input gain",
             self.input_gain_db,
@@ -84,26 +103,33 @@ pub struct DspChain {
     channels: usize,
     input_gain: Gain,
     high_pass: HighPass,
+    noise_gate: NoiseGate,
     pitch: PitchShifter,
     dry_wet: DryWetMixer,
+    bypass_delay: DelayLine,
     bypass_mix: SmoothedValue,
     mute_gain: SmoothedValue,
     output_gain: Gain,
     limiter: SoftLimiter,
     dry_scratch: Vec<f32>,
     delayed_dry_scratch: Vec<f32>,
+    bypass_scratch: Vec<f32>,
+    delayed_bypass_scratch: Vec<f32>,
 }
 
 impl Default for DspChain {
     fn default() -> Self {
         let parameters = DspParameters::default();
         let pitch = PitchShifter::default();
+        let latency_frames = pitch.latency_frames();
         Self {
             parameters,
             channels: 1,
             input_gain: Gain::new(parameters.input_gain_db),
             high_pass: HighPass::default(),
-            dry_wet: DryWetMixer::new(parameters.dry_wet, pitch.latency_frames()),
+            noise_gate: NoiseGate::default(),
+            dry_wet: DryWetMixer::new(parameters.dry_wet, latency_frames),
+            bypass_delay: DelayLine::new(latency_frames),
             pitch,
             bypass_mix: SmoothedValue::new(0.0),
             mute_gain: SmoothedValue::new(1.0),
@@ -111,6 +137,8 @@ impl Default for DspChain {
             limiter: SoftLimiter,
             dry_scratch: Vec::new(),
             delayed_dry_scratch: Vec::new(),
+            bypass_scratch: Vec::new(),
+            delayed_bypass_scratch: Vec::new(),
         }
     }
 }
@@ -119,6 +147,9 @@ impl DspChain {
     pub fn set_parameters(&mut self, parameters: DspParameters) {
         self.parameters = parameters;
         self.input_gain.set_gain_db(parameters.input_gain_db);
+        self.noise_gate.set_enabled(parameters.gate_enabled);
+        self.noise_gate
+            .set_threshold_db(parameters.gate_threshold_db);
         self.pitch.set_pitch_semitones(parameters.pitch_semitones);
         self.dry_wet.set_mix(parameters.dry_wet);
         self.bypass_mix
@@ -140,8 +171,11 @@ impl AudioProcessor for DspChain {
             .prepare(sample_rate, self.channels, block_size);
         self.high_pass
             .prepare(sample_rate, self.channels, block_size);
+        self.noise_gate
+            .prepare(sample_rate, self.channels, block_size);
         self.pitch.prepare(sample_rate, self.channels, block_size);
         self.dry_wet.prepare(sample_rate, self.channels);
+        self.bypass_delay.prepare(self.channels);
         self.bypass_mix.prepare(sample_rate, TRANSITION_RAMP_MS);
         self.mute_gain.prepare(sample_rate, TRANSITION_RAMP_MS);
         self.output_gain
@@ -150,6 +184,8 @@ impl AudioProcessor for DspChain {
         let block_samples = block_size.max(1) * self.channels;
         self.dry_scratch = vec![0.0; block_samples];
         self.delayed_dry_scratch = vec![0.0; block_samples];
+        self.bypass_scratch = vec![0.0; block_samples];
+        self.delayed_bypass_scratch = vec![0.0; block_samples];
     }
 
     fn process(&mut self, samples: &mut [f32]) {
@@ -161,6 +197,8 @@ impl AudioProcessor for DspChain {
         self.high_pass.process(samples);
 
         let len = samples.len();
+        self.bypass_scratch[..len].copy_from_slice(samples);
+        self.noise_gate.process(samples);
         self.dry_scratch[..len].copy_from_slice(samples);
         self.pitch.process(samples);
         self.dry_wet.process(
@@ -168,15 +206,19 @@ impl AudioProcessor for DspChain {
             samples,
             &mut self.delayed_dry_scratch[..len],
         );
+        self.bypass_delay.process(
+            &self.bypass_scratch[..len],
+            &mut self.delayed_bypass_scratch[..len],
+        );
 
-        for (frame, delayed_frame) in samples
+        for (frame, bypass_frame) in samples
             .chunks_mut(self.channels)
-            .zip(self.delayed_dry_scratch[..len].chunks(self.channels))
+            .zip(self.delayed_bypass_scratch[..len].chunks(self.channels))
         {
             let bypass = self.bypass_mix.next();
             let mute = self.mute_gain.next();
-            for (sample, delayed) in frame.iter_mut().zip(delayed_frame) {
-                *sample = (*sample * (1.0 - bypass) + *delayed * bypass) * mute;
+            for (sample, bypass_sample) in frame.iter_mut().zip(bypass_frame) {
+                *sample = (*sample * (1.0 - bypass) + *bypass_sample * bypass) * mute;
             }
         }
 
@@ -189,14 +231,18 @@ impl AudioProcessor for DspChain {
     fn reset(&mut self) {
         self.input_gain.reset();
         self.high_pass.reset();
+        self.noise_gate.reset();
         self.pitch.reset();
         self.dry_wet.reset();
+        self.bypass_delay.reset();
         self.bypass_mix.reset_to_target();
         self.mute_gain.reset_to_target();
         self.output_gain.reset();
         self.limiter.reset();
         self.dry_scratch.fill(0.0);
         self.delayed_dry_scratch.fill(0.0);
+        self.bypass_scratch.fill(0.0);
+        self.delayed_bypass_scratch.fill(0.0);
     }
 }
 
@@ -262,6 +308,12 @@ mod tests {
         .is_err());
         assert!(DspParameters {
             dry_wet: -0.1,
+            ..DspParameters::default()
+        }
+        .validate()
+        .is_err());
+        assert!(DspParameters {
+            gate_threshold_db: -81.0,
             ..DspParameters::default()
         }
         .validate()

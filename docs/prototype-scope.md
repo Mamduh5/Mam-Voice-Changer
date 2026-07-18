@@ -22,12 +22,12 @@ This change restores a valid Tauri 2 project and implements Milestones 1 and 2:
 - Stateful -12 to +12 semitone phase-vocoder pitch shifting
 - Pitch-latency-aligned dry/wet mixing
 - Smoothed gain, mix, pitch, mute, and bypass transitions
+- Stateful coherent noise gate with attack, release, and hysteresis
 
 ## Gated follow-up work
 
 The following work is not implemented:
 
-- Noise gate
 - Persisted JSON presets and parameter reset
 - Compatibility testing in Discord and OBS
 - TikTok Live Studio routing validation

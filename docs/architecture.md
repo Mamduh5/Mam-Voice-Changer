@@ -3,8 +3,8 @@
 ## Current milestone
 
 The current implementation includes Milestone 1 audio routing, Milestone 2 basic DSP,
-and tested Milestone 3 pitch plus dry/wet processing. Noise gate and presets are not
-connected yet.
+and tested Milestone 3 pitch, dry/wet, and noise-gate processing. Presets are not
+connected.
 
 ```text
 React components
@@ -52,6 +52,7 @@ bounded processed-output ring -> output callback -> device samples
 - `dsp/dry_wet.rs`: pitch-latency-aligned dry delay and mixing
 - `dsp/smoothing.rs`: allocation-free parameter ramps
 - `dsp/limiter.rs`: bounded soft limiting
+- `dsp/noise_gate.rs`: coherent detector, hysteresis, and smoothed gate gain
 
 ### Rust audio infrastructure
 
@@ -141,6 +142,32 @@ size). A preallocated dry delay line uses the same frame count before dry/wet mi
 DSP processing latency also includes one fixed worker block. The UI reports this DSP
 estimate separately and adds it to the existing device-buffer/prefill estimate. This is
 not a measured round-trip latency.
+
+## Signal order and transitions
+
+The worker applies this order to each fixed block:
+
+```text
+input gain -> 20 Hz high-pass -> noise gate -> pitch -> aligned dry/wet
+           -> mute/bypass crossfade -> output gain -> soft limiter
+```
+
+Mute always fades to silence over 10 ms. Bypass crossfades over 10 ms to a separate
+latency-aligned signal taken after input gain and high-pass but before gate, pitch, and
+dry/wet. Output gain and the safety limiter remain active during bypass. The pitch and
+gate state stay warm during bypass so returning to processed audio does not introduce a
+fresh algorithmic-latency gap.
+
+Input gain, output gain, and dry/wet changes use 10 ms ramps. Pitch changes use a 15 ms
+semitone ramp before new phase-vocoder frames consume the value.
+
+## Noise gate
+
+The gate uses one peak detector across all channels so stereo and multichannel gains
+remain coherent. The detector uses 5 ms attack and 50 ms release. Opening occurs at the
+configured threshold; closing occurs 6 dB below it. The applied gain uses 10 ms attack
+and 120 ms release, preventing per-sample hard toggles. The default is enabled at a
+conservative -50 dBFS threshold; valid thresholds are -80 to -10 dBFS.
 
 ## Device identity limitation
 

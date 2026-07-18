@@ -89,6 +89,16 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
         onChange={(inputGainDb) => onChange({ inputGainDb })}
       />
       <SliderControl
+        label="Gate threshold"
+        value={parameters.gateThresholdDb}
+        min={-80}
+        max={-10}
+        step={1}
+        unit="dBFS"
+        disabled={disabled || !parameters.gateEnabled}
+        onChange={(gateThresholdDb) => onChange({ gateThresholdDb })}
+      />
+      <SliderControl
         label="Output gain"
         value={parameters.outputGainDb}
         min={-24}
@@ -99,6 +109,15 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
         onChange={(outputGainDb) => onChange({ outputGainDb })}
       />
       <div className="dsp-switches">
+        <label className="limiter-toggle">
+          <input
+            type="checkbox"
+            checked={parameters.gateEnabled}
+            disabled={disabled}
+            onChange={(event) => onChange({ gateEnabled: event.target.checked })}
+          />
+          Noise gate
+        </label>
         <label className="limiter-toggle">
           <input
             type="checkbox"

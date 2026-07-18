@@ -60,7 +60,7 @@ fn build_typed<T: OutputSample>(
                 }
             },
             move |_| {
-                let _ = runtime_events.try_send(RuntimeEvent::OutputStreamFailed);
+                let _ = runtime_events.try_send(RuntimeEvent::OutputDeviceStopped);
             },
             None,
         )

@@ -3,8 +3,7 @@ use super::smoothing::SmoothedValue;
 const MIX_RAMP_MS: f32 = 10.0;
 
 pub struct DryWetMixer {
-    delay: Vec<f32>,
-    write_index: usize,
+    delay: DelayLine,
     channels: usize,
     mix: SmoothedValue,
     latency_frames: usize,
@@ -13,8 +12,7 @@ pub struct DryWetMixer {
 impl DryWetMixer {
     pub fn new(mix: f32, latency_frames: usize) -> Self {
         Self {
-            delay: Vec::new(),
-            write_index: 0,
+            delay: DelayLine::new(latency_frames),
             channels: 1,
             mix: SmoothedValue::new(mix),
             latency_frames,
@@ -23,8 +21,7 @@ impl DryWetMixer {
 
     pub fn prepare(&mut self, sample_rate: u32, channels: usize) {
         self.channels = channels.max(1);
-        self.delay = vec![0.0; self.latency_frames.max(1) * self.channels];
-        self.write_index = 0;
+        self.delay.prepare(self.channels);
         self.mix.prepare(sample_rate, MIX_RAMP_MS);
     }
 
@@ -33,6 +30,7 @@ impl DryWetMixer {
     }
 
     pub fn process(&mut self, dry: &[f32], wet: &mut [f32], delayed_dry: &mut [f32]) {
+        self.delay.process(dry, delayed_dry);
         for ((dry_frame, wet_frame), delayed_frame) in dry
             .chunks(self.channels)
             .zip(wet.chunks_mut(self.channels))
@@ -40,23 +38,53 @@ impl DryWetMixer {
         {
             let mix = self.mix.next();
             for channel in 0..dry_frame.len() {
-                let delayed = self.delay[self.write_index];
-                self.delay[self.write_index] = dry_frame[channel];
-                self.write_index = (self.write_index + 1) % self.delay.len();
-                delayed_frame[channel] = delayed;
-                wet_frame[channel] = delayed * (1.0 - mix) + wet_frame[channel] * mix;
+                wet_frame[channel] =
+                    delayed_frame[channel] * (1.0 - mix) + wet_frame[channel] * mix;
             }
         }
     }
 
     pub fn reset(&mut self) {
-        self.delay.fill(0.0);
-        self.write_index = 0;
+        self.delay.reset();
         self.mix.reset_to_target();
     }
 
     pub const fn latency_frames(&self) -> usize {
         self.latency_frames
+    }
+}
+
+pub struct DelayLine {
+    buffer: Vec<f32>,
+    write_index: usize,
+    latency_frames: usize,
+}
+
+impl DelayLine {
+    pub fn new(latency_frames: usize) -> Self {
+        Self {
+            buffer: Vec::new(),
+            write_index: 0,
+            latency_frames,
+        }
+    }
+
+    pub fn prepare(&mut self, channels: usize) {
+        self.buffer = vec![0.0; self.latency_frames.max(1) * channels.max(1)];
+        self.write_index = 0;
+    }
+
+    pub fn process(&mut self, input: &[f32], output: &mut [f32]) {
+        for (input_sample, output_sample) in input.iter().zip(output) {
+            *output_sample = self.buffer[self.write_index];
+            self.buffer[self.write_index] = *input_sample;
+            self.write_index = (self.write_index + 1) % self.buffer.len();
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.buffer.fill(0.0);
+        self.write_index = 0;
     }
 }
 

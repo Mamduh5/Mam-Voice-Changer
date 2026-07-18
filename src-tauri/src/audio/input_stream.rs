@@ -89,7 +89,7 @@ fn build_typed<T: InputSample>(
                 let _ = dsp_wake.try_send(());
             },
             move |_| {
-                let _ = runtime_events.try_send(RuntimeEvent::InputStreamFailed);
+                let _ = runtime_events.try_send(RuntimeEvent::InputDeviceStopped);
             },
             None,
         )

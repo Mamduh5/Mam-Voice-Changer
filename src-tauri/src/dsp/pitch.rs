@@ -169,7 +169,7 @@ impl PitchChannel {
         }
         self.inverse.process(&mut self.fft_buffer);
 
-        let scale = 2.0 / (FFT_SIZE as f32 * OVERSAMPLING as f32);
+        let scale = 4.0 / (FFT_SIZE as f32 * OVERSAMPLING as f32);
         for index in 0..FFT_SIZE {
             self.output_accumulator[index] += scale * hann(index) * self.fft_buffer[index].re;
         }

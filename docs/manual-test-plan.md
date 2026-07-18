@@ -26,14 +26,13 @@ with headphones before marking Milestone 1 manually verified.
 10. Refresh devices, select an available output, and restart successfully.
 11. Run for 30 minutes and record underruns, overruns, and the latency estimate.
 
-## Milestone 2 acceptance
+## DSP acceptance
 
 With safe monitoring available, verify mute, bypass, both gains, high-pass filtering,
-and limiting while the engine is running. These manual checks do not block the focused
-device-independent DSP tests.
+limiting, pitch, dry/wet, and gate behavior while the engine is running. These manual
+checks do not block the focused device-independent DSP tests.
 
-Gate, dry/wet, genuine pitch, reset, persisted presets, and application compatibility
-belong to later milestones.
+Reset, persisted presets, and application compatibility belong to later milestones.
 
 ## Validation performed on 2026-07-18
 

@@ -151,6 +151,47 @@ select {
   cursor: pointer;
 }
 
+
+.presets {
+  margin-bottom: 18px;
+}
+
+.preset-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+  margin-top: 18px;
+}
+
+.preset-row input[type='text'] {
+  width: 100%;
+  padding: 11px;
+  border: 1px solid #3a2c4b;
+  border-radius: 10px;
+  color: #f5f0ff;
+  background: #21182c;
+}
+
+.preset-row input[type='text']::placeholder {
+  color: #756b84;
+}
+
+.preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preset-actions button {
+  padding: 10px 12px;
+  border: 1px solid #403052;
+  border-radius: 10px;
+  color: #d8c5f4;
+  background: #251b32;
+  cursor: pointer;
+}
+
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -322,6 +363,7 @@ footer {
   }
 
   .grid,
+  .preset-row,
   .diagnostics dl {
     grid-template-columns: 1fr;
   }

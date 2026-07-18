@@ -3,9 +3,11 @@ import { DiagnosticsPanel } from './components/DiagnosticsPanel';
 import { DspControls } from './components/DspControls';
 import { EngineControls } from './components/EngineControls';
 import { LevelMeter } from './components/LevelMeter';
+import { PresetControls } from './components/PresetControls';
 import { useAudioDevices } from './hooks/useAudioDevices';
 import { useAudioParameters } from './hooks/useAudioParameters';
 import { useEngineState } from './hooks/useEngineState';
+import { usePresets } from './hooks/usePresets';
 import { DESKTOP_RUNTIME_UNAVAILABLE, tauriAudioApi } from './services/tauriAudioApi';
 
 export default function App() {
@@ -13,13 +15,19 @@ export default function App() {
   const devices = useAudioDevices(desktopRuntimeAvailable);
   const engine = useEngineState(desktopRuntimeAvailable);
   const audioParameters = useAudioParameters(desktopRuntimeAvailable);
+  const presets = usePresets(
+    desktopRuntimeAvailable,
+    audioParameters.settle,
+    audioParameters.replace,
+  );
   const running = engine.status.state === 'running';
   const busy = engine.status.state === 'starting' || engine.status.state === 'stopping';
   const error = desktopRuntimeAvailable
     ? (engine.commandError ??
       engine.status.lastRuntimeError ??
       devices.error ??
-      audioParameters.error)
+      audioParameters.error ??
+      presets.error)
     : null;
 
   return (
@@ -39,7 +47,7 @@ export default function App() {
           </div>
         </div>
         <span className={running ? 'live' : 'idle'}>
-          {running ? '● LIVE' : `○ ${engine.status.state.toUpperCase()}`}
+          {running ? '● LIVE' : '○ ' + engine.status.state.toUpperCase()}
         </span>
       </header>
 
@@ -72,6 +80,19 @@ export default function App() {
           />
         </div>
       </section>
+
+      <PresetControls
+        catalog={presets.catalog}
+        parameters={audioParameters.parameters}
+        disabled={!desktopRuntimeAvailable}
+        busy={presets.busy}
+        onApply={presets.apply}
+        onSave={presets.save}
+        onRename={presets.rename}
+        onDuplicate={presets.duplicate}
+        onDelete={presets.remove}
+        onReset={presets.reset}
+      />
 
       <div className="grid">
         <section className="card">

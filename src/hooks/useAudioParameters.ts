@@ -8,6 +8,7 @@ export function useAudioParameters(enabled = true) {
   const currentRef = useRef(defaultAudioParameters);
   const pendingRef = useRef<AudioParameters | null>(null);
   const sendingRef = useRef(false);
+  const waitersRef = useRef<Array<() => void>>([]);
 
   useEffect(() => {
     if (!enabled) {
@@ -37,22 +38,36 @@ export function useAudioParameters(enabled = true) {
 
   const flush = useCallback(async () => {
     if (sendingRef.current) {
+      await new Promise<void>((resolve) => {
+        waitersRef.current.push(resolve);
+      });
       return;
     }
 
     sendingRef.current = true;
-    while (pendingRef.current) {
-      const next = pendingRef.current;
-      pendingRef.current = null;
-      try {
-        await tauriAudioApi.setParameters(next);
-        setError(null);
-      } catch (cause) {
-        setError(String(cause));
+    try {
+      while (pendingRef.current) {
+        const next = pendingRef.current;
+        pendingRef.current = null;
+        try {
+          await tauriAudioApi.setParameters(next);
+          setError(null);
+        } catch (cause) {
+          setError(String(cause));
+        }
       }
+    } finally {
+      sendingRef.current = false;
+      const waiters = waitersRef.current.splice(0);
+      waiters.forEach((resolve) => resolve());
     }
-    sendingRef.current = false;
   }, []);
+
+  const settle = useCallback(async () => {
+    while (pendingRef.current || sendingRef.current) {
+      await flush();
+    }
+  }, [flush]);
 
   const update = useCallback(
     (changes: Partial<AudioParameters>) => {
@@ -69,5 +84,12 @@ export function useAudioParameters(enabled = true) {
     [enabled, flush],
   );
 
-  return { parameters, update, error };
+  const replace = useCallback((next: AudioParameters) => {
+    pendingRef.current = null;
+    currentRef.current = next;
+    setParameters(next);
+    setError(null);
+  }, []);
+
+  return { parameters, update, replace, settle, error };
 }

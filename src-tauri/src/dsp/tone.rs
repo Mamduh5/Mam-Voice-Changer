@@ -280,4 +280,3 @@ fn shelf_coefficients(
         a2: a2 / a0,
     }
 }
-

@@ -131,4 +131,3 @@ mod tests {
         assert_eq!(output, vec![5.0, 10.0, 15.5, 21.0]);
     }
 }
-

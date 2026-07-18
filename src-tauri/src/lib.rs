@@ -18,10 +18,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .path()
                 .app_data_dir()?
                 .join(config::presets::PRESET_FILE_NAME);
-            app.manage(state::app_state::AppState::new(
-                controller,
-                preset_path,
-            )?);
+            app.manage(state::app_state::AppState::new(controller, preset_path)?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -84,4 +84,3 @@ impl Drop for SignalsmithStretch {
         unsafe { mam_signalsmith_destroy(self.handle.as_ptr()) }
     }
 }
-

@@ -28,7 +28,9 @@ pub fn save_preset(
             .map_err(|error| error.to_string())?;
         store.catalog().map_err(|error| error.to_string())?
     };
-    state.controller().set_parameters(catalog.active_parameters)?;
+    state
+        .controller()
+        .set_parameters(catalog.active_parameters)?;
     Ok(catalog)
 }
 
@@ -63,7 +65,9 @@ pub fn duplicate_preset(
             .map_err(|error| error.to_string())?;
         store.catalog().map_err(|error| error.to_string())?
     };
-    state.controller().set_parameters(catalog.active_parameters)?;
+    state
+        .controller()
+        .set_parameters(catalog.active_parameters)?;
     Ok(catalog)
 }
 
@@ -82,7 +86,9 @@ pub fn delete_preset(
             .map_err(|error| error.to_string())?;
         store.catalog().map_err(|error| error.to_string())?
     };
-    state.controller().set_parameters(catalog.active_parameters)?;
+    state
+        .controller()
+        .set_parameters(catalog.active_parameters)?;
     Ok(catalog)
 }
 
@@ -101,7 +107,9 @@ pub fn apply_preset(
             .map_err(|error| error.to_string())?;
         store.catalog().map_err(|error| error.to_string())?
     };
-    state.controller().set_parameters(catalog.active_parameters)?;
+    state
+        .controller()
+        .set_parameters(catalog.active_parameters)?;
     Ok(catalog)
 }
 
@@ -117,6 +125,8 @@ pub fn reset_preset(state: tauri::State<'_, AppState>) -> Result<PresetCatalog, 
             .map_err(|error| error.to_string())?;
         store.catalog().map_err(|error| error.to_string())?
     };
-    state.controller().set_parameters(catalog.active_parameters)?;
+    state
+        .controller()
+        .set_parameters(catalog.active_parameters)?;
     Ok(catalog)
 }

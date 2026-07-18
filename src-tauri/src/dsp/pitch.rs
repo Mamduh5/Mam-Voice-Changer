@@ -151,4 +151,3 @@ impl SignalsmithBackend {
         self.latency_frames
     }
 }
-

@@ -12,4 +12,3 @@ fn main() {
         .compile("mam-signalsmith-stretch");
     tauri_build::build()
 }
-

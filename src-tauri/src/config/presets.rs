@@ -395,9 +395,9 @@ fn validate_timestamp(timestamp: &str) -> Result<u128, PresetError> {
 }
 
 fn unix_timestamp_millis() -> Result<String, PresetError> {
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| PresetError::Validation("The system clock is before Unix epoch.".to_owned()))?;
+    let duration = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| {
+        PresetError::Validation("The system clock is before Unix epoch.".to_owned())
+    })?;
     Ok(duration.as_millis().to_string())
 }
 
@@ -552,7 +552,10 @@ mod tests {
 
         let loaded = PresetStore::load(path.clone()).unwrap();
         let catalog = loaded.catalog().unwrap();
-        assert_eq!(catalog.selected_preset_id.as_deref(), Some(selected.as_str()));
+        assert_eq!(
+            catalog.selected_preset_id.as_deref(),
+            Some(selected.as_str())
+        );
         assert_eq!(catalog.active_parameters, parameters);
         assert!(catalog
             .presets

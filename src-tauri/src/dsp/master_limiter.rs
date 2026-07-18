@@ -142,4 +142,3 @@ mod tests {
         assert!(samples.iter().all(|sample| sample.abs() <= 0.502));
     }
 }
-

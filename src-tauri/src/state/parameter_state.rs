@@ -127,4 +127,3 @@ mod tests {
         assert_eq!(state.snapshot(), parameters);
     }
 }
-

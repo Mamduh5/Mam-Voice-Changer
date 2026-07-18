@@ -89,6 +89,26 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
         onChange={(dryWet) => onChange({ dryWet })}
       />
       <SliderControl
+        label="Warmth"
+        value={parameters.warmthDb}
+        min={-6}
+        max={6}
+        step={0.5}
+        unit="dB"
+        disabled={disabled}
+        onChange={(warmthDb) => onChange({ warmthDb })}
+      />
+      <SliderControl
+        label="Brightness"
+        value={parameters.brightnessDb}
+        min={-6}
+        max={6}
+        step={0.5}
+        unit="dB"
+        disabled={disabled}
+        onChange={(brightnessDb) => onChange({ brightnessDb })}
+      />
+      <SliderControl
         label="Input gain"
         value={parameters.inputGainDb}
         min={-24}

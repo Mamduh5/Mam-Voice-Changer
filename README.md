@@ -1,40 +1,40 @@
 # Mam Voice Changer
 
-Mam Voice Changer is a Windows 10/11 x64 desktop prototype built with Tauri 2,
+Mam Voice Changer is a Windows 10/11 x64 desktop application built with Tauri 2,
 React, TypeScript, Rust, and CPAL. It captures a physical microphone, applies a
-small real-time DSP chain, and sends the result to a compatible Windows output such
+local real-time DSP chain, and sends the result to a selected Windows output such
 as VB-CABLE's **CABLE Input**.
 
-![Milestone 1 desktop interface](docs/screenshots/milestone-1-ui.png)
+![Desktop interface](docs/screenshots/milestone-1-ui.png)
 
-## Current status
+## Current implementation
 
-Implemented and automated-testable:
+- Windows input/output device enumeration and selection
+- Common sample-rate negotiation and normalized `f32` processing
+- Bounded input/output rings and a dedicated fixed-block DSP worker
+- Input gain, 20 Hz high-pass filtering, optional noise gate, and output gain
+- Signalsmith Stretch pitch shifting with formant compensation and independent
+  formant shift
+- Pitch-latency-aligned dry/wet mixing and bypass
+- Warmth (200 Hz low shelf) and brightness (4 kHz high shelf)
+- Linked 5 ms lookahead master limiter with a configurable digital ceiling
+- Final smoothed mute stage
+- Atomic live parameter snapshots, meters, counters, and latency estimates
+- Browser-safe frontend boundary when Vite is opened outside Tauri
 
-- Windows input/output device enumeration and refresh
-- Stable, order-independent device fingerprints
-- Repeated start/stop lifecycle owned by a dedicated audio-engine thread
-- Common input/output sample-rate negotiation with 48 kHz preference
-- `f32`, `i16`, and `u16` sample conversion through normalized `f32`
-- Mono/stereo channel mapping
-- Bounded lock-free ring buffering with explicit overflow/underflow behavior
-- Input/output meters, counters, estimated latency, active format, and runtime errors
-- Recoverable stopped, starting, running, stopping, and error states
-- Input and output gain, mute, bypass, 20 Hz high-pass filtering, and soft limiting
-- Lock-free live parameter updates through immutable callback snapshots
-- Stateful STFT pitch shifting from -12 to +12 semitones
-- Latency-aligned dry/wet mixing and smoothed live parameter transitions
-- Dedicated bounded DSP processing worker outside the device callbacks
-- Stateful multichannel-coherent noise gate with smoothed attack and release
+Not implemented: presets, recording, incompatible-rate resampling, AI voice
+conversion, custom virtual drivers, or verified Discord/OBS/TikTok compatibility.
 
-Not implemented yet:
+## Conservative defaults
 
-- Preset persistence or recording
-- Resampling between devices with no common sample rate
-- Discord, OBS, or TikTok Live Studio compatibility verification
+The application starts at 0 semitones pitch/formant, 35% wet, gate off,
+0 dB input, -6 dB output, neutral tone controls, a -3 dBFS master ceiling,
+limiter on, bypass off, and mute off.
 
-The previous amplitude-scaling control was not pitch shifting and remains removed.
-No pitch or preset behavior is simulated in the frontend.
+The digital limiter prevents samples from exceeding its configured ceiling while
+enabled. It cannot measure headphone volume, speaker output, acoustic feedback,
+or safe listening exposure. Start with low Windows/headphone volume, use
+headphones, and increase levels gradually.
 
 ## Prerequisites
 
@@ -43,7 +43,11 @@ No pitch or preset behavior is simulated in the frontend.
 - Rust stable with the MSVC toolchain
 - Microsoft C++ Build Tools
 - Microsoft Edge WebView2 Runtime
-- [VB-CABLE](https://vb-audio.com/Cable/) for virtual-microphone routing
+- [VB-CABLE](https://vb-audio.com/Cable/) when virtual-microphone routing is needed
+
+Signalsmith Stretch and Signalsmith Linear are vendored under their MIT licenses
+and compile statically into the application with MSVC. No Signalsmith DLL,
+libclang installation, or runtime download is required.
 
 ## Development
 
@@ -52,37 +56,26 @@ npm ci
 npm run dev
 ```
 
+`npm run dev` launches the Tauri desktop runtime. `npm run dev:web` intentionally
+launches only Vite; native audio controls remain disabled there.
+
 Choose a physical microphone as input and **CABLE Input** as output. In the
-receiving application, choose **CABLE Output** as its microphone. Use headphones
-while testing to avoid acoustic feedback.
+receiving application, choose **CABLE Output** as its microphone.
 
-Frontend-only development is available with `npm run dev:web`. The production frontend
-build is `npm run build`, and a local debug executable can be produced with:
+## Compile-time checks
 
 ```powershell
-npm run tauri -- build --debug --no-bundle --ci
-```
-
-## Validation
-
-```powershell
-npm ci
-npm run lint
-npm run format:check
-npm test
 npm run build
-cargo fmt --manifest-path src-tauri/Cargo.toml --check
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+cargo fmt --manifest-path src-tauri/Cargo.toml
 cargo check --manifest-path src-tauri/Cargo.toml
-npm run tauri -- build --debug --no-bundle --ci
 ```
 
-Tests do not require a physical audio device. Follow
-[the manual test plan](docs/manual-test-plan.md) for real routing validation.
+Runtime and audible behavior require separate manual validation with conservative
+monitoring levels. See the [manual test plan](docs/manual-test-plan.md).
 
 ## Documentation
 
+- [DSP design and parameters](docs/dsp.md)
 - [Architecture](docs/architecture.md)
 - [Audio routing](docs/audio-routing.md)
 - [Prototype scope](docs/prototype-scope.md)
@@ -92,14 +85,13 @@ Tests do not require a physical audio device. Follow
 
 ## Known limitations
 
-- Input and output must expose at least one common sample rate. The engine rejects
-  incompatible pairs rather than playing audio at the wrong rate.
-- CPAL 0.15 does not expose WASAPI endpoint GUIDs. Device IDs are deterministic
-  fingerprints of direction plus Windows friendly name, so a rename changes the ID
-  and identical friendly names may be ambiguous.
-- The displayed latency is an estimate based on requested device buffers and ring
-  prefill, not a measured round-trip latency.
-- On ring overflow the newest samples are dropped; on underflow the output is filled
-  with silence. Counters report callback blocks where either condition occurred.
-- The phase-vocoder pitch processor does not preserve formants and can introduce
-  spectral smearing, especially at larger shifts.
+- Input and output must expose a common sample rate.
+- CPAL 0.15 device IDs are deterministic friendly-name fingerprints, not WASAPI
+  endpoint GUIDs.
+- Latency is estimated from configured buffers and reported DSP delay; it is not a
+  measured acoustic round trip.
+- Formant processing is spectral and polyphonic rather than a monophonic PSOLA
+  model. Extreme pitch/formant combinations can still sound synthetic.
+- Compatibility and subjective listening quality have not been established by
+  compile-time checks.
+

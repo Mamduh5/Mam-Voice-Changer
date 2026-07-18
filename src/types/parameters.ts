@@ -7,6 +7,8 @@ export type AudioParameters = {
   inputGainDb: number;
   outputGainDb: number;
   masterCeilingDb: number;
+  warmthDb: number;
+  brightnessDb: number;
   limiterEnabled: boolean;
   bypass: boolean;
   muted: boolean;
@@ -21,6 +23,8 @@ export const defaultAudioParameters: AudioParameters = {
   inputGainDb: 0,
   outputGainDb: -6,
   masterCeilingDb: -3,
+  warmthDb: 0,
+  brightnessDb: 0,
   limiterEnabled: true,
   bypass: false,
   muted: false,

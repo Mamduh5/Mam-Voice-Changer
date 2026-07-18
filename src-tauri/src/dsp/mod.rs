@@ -8,4 +8,5 @@ pub mod pitch;
 pub mod processor;
 mod signalsmith;
 pub mod smoothing;
+pub mod tone;
 

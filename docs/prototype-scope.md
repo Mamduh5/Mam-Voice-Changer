@@ -1,46 +1,34 @@
 # Prototype scope
 
-## Delivered in this change
+## Implemented
 
-This change restores a valid Tauri 2 project and implements Milestones 1 and 2:
+- Windows input/output discovery, selection, and common-rate negotiation
+- Normalized sample conversion and mono/stereo channel mapping
+- Bounded non-blocking rings and dedicated DSP worker
+- Runtime state, meters, counters, format, errors, and latency estimates
+- Input/output gain, 20 Hz high-pass, bypass, and final mute
+- Optional coherent noise gate
+- Signalsmith pitch transformation with formant compensation
+- Independent -6 to +6 semitone formant shift
+- Pitch-aligned 0-100% dry/wet mixing
+- Warmth and brightness shelf EQ
+- Linked lookahead master limiter with -12 to -1 dBFS ceiling
+- Atomic live parameter updates and smoothed transitions
 
-- Windows input/output discovery
-- User-selected input and output
-- Common-rate and buffer negotiation
-- `f32`, `i16`, and `u16` conversion
-- Mono/stereo mapping
-- Bounded non-blocking buffering
-- Dedicated stream lifecycle ownership
-- Runtime state, meters, counters, format, latency estimate, and recoverable errors
-- Typed React-to-Tauri service boundary
-- Input and output gain
-- Mute and bypass
-- Per-channel 20 Hz high-pass filtering
-- Soft limiting
-- Atomic live parameter updates with no callback allocation or ordinary locking
-- Dedicated bounded DSP processing worker
-- Stateful -12 to +12 semitone phase-vocoder pitch shifting
-- Pitch-latency-aligned dry/wet mixing
-- Smoothed gain, mix, pitch, mute, and bypass transitions
-- Stateful coherent noise gate with attack, release, and hysteresis
+## Not implemented
 
-## Gated follow-up work
-
-The following work is not implemented:
-
-- Persisted JSON presets and parameter reset
-- Compatibility testing in Discord and OBS
-- TikTok Live Studio routing validation
-
-The fake amplitude-based pitch implementation and hardcoded UI presets were removed.
-They were not converted into UI simulations.
-
-## Explicitly out of scope
-
-- Custom Windows virtual audio drivers
-- AI voice conversion or cloning
-- Neural inference
-- Cloud processing
+- Persisted presets or parameter reset workflows
 - Recording
-- Accounts or telemetry
+- Resampling devices without a common rate
+- AI voice conversion, cloning, or neural inference
+- Custom virtual audio drivers
+- Cloud processing, accounts, or telemetry
 - macOS, Linux, or mobile support
+
+## Validation boundary
+
+Compile-time success does not establish audible quality, safe listening volume,
+VB-CABLE routing, Discord/OBS/TikTok compatibility, or long-duration stability.
+Those require deliberately low-level manual monitoring and remain separate from
+implementation work.
+

@@ -13,6 +13,7 @@ use super::{
     pitch::PitchShifter,
     processor::AudioProcessor,
     smoothing::SmoothedValue,
+    tone::{ToneEq, MAX_TONE_DB, MIN_TONE_DB},
 };
 
 pub const MIN_GAIN_DB: f32 = -24.0;
@@ -35,6 +36,8 @@ pub struct DspParameters {
     pub input_gain_db: f32,
     pub output_gain_db: f32,
     pub master_ceiling_db: f32,
+    pub warmth_db: f32,
+    pub brightness_db: f32,
     pub limiter_enabled: bool,
     pub bypass: bool,
     pub muted: bool,
@@ -51,6 +54,8 @@ impl Default for DspParameters {
             input_gain_db: 0.0,
             output_gain_db: -6.0,
             master_ceiling_db: DEFAULT_MASTER_CEILING_DB,
+            warmth_db: 0.0,
+            brightness_db: 0.0,
             limiter_enabled: true,
             bypass: false,
             muted: false,
@@ -103,6 +108,14 @@ impl DspParameters {
             MAX_MASTER_CEILING_DB,
             "dBFS",
         )?;
+        validate_range("Warmth", self.warmth_db, MIN_TONE_DB, MAX_TONE_DB, "dB")?;
+        validate_range(
+            "Brightness",
+            self.brightness_db,
+            MIN_TONE_DB,
+            MAX_TONE_DB,
+            "dB",
+        )?;
         Ok(self)
     }
 }
@@ -129,6 +142,7 @@ pub struct DspChain {
     noise_gate: NoiseGate,
     pitch: PitchShifter,
     dry_wet: DryWetMixer,
+    tone: ToneEq,
     bypass_delay: DelayLine,
     bypass_mix: SmoothedValue,
     mute_gain: SmoothedValue,
@@ -152,6 +166,7 @@ impl Default for DspChain {
             high_pass: HighPass::default(),
             noise_gate: NoiseGate::default(),
             dry_wet: DryWetMixer::new(parameters.dry_wet, latency_frames),
+            tone: ToneEq::default(),
             bypass_delay: DelayLine::new(latency_frames),
             pitch,
             bypass_mix: SmoothedValue::new(0.0),
@@ -177,6 +192,8 @@ impl DspChain {
         self.pitch
             .set_formant_shift_semitones(parameters.formant_shift_semitones);
         self.dry_wet.set_mix(parameters.dry_wet);
+        self.tone.set_warmth_db(parameters.warmth_db);
+        self.tone.set_brightness_db(parameters.brightness_db);
         self.bypass_mix
             .set_target(if parameters.bypass { 1.0 } else { 0.0 });
         self.mute_gain
@@ -205,6 +222,7 @@ impl AudioProcessor for DspChain {
         self.dry_wet.set_latency_frames(pitch_latency_frames);
         self.bypass_delay.set_latency_frames(pitch_latency_frames);
         self.dry_wet.prepare(sample_rate, self.channels);
+        self.tone.prepare(sample_rate, self.channels, block_size);
         self.bypass_delay.prepare(self.channels);
         self.bypass_mix.prepare(sample_rate, TRANSITION_RAMP_MS);
         self.mute_gain.prepare(sample_rate, TRANSITION_RAMP_MS);
@@ -236,6 +254,7 @@ impl AudioProcessor for DspChain {
             samples,
             &mut self.delayed_dry_scratch[..len],
         );
+        self.tone.process(samples);
         self.bypass_delay.process(
             &self.bypass_scratch[..len],
             &mut self.delayed_bypass_scratch[..len],
@@ -267,6 +286,7 @@ impl AudioProcessor for DspChain {
         self.noise_gate.reset();
         self.pitch.reset();
         self.dry_wet.reset();
+        self.tone.reset();
         self.bypass_delay.reset();
         self.bypass_mix.reset_to_target();
         self.mute_gain.reset_to_target();

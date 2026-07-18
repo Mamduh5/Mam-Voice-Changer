@@ -11,6 +11,8 @@ pub struct ParameterState {
     input_gain_db: AtomicU32,
     output_gain_db: AtomicU32,
     master_ceiling_db: AtomicU32,
+    warmth_db: AtomicU32,
+    brightness_db: AtomicU32,
     limiter_enabled: AtomicBool,
     bypass: AtomicBool,
     muted: AtomicBool,
@@ -28,6 +30,8 @@ impl Default for ParameterState {
             input_gain_db: AtomicU32::new(parameters.input_gain_db.to_bits()),
             output_gain_db: AtomicU32::new(parameters.output_gain_db.to_bits()),
             master_ceiling_db: AtomicU32::new(parameters.master_ceiling_db.to_bits()),
+            warmth_db: AtomicU32::new(parameters.warmth_db.to_bits()),
+            brightness_db: AtomicU32::new(parameters.brightness_db.to_bits()),
             limiter_enabled: AtomicBool::new(parameters.limiter_enabled),
             bypass: AtomicBool::new(parameters.bypass),
             muted: AtomicBool::new(parameters.muted),
@@ -56,6 +60,10 @@ impl ParameterState {
             .store(parameters.output_gain_db.to_bits(), Ordering::Release);
         self.master_ceiling_db
             .store(parameters.master_ceiling_db.to_bits(), Ordering::Release);
+        self.warmth_db
+            .store(parameters.warmth_db.to_bits(), Ordering::Release);
+        self.brightness_db
+            .store(parameters.brightness_db.to_bits(), Ordering::Release);
         self.limiter_enabled
             .store(parameters.limiter_enabled, Ordering::Release);
         self.bypass.store(parameters.bypass, Ordering::Release);
@@ -75,6 +83,8 @@ impl ParameterState {
             input_gain_db: f32::from_bits(self.input_gain_db.load(Ordering::Acquire)),
             output_gain_db: f32::from_bits(self.output_gain_db.load(Ordering::Acquire)),
             master_ceiling_db: f32::from_bits(self.master_ceiling_db.load(Ordering::Acquire)),
+            warmth_db: f32::from_bits(self.warmth_db.load(Ordering::Acquire)),
+            brightness_db: f32::from_bits(self.brightness_db.load(Ordering::Acquire)),
             limiter_enabled: self.limiter_enabled.load(Ordering::Acquire),
             bypass: self.bypass.load(Ordering::Acquire),
             muted: self.muted.load(Ordering::Acquire),
@@ -99,6 +109,8 @@ mod tests {
             input_gain_db: 3.0,
             output_gain_db: -6.0,
             master_ceiling_db: -3.0,
+            warmth_db: 1.5,
+            brightness_db: -1.0,
             limiter_enabled: false,
             bypass: true,
             muted: true,

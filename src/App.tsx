@@ -86,7 +86,11 @@ export default function App() {
         onStop={() => void engine.stop()}
       />
 
-      {error && <div className="error" role="alert">{error}</div>}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
       <footer>
         For VB-CABLE, choose CABLE Input above and CABLE Output as the microphone in the target
         application.

@@ -15,9 +15,12 @@ export function useEngineState() {
   }, []);
 
   useEffect(() => {
-    void refreshStatus();
+    const initialRefresh = window.setTimeout(() => void refreshStatus(), 0);
     const timer = window.setInterval(() => void refreshStatus(), 250);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialRefresh);
+      window.clearInterval(timer);
+    };
   }, [refreshStatus]);
 
   const start = useCallback(

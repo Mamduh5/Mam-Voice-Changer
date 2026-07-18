@@ -1,26 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { tauriAudioApi } from '../services/tauriAudioApi';
 import type { AudioDevice } from '../types/audio';
-
-function preferredDevice(devices: AudioDevice[], preferCable = false): string {
-  if (preferCable) {
-    const cable = devices.find((device) =>
-      device.name.toLowerCase().includes('cable input'),
-    );
-    if (cable) return cable.id;
-  }
-  return devices.find((device) => device.isDefault)?.id ?? devices[0]?.id ?? '';
-}
-
-function reconcileSelection(
-  selected: string,
-  devices: AudioDevice[],
-  preferCable = false,
-): string {
-  return devices.some((device) => device.id === selected)
-    ? selected
-    : preferredDevice(devices, preferCable);
-}
+import { reconcileSelection } from '../utils/deviceSelection';
 
 export function useAudioDevices() {
   const [inputs, setInputs] = useState<AudioDevice[]>([]);
@@ -47,7 +28,8 @@ export function useAudioDevices() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    const initialRefresh = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(initialRefresh);
   }, [refresh]);
 
   return {

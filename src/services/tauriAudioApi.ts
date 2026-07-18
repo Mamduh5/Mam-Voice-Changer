@@ -9,8 +9,7 @@ export type StartEngineRequest = {
 
 export const tauriAudioApi = {
   listAudioDevices: () => invoke<AudioDeviceList>('list_audio_devices'),
-  startEngine: (request: StartEngineRequest) =>
-    invoke<void>('start_engine', { request }),
+  startEngine: (request: StartEngineRequest) => invoke<void>('start_engine', { request }),
   stopEngine: () => invoke<void>('stop_engine'),
   getEngineStatus: () => invoke<EngineStatus>('get_engine_status'),
 };

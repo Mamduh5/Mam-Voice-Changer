@@ -1,8 +1,11 @@
 mod audio;
 mod commands;
+mod config;
 mod dsp;
 mod error;
 mod state;
+
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -10,7 +13,17 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let controller = audio::controller::EngineController::new()?;
 
     tauri::Builder::default()
-        .manage(state::app_state::AppState::new(controller))
+        .setup(move |app| {
+            let preset_path = app
+                .path()
+                .app_data_dir()?
+                .join(config::presets::PRESET_FILE_NAME);
+            app.manage(state::app_state::AppState::new(
+                controller,
+                preset_path,
+            )?);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::devices::list_audio_devices,
             commands::engine::start_engine,
@@ -18,6 +31,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             commands::engine::get_engine_status,
             commands::parameters::get_parameters,
             commands::parameters::set_parameters,
+            commands::presets::list_presets,
+            commands::presets::save_preset,
+            commands::presets::rename_preset,
+            commands::presets::duplicate_preset,
+            commands::presets::delete_preset,
+            commands::presets::apply_preset,
+            commands::presets::reset_preset,
         ])
         .run(tauri::generate_context!())?;
     Ok(())

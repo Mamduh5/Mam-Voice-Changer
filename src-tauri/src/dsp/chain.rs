@@ -26,7 +26,7 @@ pub const MAX_FORMANT_SHIFT_SEMITONES: f32 = 6.0;
 const TRANSITION_RAMP_MS: f32 = 10.0;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DspParameters {
     pub pitch_semitones: f32,
     pub formant_shift_semitones: f32,

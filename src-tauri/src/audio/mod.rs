@@ -7,3 +7,4 @@ pub mod output_stream;
 pub mod ring_buffer;
 pub mod sample_format;
 pub mod stream_config;
+pub mod worker;

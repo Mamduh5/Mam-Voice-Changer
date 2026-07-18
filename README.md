@@ -22,11 +22,14 @@ Implemented and automated-testable:
 - Recoverable stopped, starting, running, stopping, and error states
 - Input and output gain, mute, bypass, 20 Hz high-pass filtering, and soft limiting
 - Lock-free live parameter updates through immutable callback snapshots
+- Stateful STFT pitch shifting from -12 to +12 semitones
+- Latency-aligned dry/wet mixing and smoothed live parameter transitions
+- Dedicated bounded DSP processing worker outside the device callbacks
+- Stateful multichannel-coherent noise gate with smoothed attack and release
 
 Not implemented yet:
 
-- Noise gate, preset persistence, or recording
-- Genuine pitch transformation or dry/wet mixing
+- Preset persistence or recording
 - Resampling between devices with no common sample rate
 - Discord, OBS, or TikTok Live Studio compatibility verification
 
@@ -98,4 +101,5 @@ Tests do not require a physical audio device. Follow
   prefill, not a measured round-trip latency.
 - On ring overflow the newest samples are dropped; on underflow the output is filled
   with silence. Counters report callback blocks where either condition occurred.
-- Pitch, formant preservation, presets, and other DSP controls are deliberately absent.
+- The phase-vocoder pitch processor does not preserve formants and can introduce
+  spectral smearing, especially at larger shifts.

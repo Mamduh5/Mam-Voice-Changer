@@ -1,31 +1,44 @@
 use super::processor::AudioProcessor;
+use super::smoothing::SmoothedValue;
+
+const GAIN_RAMP_MS: f32 = 10.0;
 
 pub struct Gain {
-    linear_gain: f32,
+    linear_gain: SmoothedValue,
+    channels: usize,
 }
 
 impl Gain {
     pub fn new(gain_db: f32) -> Self {
         Self {
-            linear_gain: db_to_linear(gain_db),
+            linear_gain: SmoothedValue::new(db_to_linear(gain_db)),
+            channels: 1,
         }
     }
 
     pub fn set_gain_db(&mut self, gain_db: f32) {
-        self.linear_gain = db_to_linear(gain_db);
+        self.linear_gain.set_target(db_to_linear(gain_db));
     }
 }
 
 impl AudioProcessor for Gain {
-    fn prepare(&mut self, _sample_rate: u32, _channels: usize, _block_size: usize) {}
+    fn prepare(&mut self, sample_rate: u32, channels: usize, _block_size: usize) {
+        self.channels = channels.max(1);
+        self.linear_gain.prepare(sample_rate, GAIN_RAMP_MS);
+    }
 
     fn process(&mut self, samples: &mut [f32]) {
-        for sample in samples {
-            *sample *= self.linear_gain;
+        for frame in samples.chunks_mut(self.channels) {
+            let gain = self.linear_gain.next();
+            for sample in frame {
+                *sample *= gain;
+            }
         }
     }
 
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        self.linear_gain.reset_to_target();
+    }
 }
 
 fn db_to_linear(gain_db: f32) -> f32 {

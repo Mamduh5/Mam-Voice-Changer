@@ -15,8 +15,12 @@ export function DiagnosticsPanel({ status }: { status: EngineStatus }) {
           </dd>
         </div>
         <div>
-          <dt>Estimated latency</dt>
-          <dd>{format ? `${status.estimatedLatencyMs.toFixed(1)} ms` : '—'}</dd>
+          <dt>DSP latency</dt>
+          <dd>{format ? `${status.dspProcessingLatencyMs.toFixed(1)} ms` : '—'}</dd>
+        </div>
+        <div>
+          <dt>Total estimated latency</dt>
+          <dd>{format ? `${status.totalEstimatedLatencyMs.toFixed(1)} ms` : '—'}</dd>
         </div>
         <div>
           <dt>Input overruns</dt>
@@ -25,6 +29,14 @@ export function DiagnosticsPanel({ status }: { status: EngineStatus }) {
         <div>
           <dt>Output underruns</dt>
           <dd>{status.outputUnderruns}</dd>
+        </div>
+        <div>
+          <dt>DSP input underruns</dt>
+          <dd>{status.dspInputUnderruns}</dd>
+        </div>
+        <div>
+          <dt>DSP output overruns</dt>
+          <dd>{status.dspOutputOverruns}</dd>
         </div>
       </dl>
     </section>

@@ -18,12 +18,16 @@ This change restores a valid Tauri 2 project and implements Milestones 1 and 2:
 - Per-channel 20 Hz high-pass filtering
 - Soft limiting
 - Atomic live parameter updates with no callback allocation or ordinary locking
+- Dedicated bounded DSP processing worker
+- Stateful -12 to +12 semitone phase-vocoder pitch shifting
+- Pitch-latency-aligned dry/wet mixing
+- Smoothed gain, mix, pitch, mute, and bypass transitions
 
 ## Gated follow-up work
 
 The following work is not implemented:
 
-- Voice processing: genuine pitch transformation, dry/wet mix, and noise gate
+- Noise gate
 - Persisted JSON presets and parameter reset
 - Compatibility testing in Discord and OBS
 - TikTok Live Studio routing validation

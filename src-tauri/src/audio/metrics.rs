@@ -18,6 +18,8 @@ pub struct EngineStatus {
     pub dsp_input_underruns: u64,
     pub dsp_output_overruns: u64,
     pub estimated_latency_ms: f32,
+    pub dsp_processing_latency_ms: f32,
+    pub total_estimated_latency_ms: f32,
     pub active_stream_format: Option<ActiveStreamFormat>,
     pub last_runtime_error: Option<String>,
     pub message: String,
@@ -32,6 +34,8 @@ pub struct SharedMetrics {
     dsp_input_underruns: AtomicU64,
     dsp_output_overruns: AtomicU64,
     estimated_latency_ms: AtomicU32,
+    dsp_processing_latency_ms: AtomicU32,
+    total_estimated_latency_ms: AtomicU32,
     active_stream_format: RwLock<Option<ActiveStreamFormat>>,
     last_runtime_error: RwLock<Option<String>>,
 }
@@ -47,6 +51,8 @@ impl Default for SharedMetrics {
             dsp_input_underruns: AtomicU64::new(0),
             dsp_output_overruns: AtomicU64::new(0),
             estimated_latency_ms: AtomicU32::new(0.0_f32.to_bits()),
+            dsp_processing_latency_ms: AtomicU32::new(0.0_f32.to_bits()),
+            total_estimated_latency_ms: AtomicU32::new(0.0_f32.to_bits()),
             active_stream_format: RwLock::new(None),
             last_runtime_error: RwLock::new(None),
         }
@@ -94,12 +100,22 @@ impl SharedMetrics {
         self.dsp_output_overruns.store(0, Ordering::Relaxed);
     }
 
-    pub fn set_stream_details(&self, format: ActiveStreamFormat, latency_ms: f32) {
+    pub fn set_stream_details(
+        &self,
+        format: ActiveStreamFormat,
+        device_latency_ms: f32,
+        dsp_latency_ms: f32,
+    ) {
         if let Ok(mut current) = self.active_stream_format.write() {
             *current = Some(format);
         }
+        let total_latency_ms = device_latency_ms + dsp_latency_ms;
         self.estimated_latency_ms
-            .store(latency_ms.to_bits(), Ordering::Relaxed);
+            .store(total_latency_ms.to_bits(), Ordering::Relaxed);
+        self.dsp_processing_latency_ms
+            .store(dsp_latency_ms.to_bits(), Ordering::Relaxed);
+        self.total_estimated_latency_ms
+            .store(total_latency_ms.to_bits(), Ordering::Relaxed);
     }
 
     pub fn clear_stream_details(&self) {
@@ -107,6 +123,10 @@ impl SharedMetrics {
             *current = None;
         }
         self.estimated_latency_ms
+            .store(0.0_f32.to_bits(), Ordering::Relaxed);
+        self.dsp_processing_latency_ms
+            .store(0.0_f32.to_bits(), Ordering::Relaxed);
+        self.total_estimated_latency_ms
             .store(0.0_f32.to_bits(), Ordering::Relaxed);
     }
 
@@ -137,6 +157,12 @@ impl SharedMetrics {
             dsp_input_underruns: self.dsp_input_underruns.load(Ordering::Relaxed),
             dsp_output_overruns: self.dsp_output_overruns.load(Ordering::Relaxed),
             estimated_latency_ms: f32::from_bits(self.estimated_latency_ms.load(Ordering::Relaxed)),
+            dsp_processing_latency_ms: f32::from_bits(
+                self.dsp_processing_latency_ms.load(Ordering::Relaxed),
+            ),
+            total_estimated_latency_ms: f32::from_bits(
+                self.total_estimated_latency_ms.load(Ordering::Relaxed),
+            ),
             active_stream_format,
             last_runtime_error,
             message: match state {

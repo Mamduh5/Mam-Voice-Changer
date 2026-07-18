@@ -39,7 +39,8 @@ impl DspWorker {
         sample_rate: u32,
         channels: usize,
         block_frames: usize,
-    ) -> Result<(Self, SyncSender<()>), AudioError> {
+    ) -> Result<(Self, SyncSender<()>, usize), AudioError> {
+        let processing_latency_frames = DspChain::default().latency_frames() + block_frames;
         let (wake_tx, wake_rx) = mpsc::sync_channel(WAKE_CAPACITY);
         let (stop_tx, stop_rx) = mpsc::sync_channel(STOP_CAPACITY);
         let join = thread::Builder::new()
@@ -66,6 +67,7 @@ impl DspWorker {
                 join: Some(join),
             },
             wake_tx,
+            processing_latency_frames,
         ))
     }
 }
@@ -157,7 +159,7 @@ mod tests {
         let (output_producer, _output) = output_ring.split();
         let metrics = Arc::new(SharedMetrics::default());
         let (events, _event_rx) = mpsc::sync_channel::<RuntimeEvent>(1);
-        let (worker, wake) = DspWorker::spawn(
+        let (worker, wake, _) = DspWorker::spawn(
             input_consumer,
             output_producer,
             Arc::new(ParameterState::default()),

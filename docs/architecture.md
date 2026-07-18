@@ -2,9 +2,9 @@
 
 ## Current milestone
 
-The current implementation includes Milestone 1 audio routing and the focused
-Milestone 2 DSP chain: input gain, a 20 Hz high-pass filter, output gain, a soft
-limiter, bypass, and mute. Pitch, dry/wet, gate, and presets are not connected.
+The current implementation includes Milestone 1 audio routing, Milestone 2 basic DSP,
+and tested Milestone 3 pitch plus dry/wet processing. Noise gate and presets are not
+connected yet.
 
 ```text
 React components
@@ -17,9 +17,11 @@ bounded engine command channel
       |
 dedicated engine worker (owns both CPAL streams)
       |
-input callback -> normalized f32 -> channel map -> bounded ring
+input callback -> normalized f32 -> channel map -> bounded input ring
       |
-output callback -> parameter snapshot -> DSP chain -> device samples
+dedicated DSP worker -> parameter snapshot -> fixed-size DSP block
+      |
+bounded processed-output ring -> output callback -> device samples
 ```
 
 ## Module ownership
@@ -46,6 +48,9 @@ output callback -> parameter snapshot -> DSP chain -> device samples
 - `dsp/chain.rs`: ordered processors plus mute and bypass behavior
 - `dsp/gain.rs`: input/output decibel gain
 - `dsp/high_pass.rs`: per-channel DC-blocking filter state
+- `dsp/pitch.rs`: stateful STFT phase-vocoder pitch transformation
+- `dsp/dry_wet.rs`: pitch-latency-aligned dry delay and mixing
+- `dsp/smoothing.rs`: allocation-free parameter ramps
 - `dsp/limiter.rs`: bounded soft limiting
 
 ### Rust audio infrastructure
@@ -56,7 +61,8 @@ output callback -> parameter snapshot -> DSP chain -> device samples
 - `audio/channel_mapper.rs`: allocation-free mono/stereo mapping
 - `audio/ring_buffer.rs`: bounded SPSC buffering and explicit under/overflow policy
 - `audio/input_stream.rs`: typed CPAL input callbacks
-- `audio/output_stream.rs`: typed CPAL output callbacks and preallocated DSP scratch buffer
+- `audio/worker.rs`: fixed-block processing, parameter snapshots, and processed-ring writes
+- `audio/output_stream.rs`: processed-ring reads and typed output conversion
 - `audio/controller.rs`: stream-owning worker and lifecycle commands
 - `audio/metrics.rs`: atomics for callback metrics and locks used only outside callbacks
 
@@ -108,8 +114,33 @@ Audio data callbacks do not:
 - sleep
 - panic on recoverable errors
 
-They only convert/map samples, access the lock-free ring, load atomic parameter values,
-process preallocated buffers, and update atomics.
+They only convert/map samples, access a lock-free ring, signal the worker through a
+bounded non-blocking channel, and update atomics. FFT processing and parameter snapshot
+application run only on the dedicated DSP worker.
+
+## Pitch algorithm and dependency
+
+Pitch shifting uses a native Rust short-time Fourier transform phase vocoder with a
+2,048-frame Hann window, 4x overlap, and persistent per-channel phase state. Spectral
+bins and instantaneous frequencies are shifted while the synthesis hop remains fixed,
+so output sample count and stream duration remain continuous. This is not amplitude
+scaling and is not a playback-rate-only resampler.
+
+FFT operations use RustFFT 6.4.1, a pure-Rust dependency licensed under MIT OR
+Apache-2.0. It compiles into the application executable, supports Windows x64, and does
+not require a separately installed DLL or native build tool beyond the existing Rust
+toolchain.
+
+The processor does not claim formant preservation or studio-quality artifacts. Larger
+shifts can produce phase-vocoder smearing and shifted vocal formants.
+
+## Processing latency
+
+The pitch algorithm reports 1,536 frames of algorithmic latency (FFT size minus hop
+size). A preallocated dry delay line uses the same frame count before dry/wet mixing.
+DSP processing latency also includes one fixed worker block. The UI reports this DSP
+estimate separately and adds it to the existing device-buffer/prefill estimate. This is
+not a measured round-trip latency.
 
 ## Device identity limitation
 

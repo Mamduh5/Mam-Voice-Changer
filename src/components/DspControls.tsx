@@ -6,24 +6,42 @@ type Props = {
   onChange: (changes: Partial<AudioParameters>) => void;
 };
 
-type GainControlProps = {
+type SliderProps = {
   label: string;
   value: number;
+  displayValue?: number;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
   disabled: boolean;
   onChange: (value: number) => void;
 };
 
-function GainControl({ label, value, disabled, onChange }: GainControlProps) {
+function SliderControl({
+  label,
+  value,
+  displayValue = value,
+  min,
+  max,
+  step,
+  unit,
+  disabled,
+  onChange,
+}: SliderProps) {
   return (
     <label className="gain-control">
       <span>
-        {label} <strong>{value.toFixed(1)} dB</strong>
+        {label}{' '}
+        <strong>
+          {displayValue.toFixed(unit === '%' ? 0 : 1)} {unit}
+        </strong>
       </span>
       <input
         type="range"
-        min="-24"
-        max="24"
-        step="0.5"
+        min={min}
+        max={max}
+        step={step}
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
@@ -39,15 +57,44 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
         <h2>Processing</h2>
         <span className="filter-label">20 Hz high-pass</span>
       </div>
-      <GainControl
+      <SliderControl
+        label="Pitch"
+        value={parameters.pitchSemitones}
+        min={-12}
+        max={12}
+        step={0.5}
+        unit="st"
+        disabled={disabled}
+        onChange={(pitchSemitones) => onChange({ pitchSemitones })}
+      />
+      <SliderControl
+        label="Dry / wet"
+        value={parameters.dryWet}
+        displayValue={parameters.dryWet * 100}
+        min={0}
+        max={1}
+        step={0.01}
+        unit="%"
+        disabled={disabled}
+        onChange={(dryWet) => onChange({ dryWet })}
+      />
+      <SliderControl
         label="Input gain"
         value={parameters.inputGainDb}
+        min={-24}
+        max={24}
+        step={0.5}
+        unit="dB"
         disabled={disabled}
         onChange={(inputGainDb) => onChange({ inputGainDb })}
       />
-      <GainControl
+      <SliderControl
         label="Output gain"
         value={parameters.outputGainDb}
+        min={-24}
+        max={24}
+        step={0.5}
+        unit="dB"
         disabled={disabled}
         onChange={(outputGainDb) => onChange({ outputGainDb })}
       />

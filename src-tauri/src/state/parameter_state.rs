@@ -3,6 +3,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use crate::dsp::chain::DspParameters;
 
 pub struct ParameterState {
+    pitch_semitones: AtomicU32,
+    dry_wet: AtomicU32,
     input_gain_db: AtomicU32,
     output_gain_db: AtomicU32,
     limiter_enabled: AtomicBool,
@@ -14,6 +16,8 @@ impl Default for ParameterState {
     fn default() -> Self {
         let parameters = DspParameters::default();
         Self {
+            pitch_semitones: AtomicU32::new(parameters.pitch_semitones.to_bits()),
+            dry_wet: AtomicU32::new(parameters.dry_wet.to_bits()),
             input_gain_db: AtomicU32::new(parameters.input_gain_db.to_bits()),
             output_gain_db: AtomicU32::new(parameters.output_gain_db.to_bits()),
             limiter_enabled: AtomicBool::new(parameters.limiter_enabled),
@@ -26,6 +30,10 @@ impl Default for ParameterState {
 impl ParameterState {
     pub fn update(&self, parameters: DspParameters) -> Result<(), String> {
         let parameters = parameters.validate()?;
+        self.pitch_semitones
+            .store(parameters.pitch_semitones.to_bits(), Ordering::Release);
+        self.dry_wet
+            .store(parameters.dry_wet.to_bits(), Ordering::Release);
         self.input_gain_db
             .store(parameters.input_gain_db.to_bits(), Ordering::Release);
         self.output_gain_db
@@ -39,6 +47,8 @@ impl ParameterState {
 
     pub fn snapshot(&self) -> DspParameters {
         DspParameters {
+            pitch_semitones: f32::from_bits(self.pitch_semitones.load(Ordering::Acquire)),
+            dry_wet: f32::from_bits(self.dry_wet.load(Ordering::Acquire)),
             input_gain_db: f32::from_bits(self.input_gain_db.load(Ordering::Acquire)),
             output_gain_db: f32::from_bits(self.output_gain_db.load(Ordering::Acquire)),
             limiter_enabled: self.limiter_enabled.load(Ordering::Acquire),
@@ -57,6 +67,8 @@ mod tests {
     fn stores_a_valid_snapshot_and_rejects_invalid_gain() {
         let state = ParameterState::default();
         let parameters = DspParameters {
+            pitch_semitones: 5.0,
+            dry_wet: 0.75,
             input_gain_db: 3.0,
             output_gain_db: -6.0,
             limiter_enabled: false,

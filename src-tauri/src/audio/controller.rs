@@ -124,7 +124,8 @@ struct StartedStreams {
     bundle: StreamBundle,
     runtime_events: Receiver<RuntimeEvent>,
     format: ActiveStreamFormat,
-    estimated_latency_ms: f32,
+    device_latency_ms: f32,
+    dsp_latency_ms: f32,
 }
 
 fn worker_loop(
@@ -170,7 +171,11 @@ fn worker_loop(
                 metrics.set_last_error(None);
                 match start_streams(&request, Arc::clone(&metrics), Arc::clone(&parameters)) {
                     Ok(started) => {
-                        metrics.set_stream_details(started.format, started.estimated_latency_ms);
+                        metrics.set_stream_details(
+                            started.format,
+                            started.device_latency_ms,
+                            started.dsp_latency_ms,
+                        );
                         streams = Some(started.bundle);
                         runtime_events = Some(started.runtime_events);
                         transition(&mut state, EngineState::Running, &metrics);
@@ -235,7 +240,7 @@ fn start_streams(
         .input
         .buffer_frames
         .max(negotiated.output.buffer_frames) as usize;
-    let (dsp_worker, dsp_wake) = DspWorker::spawn(
+    let (dsp_worker, dsp_wake, dsp_latency_frames) = DspWorker::spawn(
         input_consumer,
         output_producer,
         Arc::clone(&parameters),
@@ -274,7 +279,8 @@ fn start_streams(
 
     Ok(StartedStreams {
         format: negotiated.active_format(),
-        estimated_latency_ms: negotiated.estimated_latency_ms(prefill_frames),
+        device_latency_ms: negotiated.estimated_latency_ms(prefill_frames),
+        dsp_latency_ms: dsp_latency_frames as f32 * 1_000.0 / negotiated.sample_rate as f32,
         bundle: StreamBundle {
             _input: input,
             _output: output,

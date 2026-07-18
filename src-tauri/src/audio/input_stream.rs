@@ -17,6 +17,7 @@ pub fn build(
     producer: HeapProd<f32>,
     output_channels: usize,
     metrics: Arc<SharedMetrics>,
+    dsp_wake: SyncSender<()>,
     runtime_events: SyncSender<RuntimeEvent>,
 ) -> Result<cpal::Stream, AudioError> {
     match spec.sample_format {
@@ -26,6 +27,7 @@ pub fn build(
             producer,
             output_channels,
             metrics,
+            dsp_wake,
             runtime_events,
         ),
         cpal::SampleFormat::I16 => build_typed::<i16>(
@@ -34,6 +36,7 @@ pub fn build(
             producer,
             output_channels,
             metrics,
+            dsp_wake,
             runtime_events,
         ),
         cpal::SampleFormat::U16 => build_typed::<u16>(
@@ -42,6 +45,7 @@ pub fn build(
             producer,
             output_channels,
             metrics,
+            dsp_wake,
             runtime_events,
         ),
         format => Err(AudioError::BuildStream {
@@ -57,6 +61,7 @@ fn build_typed<T: InputSample>(
     mut producer: HeapProd<f32>,
     output_channels: usize,
     metrics: Arc<SharedMetrics>,
+    dsp_wake: SyncSender<()>,
     runtime_events: SyncSender<RuntimeEvent>,
 ) -> Result<cpal::Stream, AudioError> {
     let input_channels = usize::from(spec.config.channels);
@@ -81,6 +86,7 @@ fn build_typed<T: InputSample>(
                 if overrun {
                     metrics.record_input_overrun();
                 }
+                let _ = dsp_wake.try_send(());
             },
             move |_| {
                 let _ = runtime_events.try_send(RuntimeEvent::InputStreamFailed);

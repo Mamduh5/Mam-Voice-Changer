@@ -31,6 +31,8 @@ pub enum AudioError {
     },
     #[error("The audio engine worker could not be started: {0}")]
     WorkerStart(String),
+    #[error("The DSP processing worker could not be started: {0}")]
+    DspWorkerStart(String),
     #[error("The audio engine worker is unavailable. Restart the application.")]
     WorkerUnavailable,
     #[error("The audio engine did not respond within {0} seconds.")]

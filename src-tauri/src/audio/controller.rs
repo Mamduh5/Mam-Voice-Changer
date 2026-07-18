@@ -18,6 +18,7 @@ use crate::{
         output_stream,
         ring_buffer::AudioRingBuffer,
         stream_config::{self, ActiveStreamFormat},
+        worker::DspWorker,
     },
     error::AudioError,
     state::{engine_state::EngineState, parameter_state::ParameterState},
@@ -48,6 +49,7 @@ enum EngineCommand {
 pub enum RuntimeEvent {
     InputStreamFailed,
     OutputStreamFailed,
+    DspProcessingFailed,
 }
 
 pub struct EngineController {
@@ -115,6 +117,7 @@ fn receive_response(response: Receiver<Result<(), String>>) -> Result<(), String
 struct StreamBundle {
     _input: cpal::Stream,
     _output: cpal::Stream,
+    _dsp_worker: DspWorker,
 }
 
 struct StartedStreams {
@@ -144,6 +147,9 @@ fn worker_loop(
                     }
                     RuntimeEvent::OutputStreamFailed => {
                         "The output device stopped responding or was disconnected. Refresh devices and restart the engine."
+                    }
+                    RuntimeEvent::DspProcessingFailed => {
+                        "DSP processing produced invalid audio. Restart the engine or reset the processing controls."
                     }
                 };
                 metrics.set_last_error(Some(message.to_owned()));
@@ -219,24 +225,41 @@ fn start_streams(
     let prefill_samples = prefill_frames as usize * output_channels;
     let capacity_frames =
         (negotiated.sample_rate * RING_BUFFER_MILLISECONDS / 1_000).max(prefill_frames * 2);
-    let ring = AudioRingBuffer::new(capacity_frames as usize * output_channels, prefill_samples);
-    let (producer, consumer) = ring.split();
+    let capacity_samples = capacity_frames as usize * output_channels;
+    let input_ring = AudioRingBuffer::new(capacity_samples, 0);
+    let (input_producer, input_consumer) = input_ring.split();
+    let output_ring = AudioRingBuffer::new(capacity_samples, prefill_samples);
+    let (output_producer, output_consumer) = output_ring.split();
     let (runtime_tx, runtime_rx) = mpsc::sync_channel(4);
+    let dsp_block_frames = negotiated
+        .input
+        .buffer_frames
+        .max(negotiated.output.buffer_frames) as usize;
+    let (dsp_worker, dsp_wake) = DspWorker::spawn(
+        input_consumer,
+        output_producer,
+        Arc::clone(&parameters),
+        Arc::clone(&metrics),
+        runtime_tx.clone(),
+        negotiated.sample_rate,
+        output_channels,
+        dsp_block_frames,
+    )?;
 
     let input = input_stream::build(
         &input_device,
         &negotiated.input,
-        producer,
+        input_producer,
         output_channels,
         Arc::clone(&metrics),
+        dsp_wake,
         runtime_tx.clone(),
     )?;
     let output = output_stream::build(
         &output_device,
         &negotiated.output,
-        consumer,
+        output_consumer,
         metrics,
-        parameters,
         runtime_tx,
     )?;
 
@@ -255,6 +278,7 @@ fn start_streams(
         bundle: StreamBundle {
             _input: input,
             _output: output,
+            _dsp_worker: dsp_worker,
         },
         runtime_events: runtime_rx,
     })

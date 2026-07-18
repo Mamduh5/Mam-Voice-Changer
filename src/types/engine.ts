@@ -8,6 +8,8 @@ export type EngineStatus = {
   outputLevel: number;
   inputOverruns: number;
   outputUnderruns: number;
+  dspInputUnderruns: number;
+  dspOutputOverruns: number;
   estimatedLatencyMs: number;
   activeStreamFormat: ActiveStreamFormat | null;
   lastRuntimeError: string | null;
@@ -20,6 +22,8 @@ export const stoppedStatus: EngineStatus = {
   outputLevel: 0,
   inputOverruns: 0,
   outputUnderruns: 0,
+  dspInputUnderruns: 0,
+  dspOutputOverruns: 0,
   estimatedLatencyMs: 0,
   activeStreamFormat: null,
   lastRuntimeError: null,

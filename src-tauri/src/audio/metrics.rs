@@ -15,6 +15,8 @@ pub struct EngineStatus {
     pub output_level: f32,
     pub input_overruns: u64,
     pub output_underruns: u64,
+    pub dsp_input_underruns: u64,
+    pub dsp_output_overruns: u64,
     pub estimated_latency_ms: f32,
     pub active_stream_format: Option<ActiveStreamFormat>,
     pub last_runtime_error: Option<String>,
@@ -27,6 +29,8 @@ pub struct SharedMetrics {
     output_level: AtomicU32,
     input_overruns: AtomicU64,
     output_underruns: AtomicU64,
+    dsp_input_underruns: AtomicU64,
+    dsp_output_overruns: AtomicU64,
     estimated_latency_ms: AtomicU32,
     active_stream_format: RwLock<Option<ActiveStreamFormat>>,
     last_runtime_error: RwLock<Option<String>>,
@@ -40,6 +44,8 @@ impl Default for SharedMetrics {
             output_level: AtomicU32::new(0.0_f32.to_bits()),
             input_overruns: AtomicU64::new(0),
             output_underruns: AtomicU64::new(0),
+            dsp_input_underruns: AtomicU64::new(0),
+            dsp_output_overruns: AtomicU64::new(0),
             estimated_latency_ms: AtomicU32::new(0.0_f32.to_bits()),
             active_stream_format: RwLock::new(None),
             last_runtime_error: RwLock::new(None),
@@ -73,9 +79,19 @@ impl SharedMetrics {
         self.output_underruns.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn record_dsp_input_underrun(&self) {
+        self.dsp_input_underruns.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_dsp_output_overrun(&self) {
+        self.dsp_output_overruns.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn reset_counters(&self) {
         self.input_overruns.store(0, Ordering::Relaxed);
         self.output_underruns.store(0, Ordering::Relaxed);
+        self.dsp_input_underruns.store(0, Ordering::Relaxed);
+        self.dsp_output_overruns.store(0, Ordering::Relaxed);
     }
 
     pub fn set_stream_details(&self, format: ActiveStreamFormat, latency_ms: f32) {
@@ -118,6 +134,8 @@ impl SharedMetrics {
             output_level: f32::from_bits(self.output_level.load(Ordering::Relaxed)),
             input_overruns: self.input_overruns.load(Ordering::Relaxed),
             output_underruns: self.output_underruns.load(Ordering::Relaxed),
+            dsp_input_underruns: self.dsp_input_underruns.load(Ordering::Relaxed),
+            dsp_output_overruns: self.dsp_output_overruns.load(Ordering::Relaxed),
             estimated_latency_ms: f32::from_bits(self.estimated_latency_ms.load(Ordering::Relaxed)),
             active_stream_format,
             last_runtime_error,

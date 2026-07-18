@@ -53,6 +53,16 @@ The limiter controls digital sample peaks. Acoustic level depends on later outpu
 gain stages, Windows volume, amplifiers, headphones/speakers, microphone coupling,
 and listening duration.
 
+
+## Preset parameter scope
+
+Presets serialize the complete \`DspParameters\` snapshot shown above: pitch,
+formant shift, dry/wet, gate state and threshold, input/output gain, warmth,
+brightness, master ceiling, limiter state, bypass, and mute. Built-in presets only
+adjust processors that exist in the native chain. Preset JSON is validated before
+storage and again when loaded; applying a preset publishes the same live atomic
+snapshot as direct control changes.
+
 ## Real-time constraints
 
 The processing worker owns every stateful processor. It allocates scratch buffers,

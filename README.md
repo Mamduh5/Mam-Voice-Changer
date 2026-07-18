@@ -20,10 +20,11 @@ as VB-CABLE's **CABLE Input**.
 - Linked 5 ms lookahead master limiter with a configurable digital ceiling
 - Final smoothed mute stage
 - Atomic live parameter snapshots, meters, counters, and latency estimates
+- Versioned built-in and user presets stored in the Tauri application-data directory
 - Browser-safe frontend boundary when Vite is opened outside Tauri
 
-Not implemented: presets, recording, incompatible-rate resampling, AI voice
-conversion, custom virtual drivers, or verified Discord/OBS/TikTok compatibility.
+Not implemented: recording, incompatible-rate resampling, AI voice conversion,
+custom virtual drivers, or verified Discord/OBS/TikTok compatibility.
 
 ## Conservative defaults
 

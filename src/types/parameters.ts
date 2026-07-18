@@ -29,4 +29,3 @@ export const defaultAudioParameters: AudioParameters = {
   bypass: false,
   muted: false,
 };
-

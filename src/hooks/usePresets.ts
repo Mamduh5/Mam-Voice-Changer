@@ -97,10 +97,7 @@ export function usePresets(
     [execute],
   );
 
-  const reset = useCallback(
-    () => execute(() => tauriAudioApi.resetPreset(), true),
-    [execute],
-  );
+  const reset = useCallback(() => execute(() => tauriAudioApi.resetPreset(), true), [execute]);
 
   return { catalog, busy, error, save, rename, duplicate, remove, apply, reset };
 }

@@ -189,4 +189,3 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
     </section>
   );
 }
-

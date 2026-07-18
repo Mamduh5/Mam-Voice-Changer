@@ -2,8 +2,7 @@
 
 ## Delivered in this change
 
-This change restores a valid Tauri 2 project and implements Milestone 1 clean audio
-passthrough:
+This change restores a valid Tauri 2 project and implements Milestones 1 and 2:
 
 - Windows input/output discovery
 - User-selected input and output
@@ -14,12 +13,16 @@ passthrough:
 - Dedicated stream lifecycle ownership
 - Runtime state, meters, counters, format, latency estimate, and recoverable errors
 - Typed React-to-Tauri service boundary
+- Input and output gain
+- Mute and bypass
+- Per-channel 20 Hz high-pass filtering
+- Soft limiting
+- Atomic live parameter updates with no callback allocation or ordinary locking
 
 ## Gated follow-up work
 
-The following milestones remain gated on audible VB-CABLE passthrough validation:
+The following work is not implemented:
 
-- Basic DSP: high-pass filter, gain, mute, bypass, and limiter
 - Voice processing: genuine pitch transformation, dry/wet mix, and noise gate
 - Persisted JSON presets and parameter reset
 - Compatibility testing in Discord and OBS

@@ -44,6 +44,6 @@ Reconnect the device or refresh and select an available endpoint, then start aga
 
 ## Pitch or presets are unavailable
 
-This is intentional in Milestone 1. The former pitch control was amplitude processing,
-not pitch shifting. Effects remain disabled until clean VB-CABLE passthrough is manually
-verified.
+Pitch and presets are outside the current milestone. The former pitch control was
+amplitude processing, not pitch shifting, and remains removed. Gain, high-pass, mute,
+bypass, and limiter controls are available without simulating later features.

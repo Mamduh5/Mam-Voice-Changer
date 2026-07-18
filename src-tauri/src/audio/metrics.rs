@@ -122,9 +122,9 @@ impl SharedMetrics {
             active_stream_format,
             last_runtime_error,
             message: match state {
-                EngineState::Stopped => "Ready for clean passthrough".to_owned(),
+                EngineState::Stopped => "Ready to start".to_owned(),
                 EngineState::Starting => "Starting audio streams".to_owned(),
-                EngineState::Running => "Microphone passthrough is active".to_owned(),
+                EngineState::Running => "Audio processing is active".to_owned(),
                 EngineState::Stopping => "Stopping audio streams".to_owned(),
                 EngineState::Error => "Audio engine needs attention".to_owned(),
             },

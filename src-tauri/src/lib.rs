@@ -1,5 +1,6 @@
 mod audio;
 mod commands;
+mod dsp;
 mod error;
 mod state;
 
@@ -15,6 +16,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             commands::engine::start_engine,
             commands::engine::stop_engine,
             commands::engine::get_engine_status,
+            commands::parameters::get_parameters,
+            commands::parameters::set_parameters,
         ])
         .run(tauri::generate_context!())?;
     Ok(())

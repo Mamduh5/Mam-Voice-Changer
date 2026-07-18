@@ -14,14 +14,14 @@ export function EngineControls({ status, canStart, onStart, onStop }: Props) {
     <section className="transport card">
       <div>
         <strong>{status.message}</strong>
-        <small>Milestone 1 · clean microphone passthrough</small>
+        <small>Local real-time audio processing</small>
       </div>
       <button
         className={running ? 'stop' : 'start'}
         disabled={busy || (!running && !canStart)}
         onClick={running ? onStop : onStart}
       >
-        {busy ? 'Please wait…' : running ? 'Stop engine' : 'Start passthrough'}
+        {busy ? 'Please wait…' : running ? 'Stop engine' : 'Start engine'}
       </button>
     </section>
   );

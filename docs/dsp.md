@@ -56,7 +56,7 @@ and listening duration.
 
 ## Preset parameter scope
 
-Presets serialize the complete \`DspParameters\` snapshot shown above: pitch,
+Presets serialize the complete `DspParameters` snapshot shown above: pitch,
 formant shift, dry/wet, gate state and threshold, input/output gain, warmth,
 brightness, master ceiling, limiter state, bypass, and mute. Built-in presets only
 adjust processors that exist in the native chain. Preset JSON is validated before

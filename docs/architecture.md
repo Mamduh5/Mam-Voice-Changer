@@ -99,15 +99,15 @@ lookahead storage, and backend capacity are prepared before block processing.
 
 ## Preset persistence
 
-\`config/presets.rs\` owns the versioned JSON document, built-in definitions, strict
+`config/presets.rs` owns the versioned JSON document, built-in definitions, strict
 name/id/timestamp/parameter validation, and atomic file replacement. The file is
-stored as \`presets.json\` in Tauri's application-data directory. A completed file
+stored as `presets.json` in Tauri's application-data directory. A completed file
 is never replaced by invalid JSON; temporary and backup files support recovery
 from an interrupted write.
 
 Preset commands run on the application side, outside CPAL callbacks and the DSP
 worker. Applying, duplicating, deleting the active preset, or resetting publishes
-one complete validated \`DspParameters\` snapshot through the existing atomic
+one complete validated `DspParameters` snapshot through the existing atomic
 parameter state. The selected preset id is committed with the document and
 restored before audio starts.
 

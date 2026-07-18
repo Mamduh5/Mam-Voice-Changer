@@ -1,8 +1,10 @@
 import { DeviceSelector } from './components/DeviceSelector';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
+import { DspControls } from './components/DspControls';
 import { EngineControls } from './components/EngineControls';
 import { LevelMeter } from './components/LevelMeter';
 import { useAudioDevices } from './hooks/useAudioDevices';
+import { useAudioParameters } from './hooks/useAudioParameters';
 import { useEngineState } from './hooks/useEngineState';
 import { DESKTOP_RUNTIME_UNAVAILABLE, tauriAudioApi } from './services/tauriAudioApi';
 
@@ -10,10 +12,14 @@ export default function App() {
   const desktopRuntimeAvailable = tauriAudioApi.isDesktopRuntimeAvailable();
   const devices = useAudioDevices(desktopRuntimeAvailable);
   const engine = useEngineState(desktopRuntimeAvailable);
+  const audioParameters = useAudioParameters(desktopRuntimeAvailable);
   const running = engine.status.state === 'running';
   const busy = engine.status.state === 'starting' || engine.status.state === 'stopping';
   const error = desktopRuntimeAvailable
-    ? (engine.commandError ?? engine.status.lastRuntimeError ?? devices.error)
+    ? (engine.commandError ??
+      engine.status.lastRuntimeError ??
+      devices.error ??
+      audioParameters.error)
     : null;
 
   return (
@@ -29,11 +35,11 @@ export default function App() {
           <span className="logo">M</span>
           <div>
             <h1>Mam Voice Changer</h1>
-            <p>Local Windows audio routing Â· no recording or cloud processing</p>
+            <p>Local Windows audio routing · no recording or cloud processing</p>
           </div>
         </div>
         <span className={running ? 'live' : 'idle'}>
-          {running ? 'â— LIVE' : `â—‹ ${engine.status.state.toUpperCase()}`}
+          {running ? '● LIVE' : `○ ${engine.status.state.toUpperCase()}`}
         </span>
       </header>
 
@@ -45,7 +51,7 @@ export default function App() {
             onClick={() => void devices.refresh()}
             disabled={!desktopRuntimeAvailable || running || busy || devices.loading}
           >
-            {devices.loading ? 'Refreshingâ€¦' : 'Refresh devices'}
+            {devices.loading ? 'Refreshing…' : 'Refresh devices'}
           </button>
         </div>
         <div className="route">
@@ -56,7 +62,7 @@ export default function App() {
             disabled={!desktopRuntimeAvailable || running || busy}
             onChange={devices.setInputId}
           />
-          <span>â†’</span>
+          <span>→</span>
           <DeviceSelector
             label="Windows output (normally CABLE Input)"
             value={devices.outputId}
@@ -72,20 +78,12 @@ export default function App() {
           <h2>Levels</h2>
           <LevelMeter label="Input" value={engine.status.inputLevel} />
           <LevelMeter label="Output" value={engine.status.outputLevel} />
-          <p className="hint">
-            Output is intentionally unmodified in Milestone 1 so the live routing path can be
-            validated before effects are enabled.
-          </p>
         </section>
-        <section className="card deferred">
-          <h2>Voice effects</h2>
-          <strong>Pitch and presets are not enabled yet</strong>
-          <p>
-            The previous pitch control changed amplitude instead of pitch and has been removed.
-            Genuine pitch processing will follow clean passthrough validation.
-          </p>
-          <button disabled>Effects unavailable in Milestone 1</button>
-        </section>
+        <DspControls
+          parameters={audioParameters.parameters}
+          disabled={!desktopRuntimeAvailable}
+          onChange={audioParameters.update}
+        />
       </div>
 
       <DiagnosticsPanel status={engine.status} />
@@ -108,4 +106,3 @@ export default function App() {
     </main>
   );
 }
-

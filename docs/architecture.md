@@ -2,9 +2,9 @@
 
 ## Current milestone
 
-The current implementation is a clean microphone-to-output passthrough. Effects are
-not connected. This keeps Milestone 1 behavior observable and prevents the removed fake
-pitch algorithm from being mistaken for working DSP.
+The current implementation includes Milestone 1 audio routing and the focused
+Milestone 2 DSP chain: input gain, a 20 Hz high-pass filter, output gain, a soft
+limiter, bypass, and mute. Pitch, dry/wet, gate, and presets are not connected.
 
 ```text
 React components
@@ -17,7 +17,9 @@ bounded engine command channel
       |
 dedicated engine worker (owns both CPAL streams)
       |
-input callback -> normalized f32 -> channel map -> bounded ring -> output callback
+input callback -> normalized f32 -> channel map -> bounded ring
+      |
+output callback -> parameter snapshot -> DSP chain -> device samples
 ```
 
 ## Module ownership
@@ -35,7 +37,16 @@ input callback -> normalized f32 -> channel map -> bounded ring -> output callba
 - `commands`: input validation and frontend-safe command results
 - `state/app_state.rs`: owns the thread-safe engine controller
 - `state/engine_state.rs`: explicit lifecycle states and transition rules
+- `state/parameter_state.rs`: atomic live DSP parameter values
 - `error.rs`: precise user-facing audio errors
+
+### DSP
+
+- `dsp/processor.rs`: device-independent processor interface
+- `dsp/chain.rs`: ordered processors plus mute and bypass behavior
+- `dsp/gain.rs`: input/output decibel gain
+- `dsp/high_pass.rs`: per-channel DC-blocking filter state
+- `dsp/limiter.rs`: bounded soft limiting
 
 ### Rust audio infrastructure
 
@@ -45,7 +56,7 @@ input callback -> normalized f32 -> channel map -> bounded ring -> output callba
 - `audio/channel_mapper.rs`: allocation-free mono/stereo mapping
 - `audio/ring_buffer.rs`: bounded SPSC buffering and explicit under/overflow policy
 - `audio/input_stream.rs`: typed CPAL input callbacks
-- `audio/output_stream.rs`: typed CPAL output callbacks
+- `audio/output_stream.rs`: typed CPAL output callbacks and preallocated DSP scratch buffer
 - `audio/controller.rs`: stream-owning worker and lifecycle commands
 - `audio/metrics.rs`: atomics for callback metrics and locks used only outside callbacks
 
@@ -97,7 +108,8 @@ Audio data callbacks do not:
 - sleep
 - panic on recoverable errors
 
-They only convert/map samples, access the lock-free ring, and update atomics.
+They only convert/map samples, access the lock-free ring, load atomic parameter values,
+process preallocated buffers, and update atomics.
 
 ## Device identity limitation
 

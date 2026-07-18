@@ -1,9 +1,9 @@
 # Mam Voice Changer
 
 Mam Voice Changer is a Windows 10/11 x64 desktop prototype built with Tauri 2,
-React, TypeScript, Rust, and CPAL. The current milestone captures a physical
-microphone and sends **unmodified** audio to a compatible Windows output such as
-VB-CABLE's **CABLE Input**.
+React, TypeScript, Rust, and CPAL. It captures a physical microphone, applies a
+small real-time DSP chain, and sends the result to a compatible Windows output such
+as VB-CABLE's **CABLE Input**.
 
 ![Milestone 1 desktop interface](docs/screenshots/milestone-1-ui.png)
 
@@ -20,17 +20,18 @@ Implemented and automated-testable:
 - Bounded lock-free ring buffering with explicit overflow/underflow behavior
 - Input/output meters, counters, estimated latency, active format, and runtime errors
 - Recoverable stopped, starting, running, stopping, and error states
+- Input and output gain, mute, bypass, 20 Hz high-pass filtering, and soft limiting
+- Lock-free live parameter updates through immutable callback snapshots
 
 Not implemented yet:
 
-- Gain, gate, limiter, bypass, mute, or preset persistence
+- Noise gate, preset persistence, or recording
 - Genuine pitch transformation or dry/wet mixing
 - Resampling between devices with no common sample rate
 - Discord, OBS, or TikTok Live Studio compatibility verification
 
-The previous amplitude-scaling control was not pitch shifting and has been removed
-from the runtime path. The UI intentionally marks voice effects unavailable until
-clean passthrough is manually validated with VB-CABLE.
+The previous amplitude-scaling control was not pitch shifting and remains removed.
+No pitch or preset behavior is simulated in the frontend.
 
 ## Prerequisites
 
@@ -45,14 +46,14 @@ clean passthrough is manually validated with VB-CABLE.
 
 ```powershell
 npm ci
-npm run tauri:dev
+npm run dev
 ```
 
 Choose a physical microphone as input and **CABLE Input** as output. In the
 receiving application, choose **CABLE Output** as its microphone. Use headphones
 while testing to avoid acoustic feedback.
 
-Frontend-only development is available with `npm run dev`. The production frontend
+Frontend-only development is available with `npm run dev:web`. The production frontend
 build is `npm run build`, and a local debug executable can be produced with:
 
 ```powershell

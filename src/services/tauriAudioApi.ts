@@ -1,6 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { AudioDeviceList } from '../types/audio';
 import type { EngineStatus } from '../types/engine';
+import type { AudioParameters } from '../types/parameters';
 
 export type StartEngineRequest = {
   inputId: string;
@@ -23,5 +24,7 @@ export const tauriAudioApi = {
   startEngine: (request: StartEngineRequest) => invokeDesktop<void>('start_engine', { request }),
   stopEngine: () => invokeDesktop<void>('stop_engine'),
   getEngineStatus: () => invokeDesktop<EngineStatus>('get_engine_status'),
+  getParameters: () => invokeDesktop<AudioParameters>('get_parameters'),
+  setParameters: (parameters: AudioParameters) =>
+    invokeDesktop<void>('set_parameters', { parameters }),
 };
-

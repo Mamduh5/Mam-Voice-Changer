@@ -142,8 +142,7 @@ select {
   background: #21182c;
 }
 
-.refresh,
-.deferred button {
+.refresh {
   padding: 10px 14px;
   border: 1px solid #403052;
   border-radius: 10px;
@@ -179,17 +178,6 @@ select {
   display: block;
   height: 100%;
   background: linear-gradient(90deg, #7650ed, #ef5fa3);
-}
-
-.hint,
-.deferred p {
-  margin-top: 18px;
-  line-height: 1.55;
-}
-
-.deferred button {
-  width: 100%;
-  margin-top: 20px;
 }
 
 .diagnostics {
@@ -265,6 +253,62 @@ select {
   background: #21182c;
 }
 
+.dsp-controls {
+  display: grid;
+  gap: 18px;
+}
+
+.filter-label {
+  color: #9288a3;
+  font-size: 12px;
+}
+
+.gain-control span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.gain-control input {
+  width: 100%;
+  accent-color: #9c5cf3;
+}
+
+.dsp-switches {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.limiter-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.limiter-toggle input {
+  accent-color: #9c5cf3;
+}
+
+.dsp-switches button {
+  padding: 9px 14px;
+  border: 1px solid #403052;
+  border-radius: 10px;
+  color: #d8c5f4;
+  background: #251b32;
+  cursor: pointer;
+}
+
+.dsp-switches button.active {
+  border-color: #a86cf5;
+  background: #563080;
+}
+
+.dsp-switches button.danger {
+  border-color: #ef5fa3;
+  background: #7d294e;
+}
+
 footer {
   padding: 24px;
   color: #756b84;
@@ -290,4 +334,3 @@ footer {
     display: none;
   }
 }
-

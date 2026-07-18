@@ -16,7 +16,7 @@ with headphones before marking Milestone 1 manually verified.
 1. Launch the application.
 2. Refresh devices and verify all enabled input/output endpoints appear.
 3. Select a physical microphone as input and **CABLE Input** as output.
-4. Start passthrough and confirm the engine reaches `running`.
+4. Enable bypass, start the engine, and confirm it reaches `running`.
 5. Speak and confirm both meters respond.
 6. Monitor **CABLE Output** safely and verify continuous, unmodified audio.
 7. Stop and start ten times; confirm no stale streams or invalid state.
@@ -26,11 +26,14 @@ with headphones before marking Milestone 1 manually verified.
 10. Refresh devices, select an available output, and restart successfully.
 11. Run for 30 minutes and record underruns, overruns, and the latency estimate.
 
-## Later milestone acceptance
+## Milestone 2 acceptance
 
-Only after Milestone 1 passes, verify mute, bypass, gains, high-pass filtering, gate,
-limiter, dry/wet, genuine pitch, reset, and persisted presets. Then test CABLE Output
-in Discord and OBS. Record TikTok Live Studio separately.
+With safe monitoring available, verify mute, bypass, both gains, high-pass filtering,
+and limiting while the engine is running. These manual checks do not block the focused
+device-independent DSP tests.
+
+Gate, dry/wet, genuine pitch, reset, persisted presets, and application compatibility
+belong to later milestones.
 
 ## Validation performed on 2026-07-18
 

@@ -20,7 +20,7 @@ use crate::{
         stream_config::{self, ActiveStreamFormat},
     },
     error::AudioError,
-    state::engine_state::EngineState,
+    state::{engine_state::EngineState, parameter_state::ParameterState},
 };
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
@@ -53,18 +53,25 @@ pub enum RuntimeEvent {
 pub struct EngineController {
     commands: SyncSender<EngineCommand>,
     metrics: Arc<SharedMetrics>,
+    parameters: Arc<ParameterState>,
 }
 
 impl EngineController {
     pub fn new() -> Result<Self, AudioError> {
         let (commands, receiver) = mpsc::sync_channel(8);
         let metrics = Arc::new(SharedMetrics::default());
+        let parameters = Arc::new(ParameterState::default());
         let worker_metrics = Arc::clone(&metrics);
+        let worker_parameters = Arc::clone(&parameters);
         thread::Builder::new()
             .name("mam-audio-engine".to_owned())
-            .spawn(move || worker_loop(receiver, worker_metrics))
+            .spawn(move || worker_loop(receiver, worker_metrics, worker_parameters))
             .map_err(|error| AudioError::WorkerStart(error.to_string()))?;
-        Ok(Self { commands, metrics })
+        Ok(Self {
+            commands,
+            metrics,
+            parameters,
+        })
     }
 
     pub fn start(&self, request: StartRequest) -> Result<(), String> {
@@ -86,6 +93,17 @@ impl EngineController {
     pub fn status(&self) -> EngineStatus {
         self.metrics.snapshot()
     }
+
+    pub fn parameters(&self) -> crate::dsp::chain::DspParameters {
+        self.parameters.snapshot()
+    }
+
+    pub fn set_parameters(
+        &self,
+        parameters: crate::dsp::chain::DspParameters,
+    ) -> Result<(), String> {
+        self.parameters.update(parameters)
+    }
 }
 
 fn receive_response(response: Receiver<Result<(), String>>) -> Result<(), String> {
@@ -106,7 +124,11 @@ struct StartedStreams {
     estimated_latency_ms: f32,
 }
 
-fn worker_loop(commands: Receiver<EngineCommand>, metrics: Arc<SharedMetrics>) {
+fn worker_loop(
+    commands: Receiver<EngineCommand>,
+    metrics: Arc<SharedMetrics>,
+    parameters: Arc<ParameterState>,
+) {
     let mut streams: Option<StreamBundle> = None;
     let mut runtime_events: Option<Receiver<RuntimeEvent>> = None;
     let mut state = EngineState::Stopped;
@@ -140,7 +162,7 @@ fn worker_loop(commands: Receiver<EngineCommand>, metrics: Arc<SharedMetrics>) {
                 transition(&mut state, EngineState::Starting, &metrics);
                 metrics.reset_counters();
                 metrics.set_last_error(None);
-                match start_streams(&request, Arc::clone(&metrics)) {
+                match start_streams(&request, Arc::clone(&metrics), Arc::clone(&parameters)) {
                     Ok(started) => {
                         metrics.set_stream_details(started.format, started.estimated_latency_ms);
                         streams = Some(started.bundle);
@@ -183,6 +205,7 @@ fn transition(state: &mut EngineState, next: EngineState, metrics: &SharedMetric
 fn start_streams(
     request: &StartRequest,
     metrics: Arc<SharedMetrics>,
+    parameters: Arc<ParameterState>,
 ) -> Result<StartedStreams, AudioError> {
     let input_device = find_device(DeviceDirection::Input, &request.input_id)?;
     let output_device = find_device(DeviceDirection::Output, &request.output_id)?;
@@ -213,6 +236,7 @@ fn start_streams(
         &negotiated.output,
         consumer,
         metrics,
+        parameters,
         runtime_tx,
     )?;
 

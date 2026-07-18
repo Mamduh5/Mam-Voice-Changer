@@ -23,5 +23,5 @@ export const stoppedStatus: EngineStatus = {
   estimatedLatencyMs: 0,
   activeStreamFormat: null,
   lastRuntimeError: null,
-  message: 'Ready for clean passthrough',
+  message: 'Ready to start',
 };

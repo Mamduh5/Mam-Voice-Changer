@@ -464,7 +464,7 @@ fn remove_recovery_files(path: &Path) -> Result<(), PresetError> {
 mod tests {
     use std::{
         fs,
-        path::PathBuf,
+        path::{Path, PathBuf},
         sync::atomic::{AtomicU64, Ordering},
     };
 
@@ -484,10 +484,10 @@ mod tests {
         ))
     }
 
-    fn cleanup(path: &PathBuf) {
+    fn cleanup(path: &Path) {
         for suffix in ["", ".tmp", ".bak"] {
             let target = if suffix.is_empty() {
-                path.clone()
+                path.to_path_buf()
             } else {
                 path.with_file_name(format!(
                     "{}{suffix}",
@@ -511,8 +511,10 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_schema_invalid_parameters_and_unknown_fields() {
-        let mut document = PresetDocument::default();
-        document.schema_version = PRESET_SCHEMA_VERSION + 1;
+        let mut document = PresetDocument {
+            schema_version: PRESET_SCHEMA_VERSION + 1,
+            ..PresetDocument::default()
+        };
         assert!(validate_document(&document).is_err());
 
         document.schema_version = PRESET_SCHEMA_VERSION;

@@ -6,5 +6,6 @@ pub mod master_limiter;
 pub mod noise_gate;
 pub mod pitch;
 pub mod processor;
+mod signalsmith;
 pub mod smoothing;
 

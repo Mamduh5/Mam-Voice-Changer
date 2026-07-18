@@ -68,6 +68,16 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
         onChange={(pitchSemitones) => onChange({ pitchSemitones })}
       />
       <SliderControl
+        label="Formant"
+        value={parameters.formantShiftSemitones}
+        min={-6}
+        max={6}
+        step={0.5}
+        unit="st"
+        disabled={disabled}
+        onChange={(formantShiftSemitones) => onChange({ formantShiftSemitones })}
+      />
+      <SliderControl
         label="Dry / wet"
         value={parameters.dryWet}
         displayValue={parameters.dryWet * 100}

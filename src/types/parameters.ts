@@ -1,5 +1,6 @@
 export type AudioParameters = {
   pitchSemitones: number;
+  formantShiftSemitones: number;
   dryWet: number;
   gateEnabled: boolean;
   gateThresholdDb: number;
@@ -13,6 +14,7 @@ export type AudioParameters = {
 
 export const defaultAudioParameters: AudioParameters = {
   pitchSemitones: 0,
+  formantShiftSemitones: 0,
   dryWet: 0.35,
   gateEnabled: false,
   gateThresholdDb: -50,

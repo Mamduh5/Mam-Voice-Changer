@@ -4,6 +4,7 @@ use crate::dsp::chain::DspParameters;
 
 pub struct ParameterState {
     pitch_semitones: AtomicU32,
+    formant_shift_semitones: AtomicU32,
     dry_wet: AtomicU32,
     gate_enabled: AtomicBool,
     gate_threshold_db: AtomicU32,
@@ -20,6 +21,7 @@ impl Default for ParameterState {
         let parameters = DspParameters::default();
         Self {
             pitch_semitones: AtomicU32::new(parameters.pitch_semitones.to_bits()),
+            formant_shift_semitones: AtomicU32::new(parameters.formant_shift_semitones.to_bits()),
             dry_wet: AtomicU32::new(parameters.dry_wet.to_bits()),
             gate_enabled: AtomicBool::new(parameters.gate_enabled),
             gate_threshold_db: AtomicU32::new(parameters.gate_threshold_db.to_bits()),
@@ -38,6 +40,10 @@ impl ParameterState {
         let parameters = parameters.validate()?;
         self.pitch_semitones
             .store(parameters.pitch_semitones.to_bits(), Ordering::Release);
+        self.formant_shift_semitones.store(
+            parameters.formant_shift_semitones.to_bits(),
+            Ordering::Release,
+        );
         self.dry_wet
             .store(parameters.dry_wet.to_bits(), Ordering::Release);
         self.gate_enabled
@@ -60,6 +66,9 @@ impl ParameterState {
     pub fn snapshot(&self) -> DspParameters {
         DspParameters {
             pitch_semitones: f32::from_bits(self.pitch_semitones.load(Ordering::Acquire)),
+            formant_shift_semitones: f32::from_bits(
+                self.formant_shift_semitones.load(Ordering::Acquire),
+            ),
             dry_wet: f32::from_bits(self.dry_wet.load(Ordering::Acquire)),
             gate_enabled: self.gate_enabled.load(Ordering::Acquire),
             gate_threshold_db: f32::from_bits(self.gate_threshold_db.load(Ordering::Acquire)),
@@ -83,6 +92,7 @@ mod tests {
         let state = ParameterState::default();
         let parameters = DspParameters {
             pitch_semitones: 5.0,
+            formant_shift_semitones: -2.0,
             dry_wet: 0.75,
             gate_enabled: true,
             gate_threshold_db: -45.0,

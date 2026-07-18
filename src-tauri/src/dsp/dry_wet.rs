@@ -29,6 +29,11 @@ impl DryWetMixer {
         self.mix.set_target(mix);
     }
 
+    pub fn set_latency_frames(&mut self, latency_frames: usize) {
+        self.latency_frames = latency_frames;
+        self.delay.set_latency_frames(latency_frames);
+    }
+
     pub fn process(&mut self, dry: &[f32], wet: &mut [f32], delayed_dry: &mut [f32]) {
         self.delay.process(dry, delayed_dry);
         for ((dry_frame, wet_frame), delayed_frame) in dry
@@ -72,6 +77,10 @@ impl DelayLine {
     pub fn prepare(&mut self, channels: usize) {
         self.buffer = vec![0.0; self.latency_frames.max(1) * channels.max(1)];
         self.write_index = 0;
+    }
+
+    pub fn set_latency_frames(&mut self, latency_frames: usize) {
+        self.latency_frames = latency_frames;
     }
 
     pub fn process(&mut self, input: &[f32], output: &mut [f32]) {
@@ -122,3 +131,4 @@ mod tests {
         assert_eq!(output, vec![5.0, 10.0, 15.5, 21.0]);
     }
 }
+

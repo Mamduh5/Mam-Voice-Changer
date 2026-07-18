@@ -20,12 +20,15 @@ pub const MAX_INPUT_GAIN_DB: f32 = 24.0;
 pub const MAX_OUTPUT_GAIN_DB: f32 = 12.0;
 pub const MIN_PITCH_SEMITONES: f32 = -12.0;
 pub const MAX_PITCH_SEMITONES: f32 = 12.0;
+pub const MIN_FORMANT_SHIFT_SEMITONES: f32 = -6.0;
+pub const MAX_FORMANT_SHIFT_SEMITONES: f32 = 6.0;
 const TRANSITION_RAMP_MS: f32 = 10.0;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DspParameters {
     pub pitch_semitones: f32,
+    pub formant_shift_semitones: f32,
     pub dry_wet: f32,
     pub gate_enabled: bool,
     pub gate_threshold_db: f32,
@@ -41,6 +44,7 @@ impl Default for DspParameters {
     fn default() -> Self {
         Self {
             pitch_semitones: 0.0,
+            formant_shift_semitones: 0.0,
             dry_wet: 0.35,
             gate_enabled: false,
             gate_threshold_db: DEFAULT_GATE_THRESHOLD_DB,
@@ -61,6 +65,13 @@ impl DspParameters {
             self.pitch_semitones,
             MIN_PITCH_SEMITONES,
             MAX_PITCH_SEMITONES,
+            "semitones",
+        )?;
+        validate_range(
+            "Formant shift",
+            self.formant_shift_semitones,
+            MIN_FORMANT_SHIFT_SEMITONES,
+            MAX_FORMANT_SHIFT_SEMITONES,
             "semitones",
         )?;
         validate_range("Dry/wet", self.dry_wet, 0.0, 1.0, "")?;
@@ -163,6 +174,8 @@ impl DspChain {
         self.noise_gate
             .set_threshold_db(parameters.gate_threshold_db);
         self.pitch.set_pitch_semitones(parameters.pitch_semitones);
+        self.pitch
+            .set_formant_shift_semitones(parameters.formant_shift_semitones);
         self.dry_wet.set_mix(parameters.dry_wet);
         self.bypass_mix
             .set_target(if parameters.bypass { 1.0 } else { 0.0 });
@@ -188,6 +201,9 @@ impl AudioProcessor for DspChain {
         self.noise_gate
             .prepare(sample_rate, self.channels, block_size);
         self.pitch.prepare(sample_rate, self.channels, block_size);
+        let pitch_latency_frames = self.pitch.latency_frames();
+        self.dry_wet.set_latency_frames(pitch_latency_frames);
+        self.bypass_delay.set_latency_frames(pitch_latency_frames);
         self.dry_wet.prepare(sample_rate, self.channels);
         self.bypass_delay.prepare(self.channels);
         self.bypass_mix.prepare(sample_rate, TRANSITION_RAMP_MS);

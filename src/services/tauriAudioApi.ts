@@ -33,8 +33,7 @@ export const tauriAudioApi = {
     invokeDesktop<PresetCatalog>('save_preset', { name, parameters }),
   renamePreset: (id: string, name: string) =>
     invokeDesktop<PresetCatalog>('rename_preset', { id, name }),
-  duplicatePreset: (id: string) =>
-    invokeDesktop<PresetCatalog>('duplicate_preset', { id }),
+  duplicatePreset: (id: string) => invokeDesktop<PresetCatalog>('duplicate_preset', { id }),
   deletePreset: (id: string) => invokeDesktop<PresetCatalog>('delete_preset', { id }),
   applyPreset: (id: string) => invokeDesktop<PresetCatalog>('apply_preset', { id }),
   resetPreset: () => invokeDesktop<PresetCatalog>('reset_preset'),

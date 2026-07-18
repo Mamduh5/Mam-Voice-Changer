@@ -78,8 +78,7 @@ export function usePresets(
   );
 
   const rename = useCallback(
-    (id: string, name: string) =>
-      execute(() => tauriAudioApi.renamePreset(id, name), false),
+    (id: string, name: string) => execute(() => tauriAudioApi.renamePreset(id, name), false),
     [execute],
   );
 

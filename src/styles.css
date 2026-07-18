@@ -256,6 +256,15 @@ select {
   background: #3b1424;
 }
 
+.runtime-notice {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid #403052;
+  border-radius: 10px;
+  color: #d8c5f4;
+  background: #21182c;
+}
+
 footer {
   padding: 24px;
   color: #756b84;
@@ -281,3 +290,4 @@ footer {
     display: none;
   }
 }
+

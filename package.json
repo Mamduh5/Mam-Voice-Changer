@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tauri dev",
+    "dev:web": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
     "lint": "eslint .",
@@ -34,3 +35,4 @@
     "vitest": "^3.0.0"
   }
 }
+

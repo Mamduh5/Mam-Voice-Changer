@@ -4,26 +4,36 @@ import { EngineControls } from './components/EngineControls';
 import { LevelMeter } from './components/LevelMeter';
 import { useAudioDevices } from './hooks/useAudioDevices';
 import { useEngineState } from './hooks/useEngineState';
+import { DESKTOP_RUNTIME_UNAVAILABLE, tauriAudioApi } from './services/tauriAudioApi';
 
 export default function App() {
-  const devices = useAudioDevices();
-  const engine = useEngineState();
+  const desktopRuntimeAvailable = tauriAudioApi.isDesktopRuntimeAvailable();
+  const devices = useAudioDevices(desktopRuntimeAvailable);
+  const engine = useEngineState(desktopRuntimeAvailable);
   const running = engine.status.state === 'running';
   const busy = engine.status.state === 'starting' || engine.status.state === 'stopping';
-  const error = engine.commandError ?? engine.status.lastRuntimeError ?? devices.error;
+  const error = desktopRuntimeAvailable
+    ? (engine.commandError ?? engine.status.lastRuntimeError ?? devices.error)
+    : null;
 
   return (
     <main>
+      {!desktopRuntimeAvailable && (
+        <div className="runtime-notice" role="status">
+          {DESKTOP_RUNTIME_UNAVAILABLE}
+        </div>
+      )}
+
       <header>
         <div className="brand">
           <span className="logo">M</span>
           <div>
             <h1>Mam Voice Changer</h1>
-            <p>Local Windows audio routing · no recording or cloud processing</p>
+            <p>Local Windows audio routing Â· no recording or cloud processing</p>
           </div>
         </div>
         <span className={running ? 'live' : 'idle'}>
-          {running ? '● LIVE' : `○ ${engine.status.state.toUpperCase()}`}
+          {running ? 'â— LIVE' : `â—‹ ${engine.status.state.toUpperCase()}`}
         </span>
       </header>
 
@@ -33,9 +43,9 @@ export default function App() {
           <button
             className="refresh"
             onClick={() => void devices.refresh()}
-            disabled={running || busy || devices.loading}
+            disabled={!desktopRuntimeAvailable || running || busy || devices.loading}
           >
-            {devices.loading ? 'Refreshing…' : 'Refresh devices'}
+            {devices.loading ? 'Refreshingâ€¦' : 'Refresh devices'}
           </button>
         </div>
         <div className="route">
@@ -43,15 +53,15 @@ export default function App() {
             label="Physical microphone"
             value={devices.inputId}
             devices={devices.inputs}
-            disabled={running || busy}
+            disabled={!desktopRuntimeAvailable || running || busy}
             onChange={devices.setInputId}
           />
-          <span>→</span>
+          <span>â†’</span>
           <DeviceSelector
             label="Windows output (normally CABLE Input)"
             value={devices.outputId}
             devices={devices.outputs}
-            disabled={running || busy}
+            disabled={!desktopRuntimeAvailable || running || busy}
             onChange={devices.setOutputId}
           />
         </div>
@@ -81,7 +91,7 @@ export default function App() {
       <DiagnosticsPanel status={engine.status} />
       <EngineControls
         status={engine.status}
-        canStart={Boolean(devices.inputId && devices.outputId)}
+        canStart={Boolean(desktopRuntimeAvailable && devices.inputId && devices.outputId)}
         onStart={() => void engine.start(devices.inputId, devices.outputId)}
         onStop={() => void engine.stop()}
       />
@@ -98,3 +108,4 @@ export default function App() {
     </main>
   );
 }
+

@@ -1,17 +1,96 @@
-import { useEffect,useState } from 'react';
-import {api,defaults,Device,Parameters,Status} from './api';
-const presets:Record<string,Parameters>={Natural:defaults,Deep:{...defaults,pitch_semitones:-4},Bright:{...defaults,pitch_semitones:3},Robot:{...defaults,pitch_semitones:-2,mix:.75,gate_threshold_db:-38}};
-function Slider({label,value,min,max,step,onChange,suffix=''}:{label:string;value:number;min:number;max:number;step:number;onChange:(n:number)=>void;suffix?:string}){return <label className="slider"><span>{label}<b>{value}{suffix}</b></span><input type="range" value={value} min={min} max={max} step={step} onChange={e=>onChange(+e.target.value)}/></label>}
-export default function App(){
- const [inputs,setInputs]=useState<Device[]>([]),[outputs,setOutputs]=useState<Device[]>([]); const [input,setInput]=useState(''),[output,setOutput]=useState('');
- const [p,setP]=useState(defaults),[status,setStatus]=useState<Status>({running:false,input_level:0,output_level:0,underruns:0,message:'Ready'}),[error,setError]=useState('');
- const load=async()=>{try{const d=await api.devices();setInputs(d.inputs);setOutputs(d.outputs);setInput(x=>x||d.inputs.find(v=>v.is_default)?.id||d.inputs[0]?.id||'');setOutput(x=>x||d.outputs.find(v=>v.name.toLowerCase().includes('cable input'))?.id||d.outputs.find(v=>v.is_default)?.id||d.outputs[0]?.id||'');setError('')}catch(e){setError(String(e))}};
- useEffect(()=>{load()},[]); useEffect(()=>{if(!status.running)return;const id=setInterval(()=>api.status().then(setStatus).catch(e=>setError(String(e))),250);return()=>clearInterval(id)},[status.running]);
- const patch=(v:Partial<Parameters>)=>{const next={...p,...v};setP(next);if(status.running)api.parameters(next).catch(e=>setError(String(e)))};
- const toggle=async()=>{try{status.running?await api.stop():await api.start(input,output,p);setStatus(await api.status());setError('')}catch(e){setError(String(e))}};
- return <main><header><div className="brand"><span className="logo">M</span><div><h1>Mam Voice Changer</h1><p>Live voice studio • audio stays on this PC</p></div></div><span className={status.running?'live':'idle'}>{status.running?'● LIVE':'○ READY'}</span></header>
- <section className="routing card"><h2>Audio routing</h2><div className="route"><label>Microphone<select value={input} disabled={status.running} onChange={e=>setInput(e.target.value)}>{inputs.map(d=><option key={d.id} value={d.id}>{d.name}{d.is_default?' (Default)':''}</option>)}</select></label><span>→</span><label>Virtual output<select value={output} disabled={status.running} onChange={e=>setOutput(e.target.value)}>{outputs.map(d=><option key={d.id} value={d.id}>{d.name}{d.is_default?' (Default)':''}</option>)}</select></label><button className="refresh" onClick={load} disabled={status.running}>↻</button></div></section>
- <div className="grid"><section className="card"><h2>Voice</h2><div className="presets">{Object.entries(presets).map(([name,v])=><button key={name} onClick={()=>{setP(v);if(status.running)api.parameters(v)}}>{name}</button>)}</div><Slider label="Pitch" value={p.pitch_semitones} min={-8} max={8} step={1} suffix=" st" onChange={n=>patch({pitch_semitones:n})}/><Slider label="Effect mix" value={Math.round(p.mix*100)} min={0} max={100} step={1} suffix="%" onChange={n=>patch({mix:n/100})}/><Slider label="Noise gate" value={p.gate_threshold_db} min={-70} max={-20} step={1} suffix=" dB" onChange={n=>patch({gate_threshold_db:n})}/></section>
- <section className="card"><h2>Levels</h2><Meter label="Input" value={status.input_level}/><Meter label="Output" value={status.output_level}/><Slider label="Input gain" value={Math.round(p.input_gain*100)} min={0} max={200} step={1} suffix="%" onChange={n=>patch({input_gain:n/100})}/><Slider label="Output gain" value={Math.round(p.output_gain*100)} min={0} max={200} step={1} suffix="%" onChange={n=>patch({output_gain:n/100})}/></section></div>
- <section className="transport card"><div><strong>{status.message}</strong><small>Buffer underruns: {status.underruns}</small></div><button className={status.running?'stop':'start'} disabled={!input||!output} onClick={toggle}>{status.running?'Stop engine':'Start voice changer'}</button></section>{error&&<div className="error">{error}</div>}<footer>Tip: choose CABLE Output as the microphone in Discord, OBS, or your browser.</footer></main>}
-function Meter({label,value}:{label:string;value:number}){return <div className="meter"><span>{label}</span><div><i style={{width:`${Math.min(100,value*100)}%`}}/></div><b>{Math.round(value*100)}%</b></div>}
+import { DeviceSelector } from './components/DeviceSelector';
+import { DiagnosticsPanel } from './components/DiagnosticsPanel';
+import { EngineControls } from './components/EngineControls';
+import { LevelMeter } from './components/LevelMeter';
+import { useAudioDevices } from './hooks/useAudioDevices';
+import { useEngineState } from './hooks/useEngineState';
+
+export default function App() {
+  const devices = useAudioDevices();
+  const engine = useEngineState();
+  const running = engine.status.state === 'running';
+  const busy = engine.status.state === 'starting' || engine.status.state === 'stopping';
+  const error = engine.commandError ?? engine.status.lastRuntimeError ?? devices.error;
+
+  return (
+    <main>
+      <header>
+        <div className="brand">
+          <span className="logo">M</span>
+          <div>
+            <h1>Mam Voice Changer</h1>
+            <p>Local Windows audio routing · no recording or cloud processing</p>
+          </div>
+        </div>
+        <span className={running ? 'live' : 'idle'}>
+          {running ? '● LIVE' : `○ ${engine.status.state.toUpperCase()}`}
+        </span>
+      </header>
+
+      <section className="routing card">
+        <div className="section-heading">
+          <h2>Audio routing</h2>
+          <button
+            className="refresh"
+            onClick={() => void devices.refresh()}
+            disabled={running || busy || devices.loading}
+          >
+            {devices.loading ? 'Refreshing…' : 'Refresh devices'}
+          </button>
+        </div>
+        <div className="route">
+          <DeviceSelector
+            label="Physical microphone"
+            value={devices.inputId}
+            devices={devices.inputs}
+            disabled={running || busy}
+            onChange={devices.setInputId}
+          />
+          <span>→</span>
+          <DeviceSelector
+            label="Windows output (normally CABLE Input)"
+            value={devices.outputId}
+            devices={devices.outputs}
+            disabled={running || busy}
+            onChange={devices.setOutputId}
+          />
+        </div>
+      </section>
+
+      <div className="grid">
+        <section className="card">
+          <h2>Levels</h2>
+          <LevelMeter label="Input" value={engine.status.inputLevel} />
+          <LevelMeter label="Output" value={engine.status.outputLevel} />
+          <p className="hint">
+            Output is intentionally unmodified in Milestone 1 so the live routing path can be
+            validated before effects are enabled.
+          </p>
+        </section>
+        <section className="card deferred">
+          <h2>Voice effects</h2>
+          <strong>Pitch and presets are not enabled yet</strong>
+          <p>
+            The previous pitch control changed amplitude instead of pitch and has been removed.
+            Genuine pitch processing will follow clean passthrough validation.
+          </p>
+          <button disabled>Effects unavailable in Milestone 1</button>
+        </section>
+      </div>
+
+      <DiagnosticsPanel status={engine.status} />
+      <EngineControls
+        status={engine.status}
+        canStart={Boolean(devices.inputId && devices.outputId)}
+        onStart={() => void engine.start(devices.inputId, devices.outputId)}
+        onStop={() => void engine.stop()}
+      />
+
+      {error && <div className="error" role="alert">{error}</div>}
+      <footer>
+        For VB-CABLE, choose CABLE Input above and CABLE Output as the microphone in the target
+        application.
+      </footer>
+    </main>
+  );
+}

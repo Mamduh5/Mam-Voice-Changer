@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mam Voice Changer">
+  <defs>
+    <linearGradient id="background" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b36aff"/>
+      <stop offset="1" stop-color="#5d2ad5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0b0811"/>
+  <rect x="28" y="28" width="456" height="456" rx="92" fill="url(#background)"/>
+  <path d="M126 350V162h56l74 112 74-112h56v188h-58v-96l-72 104-72-104v96z" fill="#fff"/>
+  <path d="M86 256h32m276 0h32M102 210v92m308-92v92" stroke="#fff" stroke-width="18" stroke-linecap="round" opacity=".72"/>
+</svg>

@@ -136,6 +136,7 @@ fn worker_loop(commands: Receiver<EngineCommand>, metrics: Arc<SharedMetrics>) {
                     transition(&mut state, EngineState::Stopping, &metrics);
                     transition(&mut state, EngineState::Stopped, &metrics);
                 }
+                runtime_events = None;
                 transition(&mut state, EngineState::Starting, &metrics);
                 metrics.reset_counters();
                 metrics.set_last_error(None);

@@ -131,7 +131,10 @@ impl PresetStore {
         let name = validate_name(&name)?;
         let parameters = parameters.validate().map_err(PresetError::Validation)?;
         let timestamp = unix_timestamp_millis()?;
-        let id = new_user_preset_id(&timestamp);
+        let mut id = new_user_preset_id(&timestamp);
+        while self.document.presets.iter().any(|preset| preset.id == id) {
+            id = new_user_preset_id(&timestamp);
+        }
 
         let mut next = self.document.clone();
         next.presets.push(UserPreset {

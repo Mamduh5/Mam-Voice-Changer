@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { tauriAudioApi } from '../services/tauriAudioApi';
 import type { AudioParameters } from '../types/parameters';
 import type { PresetCatalog } from '../types/presets';
@@ -15,6 +15,7 @@ export function usePresets(
   const [catalog, setCatalog] = useState<PresetCatalog | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const busyRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) {
@@ -44,10 +45,11 @@ export function usePresets(
 
   const execute = useCallback(
     async (operation: () => Promise<PresetCatalog>, appliesParameters: boolean) => {
-      if (!enabled || busy) {
+      if (!enabled || busyRef.current) {
         return false;
       }
 
+      busyRef.current = true;
       setBusy(true);
       try {
         await beforeMutation();
@@ -62,10 +64,11 @@ export function usePresets(
         setError(errorMessage(cause));
         return false;
       } finally {
+        busyRef.current = false;
         setBusy(false);
       }
     },
-    [beforeMutation, busy, enabled, onParametersApplied],
+    [beforeMutation, enabled, onParametersApplied],
   );
 
   const save = useCallback(

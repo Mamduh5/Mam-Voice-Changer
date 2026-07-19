@@ -17,18 +17,36 @@ export default function App() {
   const audioParameters = useAudioParameters(desktopRuntimeAvailable);
   const presets = usePresets(
     desktopRuntimeAvailable,
-    audioParameters.settle,
-    audioParameters.replace,
+    audioParameters.beginPresetOperation,
+    audioParameters.finishPresetOperation,
   );
   const running = engine.status.state === 'running';
   const busy = engine.status.state === 'starting' || engine.status.state === 'stopping';
-  const error = desktopRuntimeAvailable
-    ? (engine.commandError ??
-      engine.status.lastRuntimeError ??
-      devices.error ??
-      audioParameters.error ??
-      presets.error)
-    : null;
+  const errors: Array<{ id: string; label: string; message: string }> = [];
+  if (desktopRuntimeAvailable) {
+    if (engine.commandError) {
+      errors.push({ id: 'engine-command', label: 'Engine command', message: engine.commandError });
+    }
+    if (engine.status.lastRuntimeError) {
+      errors.push({
+        id: 'engine-runtime',
+        label: 'Audio runtime',
+        message: engine.status.lastRuntimeError,
+      });
+    }
+    if (engine.pollError) {
+      errors.push({ id: 'engine-status', label: 'Engine status', message: engine.pollError });
+    }
+    if (devices.error) {
+      errors.push({ id: 'devices', label: 'Audio devices', message: devices.error });
+    }
+    if (audioParameters.error) {
+      errors.push({ id: 'parameters', label: 'Audio settings', message: audioParameters.error });
+    }
+    if (presets.error) {
+      errors.push({ id: 'presets', label: 'Presets', message: presets.error });
+    }
+  }
 
   return (
     <main>
@@ -102,7 +120,7 @@ export default function App() {
         </section>
         <DspControls
           parameters={audioParameters.parameters}
-          disabled={!desktopRuntimeAvailable}
+          disabled={!desktopRuntimeAvailable || presets.busy}
           onChange={audioParameters.update}
         />
       </div>
@@ -115,11 +133,11 @@ export default function App() {
         onStop={() => void engine.stop()}
       />
 
-      {error && (
-        <div className="error" role="alert">
-          {error}
+      {errors.map((error) => (
+        <div className="error" role="alert" key={error.id}>
+          <strong>{error.label}:</strong> {error.message}
         </div>
-      )}
+      ))}
       <footer>
         For VB-CABLE, choose CABLE Input above and CABLE Output as the microphone in the target
         application.

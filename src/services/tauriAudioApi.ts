@@ -22,6 +22,8 @@ function invokeDesktop<T>(command: string, args?: Record<string, unknown>): Prom
 export const tauriAudioApi = {
   isDesktopRuntimeAvailable: isTauri,
   listAudioDevices: () => invokeDesktop<AudioDeviceList>('list_audio_devices'),
+  saveAudioDeviceSelection: (inputId: string, outputId: string) =>
+    invokeDesktop<void>('save_audio_device_selection', { inputId, outputId }),
   startEngine: (request: StartEngineRequest) => invokeDesktop<void>('start_engine', { request }),
   stopEngine: () => invokeDesktop<void>('stop_engine'),
   getEngineStatus: () => invokeDesktop<EngineStatus>('get_engine_status'),

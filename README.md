@@ -20,11 +20,46 @@ as VB-CABLE's **CABLE Input**.
 - Linked 5 ms lookahead master limiter with a configurable digital ceiling
 - Final smoothed mute stage
 - Atomic live parameter snapshots, meters, counters, and latency estimates
-- Versioned built-in and user presets stored in the Tauri application-data directory
+- Versioned preset persistence in Tauri's application-data directory
+- Three read-only built-in presets (`Natural`, `Warm tone`, and `Bright tone`) plus
+  user presets created from the complete live DSP parameter snapshot
+- Preset apply, save, rename, duplicate, delete, and reset workflows; the selected
+  preset is restored at startup, and reset selects `Natural`
 - Browser-safe frontend boundary when Vite is opened outside Tauri
 
-Not implemented: recording, incompatible-rate resampling, AI voice conversion,
-custom virtual drivers, or verified Discord/OBS/TikTok compatibility.
+Built-in presets may be applied or duplicated, but they cannot be renamed or
+deleted. Saving always creates and selects a user preset. Deleting the selected
+user preset falls back to `Natural`.
+
+## Validation status
+
+### Automated coverage present
+
+Device-independent Rust tests cover preset schema validation, persistence and
+restored selection, duplicate/delete/reset behavior, and corrupt-file handling.
+Frontend tests cover device-selection fallback. These are descriptions of test
+coverage, not a claim that the commands below passed in the current checkout.
+
+### Manual validation completed
+
+On 2026-07-18, the Tauri debug executable launched, the React interface rendered,
+and the available Realtek input/output endpoints were enumerated. The exact scope
+and limitations of that session are recorded in the
+[manual test plan](docs/manual-test-plan.md).
+
+### Manual validation still required
+
+Preset workflows across a real application restart, continuous monitored audio,
+VB-CABLE routing, repeated start/stop and disconnection recovery, long-duration
+stability, and Discord/OBS/TikTok Live Studio compatibility remain pending. A
+planned compatibility milestone is manual validation work, not evidence that the
+corresponding application features are absent.
+
+### Deferred functionality
+
+Recording, resampling devices without a common rate, AI/neural voice conversion,
+voice cloning, custom virtual audio drivers, cloud processing, accounts,
+telemetry, and non-Windows platforms are not part of the current prototype.
 
 ## Conservative defaults
 
@@ -63,16 +98,26 @@ launches only Vite; native audio controls remain disabled there.
 Choose a physical microphone as input and **CABLE Input** as output. In the
 receiving application, choose **CABLE Output** as its microphone.
 
-## Compile-time checks
+## Validation commands
 
 ```powershell
+npm ci
+npx tsc --noEmit
+npm test
+npm run lint
+npm run format:check
 npm run build
-cargo fmt --manifest-path src-tauri/Cargo.toml
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 cargo check --manifest-path src-tauri/Cargo.toml
+npm run tauri -- build --debug --no-bundle --ci
 ```
 
+Command presence does not imply a pass; report actual results from the checkout
+being validated.
 Runtime and audible behavior require separate manual validation with conservative
-monitoring levels. See the [manual test plan](docs/manual-test-plan.md).
+monitoring levels.
 
 ## Documentation
 
@@ -82,7 +127,7 @@ monitoring levels. See the [manual test plan](docs/manual-test-plan.md).
 - [Prototype scope](docs/prototype-scope.md)
 - [Manual test plan](docs/manual-test-plan.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Authoritative technical specification](docs/Mam-Voice-Changer-Tech-Stack-and-Structure.md)
+- [Technical stack, current structure, and roadmap](docs/Mam-Voice-Changer-Tech-Stack-and-Structure.md)
 
 ## Known limitations
 

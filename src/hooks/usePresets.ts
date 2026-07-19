@@ -9,17 +9,21 @@ function errorMessage(cause: unknown) {
 
 export function usePresets(
   enabled: boolean,
-  beforeMutation: () => Promise<void>,
-  onParametersApplied: (parameters: AudioParameters) => void,
+  beginMutation: () => Promise<AudioParameters>,
+  finishMutation: (parameters?: AudioParameters) => void,
 ) {
   const [catalog, setCatalog] = useState<PresetCatalog | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busyRef = useRef(false);
+  const mountedRef = useRef(false);
 
   useEffect(() => {
+    mountedRef.current = true;
     if (!enabled) {
-      return undefined;
+      return () => {
+        mountedRef.current = false;
+      };
     }
 
     let active = true;
@@ -32,7 +36,7 @@ export function usePresets(
         }
       } catch (cause) {
         if (active) {
-          setError(errorMessage(cause));
+          setError(`Unable to load presets: ${errorMessage(cause)}`);
         }
       }
     };
@@ -40,64 +44,95 @@ export function usePresets(
 
     return () => {
       active = false;
+      mountedRef.current = false;
     };
   }, [enabled]);
 
   const execute = useCallback(
-    async (operation: () => Promise<PresetCatalog>, appliesParameters: boolean) => {
+    async (
+      label: string,
+      operation: (parameters: AudioParameters) => Promise<PresetCatalog>,
+      appliesParameters: boolean,
+    ) => {
       if (!enabled || busyRef.current) {
         return false;
       }
 
       busyRef.current = true;
       setBusy(true);
+      let mutationActive = false;
       try {
-        await beforeMutation();
-        const next = await operation();
-        setCatalog(next);
-        if (appliesParameters) {
-          onParametersApplied(next.activeParameters);
+        const synchronizedParameters = await beginMutation();
+        mutationActive = true;
+        if (!mountedRef.current) {
+          return false;
         }
+
+        const next = await operation(synchronizedParameters);
+        finishMutation(appliesParameters ? next.activeParameters : undefined);
+        mutationActive = false;
+        if (!mountedRef.current) {
+          return false;
+        }
+
+        setCatalog(next);
         setError(null);
         return true;
       } catch (cause) {
-        setError(errorMessage(cause));
+        if (mountedRef.current) {
+          setError(`${label} failed: ${errorMessage(cause)}`);
+        }
         return false;
       } finally {
+        if (mutationActive) {
+          finishMutation();
+        }
         busyRef.current = false;
-        setBusy(false);
+        if (mountedRef.current) {
+          setBusy(false);
+        }
       }
     },
-    [beforeMutation, enabled, onParametersApplied],
+    [beginMutation, enabled, finishMutation],
   );
 
   const save = useCallback(
-    (name: string, parameters: AudioParameters) =>
-      execute(() => tauriAudioApi.savePreset(name, parameters), true),
+    (name: string, parameters: AudioParameters) => {
+      void parameters;
+      return execute(
+        'Save preset',
+        (synchronizedParameters) => tauriAudioApi.savePreset(name, synchronizedParameters),
+        true,
+      );
+    },
     [execute],
   );
 
   const rename = useCallback(
-    (id: string, name: string) => execute(() => tauriAudioApi.renamePreset(id, name), false),
+    (id: string, name: string) =>
+      execute('Rename preset', () => tauriAudioApi.renamePreset(id, name), false),
     [execute],
   );
 
   const duplicate = useCallback(
-    (id: string) => execute(() => tauriAudioApi.duplicatePreset(id), true),
+    (id: string) => execute('Duplicate preset', () => tauriAudioApi.duplicatePreset(id), true),
     [execute],
   );
 
   const remove = useCallback(
-    (id: string) => execute(() => tauriAudioApi.deletePreset(id), true),
+    (id: string) => execute('Delete preset', () => tauriAudioApi.deletePreset(id), true),
     [execute],
   );
 
   const apply = useCallback(
-    (id: string) => execute(() => tauriAudioApi.applyPreset(id), true),
+    (id: string) => execute('Apply preset', () => tauriAudioApi.applyPreset(id), true),
     [execute],
   );
 
-  const reset = useCallback(() => execute(() => tauriAudioApi.resetPreset(), true), [execute]);
+  const reset = useCallback(
+    () => execute('Reset preset', () => tauriAudioApi.resetPreset(), true),
+    [execute],
+  );
 
   return { catalog, busy, error, save, rename, duplicate, remove, apply, reset };
 }

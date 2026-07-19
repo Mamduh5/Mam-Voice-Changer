@@ -14,15 +14,20 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     tauri::Builder::default()
         .setup(move |app| {
-            let preset_path = app
-                .path()
-                .app_data_dir()?
-                .join(config::presets::PRESET_FILE_NAME);
-            app.manage(state::app_state::AppState::new(controller, preset_path)?);
+            let app_data_dir = app.path().app_data_dir()?;
+            let preset_path = app_data_dir.join(config::presets::PRESET_FILE_NAME);
+            let application_settings_path =
+                app_data_dir.join(config::application_settings::APPLICATION_SETTINGS_FILE_NAME);
+            app.manage(state::app_state::AppState::new(
+                controller,
+                preset_path,
+                application_settings_path,
+            )?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::devices::list_audio_devices,
+            commands::devices::save_audio_device_selection,
             commands::engine::start_engine,
             commands::engine::stop_engine,
             commands::engine::get_engine_status,

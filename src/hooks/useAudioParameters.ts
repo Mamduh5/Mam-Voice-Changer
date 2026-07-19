@@ -1,95 +1,60 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { tauriAudioApi } from '../services/tauriAudioApi';
 import { defaultAudioParameters, type AudioParameters } from '../types/parameters';
+import { ParameterSynchronizer } from './parameterSynchronizer';
 
 export function useAudioParameters(enabled = true) {
   const [parameters, setParameters] = useState(defaultAudioParameters);
   const [error, setError] = useState<string | null>(null);
-  const currentRef = useRef(defaultAudioParameters);
-  const pendingRef = useRef<AudioParameters | null>(null);
-  const sendingRef = useRef(false);
-  const waitersRef = useRef<Array<() => void>>([]);
+  const [synchronizer] = useState(
+    () =>
+      new ParameterSynchronizer(defaultAudioParameters, {
+        getParameters: tauriAudioApi.getParameters,
+        setParameters: tauriAudioApi.setParameters,
+        onStateChange: (state) => {
+          setParameters(state.parameters);
+          setError(state.error);
+        },
+      }),
+  );
 
   useEffect(() => {
     if (!enabled) {
+      synchronizer.disconnect();
       return undefined;
     }
 
-    let active = true;
-    const load = async () => {
-      try {
-        const current = await tauriAudioApi.getParameters();
-        if (active) {
-          currentRef.current = current;
-          setParameters(current);
-          setError(null);
-        }
-      } catch (cause) {
-        if (active) {
-          setError(String(cause));
-        }
-      }
-    };
-    void load();
+    synchronizer.connect();
     return () => {
-      active = false;
+      synchronizer.disconnect();
     };
-  }, [enabled]);
-
-  const flush = useCallback(async () => {
-    if (sendingRef.current) {
-      await new Promise<void>((resolve) => {
-        waitersRef.current.push(resolve);
-      });
-      return;
-    }
-
-    sendingRef.current = true;
-    try {
-      while (pendingRef.current) {
-        const next = pendingRef.current;
-        pendingRef.current = null;
-        try {
-          await tauriAudioApi.setParameters(next);
-          setError(null);
-        } catch (cause) {
-          setError(String(cause));
-        }
-      }
-    } finally {
-      sendingRef.current = false;
-      const waiters = waitersRef.current.splice(0);
-      waiters.forEach((resolve) => resolve());
-    }
-  }, []);
-
-  const settle = useCallback(async () => {
-    while (pendingRef.current || sendingRef.current) {
-      await flush();
-    }
-  }, [flush]);
+  }, [enabled, synchronizer]);
 
   const update = useCallback(
     (changes: Partial<AudioParameters>) => {
-      if (!enabled) {
-        return;
+      if (enabled) {
+        synchronizer.update(changes);
       }
-
-      const next = { ...currentRef.current, ...changes };
-      currentRef.current = next;
-      pendingRef.current = next;
-      setParameters(next);
-      void flush();
     },
-    [enabled, flush],
+    [enabled, synchronizer],
   );
 
-  const replace = useCallback((next: AudioParameters) => {
-    pendingRef.current = null;
-    currentRef.current = next;
-    setParameters(next);
-    setError(null);
-  }, []);
+  const settle = useCallback(() => synchronizer.settle(), [synchronizer]);
+  const beginPresetOperation = useCallback(
+    () => synchronizer.beginPresetOperation(),
+    [synchronizer],
+  );
+  const finishPresetOperation = useCallback(
+    (next?: AudioParameters) => synchronizer.finishPresetOperation(next),
+    [synchronizer],
+  );
 
-  return { parameters, update, replace, settle, error };
+  return {
+    parameters,
+    update,
+    settle,
+    beginPresetOperation,
+    finishPresetOperation,
+    error,
+  };
 }

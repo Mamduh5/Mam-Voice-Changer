@@ -7,6 +7,9 @@ export type AudioDevice = {
 export type AudioDeviceList = {
   inputs: AudioDevice[];
   outputs: AudioDevice[];
+  selectedInputId: string | null;
+  selectedOutputId: string | null;
+  restorationWarning: string | null;
 };
 
 export type ActiveStreamFormat = {

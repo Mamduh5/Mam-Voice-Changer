@@ -8,7 +8,8 @@ use super::{
         MasterLimiter, DEFAULT_MASTER_CEILING_DB, MAX_MASTER_CEILING_DB, MIN_MASTER_CEILING_DB,
     },
     noise_gate::{
-        NoiseGate, DEFAULT_GATE_THRESHOLD_DB, MAX_GATE_THRESHOLD_DB, MIN_GATE_THRESHOLD_DB,
+        NoiseGate, DEFAULT_GATE_THRESHOLD_DB, DEFAULT_MINIMUM_GAIN_DB, MAX_GATE_THRESHOLD_DB,
+        MIN_GATE_THRESHOLD_DB,
     },
     pitch::PitchShifter,
     processor::AudioProcessor,
@@ -214,6 +215,7 @@ impl DspChain {
         self.noise_gate.set_enabled(parameters.gate_enabled);
         self.noise_gate
             .set_threshold_db(parameters.gate_threshold_db);
+        self.noise_gate.set_minimum_gain_db(DEFAULT_MINIMUM_GAIN_DB);
         self.pitch.set_pitch_semitones(parameters.pitch_semitones);
         self.pitch
             .set_formant_shift_semitones(parameters.formant_shift_semitones);
@@ -238,6 +240,10 @@ impl DspChain {
         self.dry_wet.latency_frames()
             + self.vocal_aging.latency_frames()
             + self.limiter.latency_frames()
+    }
+
+    pub fn take_expander_attenuated_frames(&mut self) -> usize {
+        self.noise_gate.take_attenuated_frames()
     }
 }
 

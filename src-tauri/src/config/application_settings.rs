@@ -7,21 +7,35 @@ use std::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::audio::device::DeviceInfo;
+use crate::audio::{device::DeviceInfo, reliability::ReliabilityProfile};
 
-pub const APPLICATION_SETTINGS_SCHEMA_VERSION: u32 = 1;
+pub const APPLICATION_SETTINGS_SCHEMA_VERSION: u32 = 2;
 pub const APPLICATION_SETTINGS_FILE_NAME: &str = "application-settings.json";
 const MAX_DEVICE_ID_CHARS: usize = 512;
 const MAX_FRIENDLY_NAME_CHARS: usize = 512;
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ApplicationPage {
+    #[default]
+    Use,
+    Test,
+    Diagnostics,
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplicationSettingsDocument {
     pub schema_version: u32,
     pub selected_input_device_id: Option<String>,
-    pub selected_output_device_id: Option<String>,
     pub last_known_input_friendly_name: Option<String>,
-    pub last_known_output_friendly_name: Option<String>,
+    pub processed_destination_device_id: Option<String>,
+    pub last_known_processed_destination_friendly_name: Option<String>,
+    pub local_monitor_device_id: Option<String>,
+    pub last_known_local_monitor_friendly_name: Option<String>,
+    pub local_monitor_enabled: bool,
+    pub reliability_profile: ReliabilityProfile,
+    pub last_page: ApplicationPage,
 }
 
 impl Default for ApplicationSettingsDocument {
@@ -29,11 +43,26 @@ impl Default for ApplicationSettingsDocument {
         Self {
             schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
             selected_input_device_id: None,
-            selected_output_device_id: None,
             last_known_input_friendly_name: None,
-            last_known_output_friendly_name: None,
+            processed_destination_device_id: None,
+            last_known_processed_destination_friendly_name: None,
+            local_monitor_device_id: None,
+            last_known_local_monitor_friendly_name: None,
+            local_monitor_enabled: false,
+            reliability_profile: ReliabilityProfile::Balanced,
+            last_page: ApplicationPage::Use,
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplicationSettingsDocumentV1 {
+    schema_version: u32,
+    selected_input_device_id: Option<String>,
+    selected_output_device_id: Option<String>,
+    last_known_input_friendly_name: Option<String>,
+    last_known_output_friendly_name: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -55,16 +84,26 @@ pub struct ApplicationSettingsStore {
 impl ApplicationSettingsStore {
     pub fn load(path: PathBuf) -> Self {
         match load_document(&path) {
-            Ok(document) => Self {
-                path,
-                document,
-                startup_warning: None,
-            },
+            Ok((document, migrated)) => {
+                let mut store = Self {
+                    path,
+                    document,
+                    startup_warning: None,
+                };
+                if migrated {
+                    if let Err(error) = persist_document(&store.path, &store.document) {
+                        store.startup_warning = Some(format!(
+                            "Application settings were migrated in memory but could not be saved: {error}"
+                        ));
+                    }
+                }
+                store
+            }
             Err(error) => Self {
                 path,
                 document: ApplicationSettingsDocument::default(),
                 startup_warning: Some(format!(
-                    "Stored audio-device settings could not be restored: {error} Default devices will be used until the selection is saved again."
+                    "Stored application settings could not be restored: {error} Safe defaults are active; local monitoring remains off."
                 )),
             },
         }
@@ -78,23 +117,13 @@ impl ApplicationSettingsStore {
         self.startup_warning.as_deref()
     }
 
-    pub fn save_selection(
+    pub fn save(
         &mut self,
-        input_id: String,
-        input_name: String,
-        output_id: String,
-        output_name: String,
+        document: ApplicationSettingsDocument,
     ) -> Result<(), ApplicationSettingsError> {
-        let next = ApplicationSettingsDocument {
-            schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
-            selected_input_device_id: Some(input_id),
-            selected_output_device_id: Some(output_id),
-            last_known_input_friendly_name: Some(input_name),
-            last_known_output_friendly_name: Some(output_name),
-        };
-        validate_document(&next)?;
-        persist_document(&self.path, &next)?;
-        self.document = next;
+        validate_document(&document)?;
+        persist_document(&self.path, &document)?;
+        self.document = document;
         self.startup_warning = None;
         Ok(())
     }
@@ -103,7 +132,8 @@ impl ApplicationSettingsStore {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedDeviceSelections {
     pub selected_input_id: Option<String>,
-    pub selected_output_id: Option<String>,
+    pub processed_destination_id: Option<String>,
+    pub local_monitor_id: Option<String>,
     pub restoration_warning: Option<String>,
 }
 
@@ -117,16 +147,25 @@ pub fn resolve_device_selections(
         document.selected_input_device_id.as_deref(),
         document.last_known_input_friendly_name.as_deref(),
         inputs,
-        false,
+        FallbackPolicy::DefaultThenFirst,
     );
-    let output = resolve_one(
-        "output",
-        document.selected_output_device_id.as_deref(),
-        document.last_known_output_friendly_name.as_deref(),
+    let destination = resolve_one(
+        "processed destination",
+        document.processed_destination_device_id.as_deref(),
+        document
+            .last_known_processed_destination_friendly_name
+            .as_deref(),
         outputs,
-        true,
+        FallbackPolicy::LikelyVirtualOnly,
     );
-    let restoration_warning = [input.warning, output.warning]
+    let monitor = resolve_one(
+        "local monitor",
+        document.local_monitor_device_id.as_deref(),
+        document.last_known_local_monitor_friendly_name.as_deref(),
+        outputs,
+        FallbackPolicy::DefaultThenFirst,
+    );
+    let restoration_warning = [input.warning, destination.warning, monitor.warning]
         .into_iter()
         .flatten()
         .collect::<Vec<_>>()
@@ -134,9 +173,16 @@ pub fn resolve_device_selections(
 
     ResolvedDeviceSelections {
         selected_input_id: input.id,
-        selected_output_id: output.id,
+        processed_destination_id: destination.id,
+        local_monitor_id: monitor.id,
         restoration_warning: (!restoration_warning.is_empty()).then_some(restoration_warning),
     }
+}
+
+#[derive(Clone, Copy)]
+enum FallbackPolicy {
+    DefaultThenFirst,
+    LikelyVirtualOnly,
 }
 
 struct ResolvedDevice {
@@ -145,18 +191,18 @@ struct ResolvedDevice {
 }
 
 fn resolve_one(
-    direction: &str,
+    purpose: &str,
     stored_id: Option<&str>,
     stored_name: Option<&str>,
     devices: &[DeviceInfo],
-    prefer_cable_input: bool,
+    fallback_policy: FallbackPolicy,
 ) -> ResolvedDevice {
     if let Some(stored_id) = stored_id {
-        let id_matches = devices
+        let matches = devices
             .iter()
             .filter(|device| device.id == stored_id)
             .collect::<Vec<_>>();
-        if let [device] = id_matches.as_slice() {
+        if let [device] = matches.as_slice() {
             return ResolvedDevice {
                 id: Some(device.id.clone()),
                 warning: None,
@@ -166,30 +212,30 @@ fn resolve_one(
 
     if let Some(stored_name) = stored_name {
         let normalized_name = normalize_friendly_name(stored_name);
-        let name_matches = devices
+        let matches = devices
             .iter()
             .filter(|device| normalize_friendly_name(&device.name) == normalized_name)
             .collect::<Vec<_>>();
-        if let [device] = name_matches.as_slice() {
+        if let [device] = matches.as_slice() {
             return ResolvedDevice {
                 id: Some(device.id.clone()),
                 warning: Some(format!(
-                    "The stored {direction} device identifier was unavailable or ambiguous; restored '{}' by its unique friendly name.",
+                    "The stored {purpose} identifier was unavailable; restored '{}' by its unique friendly name.",
                     device.name
                 )),
             };
         }
     }
 
-    let fallback = fallback_device(devices, prefer_cable_input);
-    let had_stored_selection = stored_id.is_some() || stored_name.is_some();
-    let warning = had_stored_selection.then(|| match fallback {
+    let fallback = fallback_device(devices, fallback_policy);
+    let had_selection = stored_id.is_some() || stored_name.is_some();
+    let warning = had_selection.then(|| match fallback {
         Some(device) => format!(
-            "The stored {direction} device was unavailable or ambiguous; selected fallback device '{}'.",
+            "The stored {purpose} was unavailable; selected safe fallback '{}'.",
             device.name
         ),
         None => format!(
-            "The stored {direction} device was unavailable and no {direction} devices are currently available."
+            "The stored {purpose} was unavailable and no safe automatic fallback was selected."
         ),
     });
 
@@ -199,43 +245,76 @@ fn resolve_one(
     }
 }
 
-fn fallback_device(devices: &[DeviceInfo], prefer_cable_input: bool) -> Option<&DeviceInfo> {
-    if prefer_cable_input {
-        let cable_matches = devices
-            .iter()
-            .filter(|device| normalize_friendly_name(&device.name).contains("cable input"))
-            .take(2)
-            .collect::<Vec<_>>();
-        if let [cable] = cable_matches.as_slice() {
-            return Some(cable);
+fn fallback_device(devices: &[DeviceInfo], policy: FallbackPolicy) -> Option<&DeviceInfo> {
+    match policy {
+        FallbackPolicy::LikelyVirtualOnly => unique(devices, |device| device.is_likely_virtual),
+        FallbackPolicy::DefaultThenFirst => {
+            unique(devices, |device| device.is_default).or_else(|| devices.first())
         }
     }
-    let default_matches = devices
-        .iter()
-        .filter(|device| device.is_default)
-        .take(2)
-        .collect::<Vec<_>>();
-    if let [default] = default_matches.as_slice() {
-        return Some(default);
-    }
-    devices.first()
+}
+
+fn unique(devices: &[DeviceInfo], predicate: impl Fn(&DeviceInfo) -> bool) -> Option<&DeviceInfo> {
+    let mut matches = devices.iter().filter(|device| predicate(device));
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
 }
 
 fn normalize_friendly_name(name: &str) -> String {
     name.trim().to_lowercase()
 }
 
-fn load_document(path: &Path) -> Result<ApplicationSettingsDocument, ApplicationSettingsError> {
+fn load_document(
+    path: &Path,
+) -> Result<(ApplicationSettingsDocument, bool), ApplicationSettingsError> {
     recover_interrupted_write(path)?;
     if !path.exists() {
-        return Ok(ApplicationSettingsDocument::default());
+        return Ok((ApplicationSettingsDocument::default(), false));
     }
 
     let contents = fs::read_to_string(path)?;
-    let document: ApplicationSettingsDocument = serde_json::from_str(&contents)?;
-    validate_document(&document)?;
+    let value: serde_json::Value = serde_json::from_str(&contents)?;
+    let version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            ApplicationSettingsError::Validation(
+                "Application settings require an integer schemaVersion.".to_owned(),
+            )
+        })?;
+    let result = match version {
+        1 => {
+            let legacy: ApplicationSettingsDocumentV1 = serde_json::from_value(value)?;
+            (migrate_v1(legacy), true)
+        }
+        version if version == u64::from(APPLICATION_SETTINGS_SCHEMA_VERSION) => {
+            (serde_json::from_value(value)?, false)
+        }
+        version => {
+            return Err(ApplicationSettingsError::Validation(format!(
+                "Unsupported application-settings schema version {version}. Expected version {APPLICATION_SETTINGS_SCHEMA_VERSION}."
+            )))
+        }
+    };
+    validate_document(&result.0)?;
     remove_recovery_files(path);
-    Ok(document)
+    Ok(result)
+}
+
+fn migrate_v1(document: ApplicationSettingsDocumentV1) -> ApplicationSettingsDocument {
+    debug_assert_eq!(document.schema_version, 1);
+    ApplicationSettingsDocument {
+        schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
+        selected_input_device_id: document.selected_input_device_id,
+        last_known_input_friendly_name: document.last_known_input_friendly_name,
+        processed_destination_device_id: document.selected_output_device_id,
+        last_known_processed_destination_friendly_name: document.last_known_output_friendly_name,
+        local_monitor_device_id: None,
+        last_known_local_monitor_friendly_name: None,
+        local_monitor_enabled: false,
+        reliability_profile: ReliabilityProfile::Balanced,
+        last_page: ApplicationPage::Use,
+    }
 }
 
 fn validate_document(
@@ -247,41 +326,47 @@ fn validate_document(
             document.schema_version, APPLICATION_SETTINGS_SCHEMA_VERSION
         )));
     }
-
     validate_device_pair(
         "input",
         document.selected_input_device_id.as_deref(),
         document.last_known_input_friendly_name.as_deref(),
     )?;
     validate_device_pair(
-        "output",
-        document.selected_output_device_id.as_deref(),
-        document.last_known_output_friendly_name.as_deref(),
+        "processed destination",
+        document.processed_destination_device_id.as_deref(),
+        document
+            .last_known_processed_destination_friendly_name
+            .as_deref(),
+    )?;
+    validate_device_pair(
+        "local monitor",
+        document.local_monitor_device_id.as_deref(),
+        document.last_known_local_monitor_friendly_name.as_deref(),
     )?;
     Ok(())
 }
 
 fn validate_device_pair(
-    direction: &str,
+    purpose: &str,
     id: Option<&str>,
     friendly_name: Option<&str>,
 ) -> Result<(), ApplicationSettingsError> {
     if id.is_some() != friendly_name.is_some() {
         return Err(ApplicationSettingsError::Validation(format!(
-            "The stored {direction} device identifier and friendly name must either both be present or both be absent."
+            "The stored {purpose} identifier and friendly name must both be present or both be absent."
         )));
     }
     if let Some(id) = id {
         validate_string(
-            &format!("Stored {direction} device identifier"),
+            &format!("Stored {purpose} identifier"),
             id,
             MAX_DEVICE_ID_CHARS,
         )?;
     }
-    if let Some(friendly_name) = friendly_name {
+    if let Some(name) = friendly_name {
         validate_string(
-            &format!("Stored {direction} friendly name"),
-            friendly_name,
+            &format!("Stored {purpose} friendly name"),
+            name,
             MAX_FRIENDLY_NAME_CHARS,
         )?;
     }
@@ -310,20 +395,17 @@ fn persist_document(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-
     let bytes = serde_json::to_vec_pretty(document)?;
     let temporary = recovery_path(path, ".tmp");
     let backup = recovery_path(path, ".bak");
     if temporary.exists() {
         fs::remove_file(&temporary)?;
     }
-
     let mut file = File::create(&temporary)?;
     file.write_all(&bytes)?;
     file.write_all(b"\n")?;
     file.sync_all()?;
     drop(file);
-
     if path.exists() {
         if backup.exists() {
             fs::remove_file(&backup)?;
@@ -353,7 +435,6 @@ fn recover_interrupted_write(path: &Path) -> Result<(), ApplicationSettingsError
     if path.exists() {
         return Ok(());
     }
-
     let backup = recovery_path(path, ".bak");
     let temporary = recovery_path(path, ".tmp");
     if backup.exists() {
@@ -376,24 +457,22 @@ fn remove_recovery_files(path: &Path) {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        path::{Path, PathBuf},
-        sync::atomic::{AtomicU64, Ordering},
-    };
+    use std::{fs, path::PathBuf};
 
-    use super::{
-        recovery_path, resolve_device_selections, ApplicationSettingsDocument,
-        ApplicationSettingsStore, APPLICATION_SETTINGS_SCHEMA_VERSION,
-    };
-    use crate::audio::device::DeviceInfo;
+    use super::*;
 
-    static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    fn device(id: &str, name: &str, default: bool, virtual_output: bool) -> DeviceInfo {
+        DeviceInfo {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            is_default: default,
+            is_likely_virtual: virtual_output,
+        }
+    }
 
-    fn test_path(label: &str) -> PathBuf {
-        let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    fn path(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
-            "mam-voice-changer-settings-{label}-{}-{sequence}.json",
+            "mam-voice-settings-{label}-{}.json",
             std::process::id()
         ))
     }
@@ -409,234 +488,109 @@ mod tests {
         }
     }
 
-    fn device(id: &str, name: &str, is_default: bool) -> DeviceInfo {
-        DeviceInfo {
-            id: id.to_owned(),
-            name: name.to_owned(),
-            is_default,
-        }
-    }
-
-    fn saved_document() -> ApplicationSettingsDocument {
-        ApplicationSettingsDocument {
-            schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
-            selected_input_device_id: Some("saved-input".to_owned()),
-            selected_output_device_id: Some("saved-output".to_owned()),
-            last_known_input_friendly_name: Some("Studio Microphone".to_owned()),
-            last_known_output_friendly_name: Some("Studio Monitor".to_owned()),
-        }
+    #[test]
+    fn first_launch_is_balanced_on_use_with_monitoring_off() {
+        let defaults = ApplicationSettingsDocument::default();
+        assert_eq!(defaults.last_page, ApplicationPage::Use);
+        assert_eq!(defaults.reliability_profile, ReliabilityProfile::Balanced);
+        assert!(!defaults.local_monitor_enabled);
     }
 
     #[test]
-    fn first_launch_without_a_settings_file_uses_defaults_without_a_warning() {
-        let path = test_path("first-launch");
-        cleanup(&path);
-
-        let store = ApplicationSettingsStore::load(path.clone());
-
-        assert_eq!(store.document(), &ApplicationSettingsDocument::default());
-        assert_eq!(store.startup_warning(), None);
-        assert!(!path.exists());
-        cleanup(&path);
-    }
-
-    #[test]
-    fn saves_and_restores_unique_device_identifiers() {
-        let path = test_path("round-trip");
-        cleanup(&path);
-        let mut store = ApplicationSettingsStore::load(path.clone());
-        store
-            .save_selection(
-                "saved-input".to_owned(),
-                "Studio Microphone".to_owned(),
-                "saved-output".to_owned(),
-                "Studio Monitor".to_owned(),
-            )
-            .unwrap();
-
-        let loaded = ApplicationSettingsStore::load(path.clone());
+    fn physical_speakers_are_not_an_automatic_processed_destination() {
         let resolved = resolve_device_selections(
-            loaded.document(),
-            &[device("saved-input", "Studio Microphone", false)],
-            &[device("saved-output", "Studio Monitor", false)],
+            &ApplicationSettingsDocument::default(),
+            &[device("mic", "Realtek microphone", true, false)],
+            &[device("speakers", "Realtek speakers", true, false)],
         );
-
-        assert_eq!(resolved.selected_input_id.as_deref(), Some("saved-input"));
-        assert_eq!(resolved.selected_output_id.as_deref(), Some("saved-output"));
-        assert_eq!(resolved.restoration_warning, None);
-        cleanup(&path);
+        assert_eq!(resolved.selected_input_id.as_deref(), Some("mic"));
+        assert_eq!(resolved.processed_destination_id, None);
+        assert_eq!(resolved.local_monitor_id.as_deref(), Some("speakers"));
     }
 
     #[test]
-    fn missing_saved_devices_use_existing_fallback_policy() {
+    fn unique_virtual_output_is_the_only_automatic_destination() {
         let resolved = resolve_device_selections(
-            &saved_document(),
+            &ApplicationSettingsDocument::default(),
+            &[device("mic", "Microphone", true, false)],
             &[
-                device("first-input", "Other microphone", false),
-                device("default-input", "Default microphone", true),
-            ],
-            &[
-                device("default-output", "Default speakers", true),
-                device("cable-output", "CABLE Input (VB-Audio)", false),
+                device("speakers", "Speakers", true, false),
+                device("virtual", "Virtual Audio Router", false, true),
             ],
         );
-
-        assert_eq!(resolved.selected_input_id.as_deref(), Some("default-input"));
-        assert_eq!(resolved.selected_output_id.as_deref(), Some("cable-output"));
-        assert!(resolved
-            .restoration_warning
-            .as_deref()
-            .is_some_and(|warning| warning.contains("fallback")));
-    }
-
-    #[test]
-    fn unique_normalized_name_restores_but_duplicate_names_do_not() {
-        let document = saved_document();
-        let unique = resolve_device_selections(
-            &document,
-            &[device("renamed-id", "  STUDIO MICROPHONE ", false)],
-            &[device("renamed-output", "Studio Monitor", false)],
-        );
-        assert_eq!(unique.selected_input_id.as_deref(), Some("renamed-id"));
-        assert!(unique
-            .restoration_warning
-            .as_deref()
-            .is_some_and(|warning| warning.contains("unique friendly name")));
-
-        let duplicated = resolve_device_selections(
-            &document,
-            &[
-                device("duplicate-a", "Studio Microphone", false),
-                device("duplicate-b", " studio microphone ", false),
-                device("fallback", "Fallback microphone", true),
-            ],
-            &[device("saved-output", "Studio Monitor", false)],
-        );
-        assert_eq!(duplicated.selected_input_id.as_deref(), Some("fallback"));
-        assert!(duplicated
-            .restoration_warning
-            .as_deref()
-            .is_some_and(|warning| warning.contains("ambiguous")));
-    }
-
-    #[test]
-    fn duplicate_identifiers_are_not_claimed_as_an_exact_restoration() {
-        let document = saved_document();
-        let resolved = resolve_device_selections(
-            &document,
-            &[
-                device("saved-input", "Studio Microphone", false),
-                device("saved-input", "Studio Microphone", false),
-                device("fallback", "Fallback microphone", true),
-            ],
-            &[device("saved-output", "Studio Monitor", false)],
-        );
-
-        assert_eq!(resolved.selected_input_id.as_deref(), Some("fallback"));
-        assert!(resolved.restoration_warning.is_some());
-    }
-
-    #[test]
-    fn duplicate_cable_outputs_do_not_win_over_a_unique_windows_default() {
-        let document = saved_document();
-        let resolved = resolve_device_selections(
-            &document,
-            &[device("saved-input", "Studio Microphone", false)],
-            &[
-                device("cable-a", "CABLE Input", false),
-                device("cable-b", "CABLE Input (duplicate)", false),
-                device("default-output", "Default speakers", true),
-            ],
-        );
-
         assert_eq!(
-            resolved.selected_output_id.as_deref(),
-            Some("default-output")
+            resolved.processed_destination_id.as_deref(),
+            Some("virtual")
         );
-        assert!(resolved.restoration_warning.is_some());
     }
 
     #[test]
-    fn corrupt_settings_are_preserved_and_reported_as_recoverable() {
-        let path = test_path("corrupt");
+    fn v1_migration_preserves_destination_but_never_enables_monitoring() {
+        let path = path("v1");
         cleanup(&path);
-        fs::write(&path, b"{not-json").unwrap();
-
+        fs::write(
+            &path,
+            r#"{"schemaVersion":1,"selectedInputDeviceId":"mic","selectedOutputDeviceId":"out","lastKnownInputFriendlyName":"Mic","lastKnownOutputFriendlyName":"Output"}"#,
+        )
+        .unwrap();
         let store = ApplicationSettingsStore::load(path.clone());
-
-        assert_eq!(store.document(), &ApplicationSettingsDocument::default());
-        assert!(store
-            .startup_warning()
-            .is_some_and(|warning| warning.contains("not valid JSON")));
-        assert_eq!(fs::read(&path).unwrap(), b"{not-json");
-        cleanup(&path);
-    }
-
-    #[test]
-    fn unsupported_schema_is_preserved_and_reported_as_recoverable() {
-        let path = test_path("future-schema");
-        cleanup(&path);
-        let future = serde_json::json!({
-            "schemaVersion": APPLICATION_SETTINGS_SCHEMA_VERSION + 1,
-            "selectedInputDeviceId": null,
-            "selectedOutputDeviceId": null,
-            "lastKnownInputFriendlyName": null,
-            "lastKnownOutputFriendlyName": null
-        });
-        fs::write(&path, serde_json::to_vec_pretty(&future).unwrap()).unwrap();
-
-        let store = ApplicationSettingsStore::load(path.clone());
-
-        assert_eq!(store.document(), &ApplicationSettingsDocument::default());
-        assert!(store
-            .startup_warning()
-            .is_some_and(|warning| warning.contains("Unsupported")));
         assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&fs::read(&path).unwrap()).unwrap(),
-            future
+            store.document().processed_destination_device_id.as_deref(),
+            Some("out")
         );
-        cleanup(&path);
-    }
-
-    #[test]
-    fn replacement_is_atomic_and_interrupted_backup_is_recovered() {
-        let path = test_path("atomic");
-        cleanup(&path);
-        let mut store = ApplicationSettingsStore::load(path.clone());
-        store
-            .save_selection(
-                "input-one".to_owned(),
-                "Input One".to_owned(),
-                "output-one".to_owned(),
-                "Output One".to_owned(),
-            )
-            .unwrap();
-        store
-            .save_selection(
-                "input-two".to_owned(),
-                "Input Two".to_owned(),
-                "output-two".to_owned(),
-                "Output Two".to_owned(),
-            )
-            .unwrap();
-
-        let decoded: ApplicationSettingsDocument =
+        assert!(!store.document().local_monitor_enabled);
+        assert_eq!(
+            store.document().reliability_profile,
+            ReliabilityProfile::Balanced
+        );
+        let persisted: serde_json::Value =
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(
-            decoded.selected_input_device_id.as_deref(),
-            Some("input-two")
-        );
-        assert!(!recovery_path(&path, ".tmp").exists());
-        assert!(!recovery_path(&path, ".bak").exists());
+        assert_eq!(persisted["schemaVersion"], 2);
+        cleanup(&path);
+    }
 
-        fs::rename(&path, recovery_path(&path, ".bak")).unwrap();
-        let recovered = ApplicationSettingsStore::load(path.clone());
+    #[test]
+    fn malformed_or_future_settings_preserve_file_and_use_safe_defaults() {
+        for (label, contents) in [
+            ("malformed", "{not-json"),
+            (
+                "future",
+                r#"{"schemaVersion":99,"selectedInputDeviceId":null}"#,
+            ),
+        ] {
+            let path = path(label);
+            cleanup(&path);
+            fs::write(&path, contents).unwrap();
+            let store = ApplicationSettingsStore::load(path.clone());
+            assert!(!store.document().local_monitor_enabled);
+            assert!(store.startup_warning().is_some());
+            assert_eq!(fs::read_to_string(&path).unwrap(), contents);
+            cleanup(&path);
+        }
+    }
+
+    #[test]
+    fn current_settings_round_trip_all_separate_purposes() {
+        let path = path("round-trip");
+        cleanup(&path);
+        let mut store = ApplicationSettingsStore::load(path.clone());
+        let document = ApplicationSettingsDocument {
+            schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
+            selected_input_device_id: Some("mic".to_owned()),
+            last_known_input_friendly_name: Some("Mic".to_owned()),
+            processed_destination_device_id: Some("destination".to_owned()),
+            last_known_processed_destination_friendly_name: Some("Destination".to_owned()),
+            local_monitor_device_id: Some("headphones".to_owned()),
+            last_known_local_monitor_friendly_name: Some("Headphones".to_owned()),
+            local_monitor_enabled: true,
+            reliability_profile: ReliabilityProfile::Reliable,
+            last_page: ApplicationPage::Diagnostics,
+        };
+        store.save(document.clone()).unwrap();
         assert_eq!(
-            recovered.document().selected_output_device_id.as_deref(),
-            Some("output-two")
+            ApplicationSettingsStore::load(path.clone()).document(),
+            &document
         );
-        assert!(path.exists());
-        assert!(!recovery_path(&path, ".bak").exists());
         cleanup(&path);
     }
 }

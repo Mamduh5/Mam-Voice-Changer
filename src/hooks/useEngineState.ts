@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { tauriAudioApi } from '../services/tauriAudioApi';
+import type { StartEngineRequest } from '../services/tauriAudioApi';
 import { stoppedStatus, type EngineStatus } from '../types/engine';
 
 export function useEngineState(enabled = true) {
@@ -57,14 +58,14 @@ export function useEngineState(enabled = true) {
   }, [enabled, refreshStatus]);
 
   const start = useCallback(
-    async (inputId: string, outputId: string) => {
+    async (request: StartEngineRequest) => {
       if (!enabled) {
         return;
       }
 
       setCommandError(null);
       try {
-        await tauriAudioApi.startEngine({ inputId, outputId });
+        await tauriAudioApi.startEngine(request);
       } catch (cause) {
         if (mountedRef.current) {
           setCommandError(`Unable to start the audio engine: ${String(cause)}`);

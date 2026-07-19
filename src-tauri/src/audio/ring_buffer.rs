@@ -1,7 +1,10 @@
 use ringbuf::{
-    traits::{Consumer, Producer, Split},
+    traits::{Observer, Producer, Split},
     HeapCons, HeapProd, HeapRb,
 };
+
+#[cfg(test)]
+use ringbuf::traits::Consumer;
 
 pub struct AudioRingBuffer {
     producer: HeapProd<f32>,
@@ -27,7 +30,20 @@ pub fn push_or_drop_newest(producer: &mut HeapProd<f32>, sample: f32) -> bool {
     producer.try_push(sample).is_ok()
 }
 
-pub fn pop_or_silence(consumer: &mut HeapCons<f32>) -> (f32, bool) {
+pub fn push_frame_or_drop(producer: &mut HeapProd<f32>, frame: &[f32]) -> bool {
+    if producer.vacant_len() < frame.len() {
+        return false;
+    }
+    for sample in frame {
+        if producer.try_push(*sample).is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+fn pop_or_silence(consumer: &mut HeapCons<f32>) -> (f32, bool) {
     match consumer.try_pop() {
         Some(sample) => (sample, false),
         None => (0.0, true),
@@ -36,7 +52,9 @@ pub fn pop_or_silence(consumer: &mut HeapCons<f32>) -> (f32, bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{pop_or_silence, push_or_drop_newest, AudioRingBuffer};
+    use ringbuf::traits::Consumer;
+
+    use super::{pop_or_silence, push_frame_or_drop, push_or_drop_newest, AudioRingBuffer};
 
     #[test]
     fn underflow_returns_silence() {
@@ -50,5 +68,15 @@ mod tests {
         assert!(push_or_drop_newest(&mut producer, 0.25));
         assert!(!push_or_drop_newest(&mut producer, 0.75));
         assert_eq!(pop_or_silence(&mut consumer), (0.25, false));
+    }
+
+    #[test]
+    fn complete_frames_are_dropped_atomically() {
+        let (mut producer, mut consumer) = AudioRingBuffer::new(3, 0).split();
+        assert!(push_frame_or_drop(&mut producer, &[0.1, 0.2]));
+        assert!(!push_frame_or_drop(&mut producer, &[0.3, 0.4]));
+        assert_eq!(consumer.try_pop(), Some(0.1));
+        assert_eq!(consumer.try_pop(), Some(0.2));
+        assert_eq!(consumer.try_pop(), None);
     }
 }

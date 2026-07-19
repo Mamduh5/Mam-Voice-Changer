@@ -1,134 +1,91 @@
 # Manual Windows test plan
 
-Automated tests avoid relying on a particular audio device. Run this plan on
-Windows with headphones before claiming live routing, audible behavior, device
-restoration, preset persistence, or third-party compatibility. An implemented
-feature remains manually pending until its steps are performed and recorded.
+Automated checks do not establish audible quality, live endpoint behavior, feedback safety, or third-party compatibility. Run this plan on Windows with conservative levels and record the devices, formats, profile, duration, counter changes, and audible observations for every completed section.
 
-## Environment preflight
+## A. Raw microphone baseline
 
-1. Confirm Windows 10/11 x64.
-2. Confirm a physical microphone is enabled.
-3. Install or identify VB-CABLE.
-4. Confirm **CABLE Input** and **CABLE Output** are present in Windows Sound settings.
-5. Set the microphone and both CABLE endpoints to a common format, preferably 48 kHz.
+1. Make a Windows Sound Recorder recording directly from the physical microphone.
+2. Test the same raw microphone directly in Discord, without Mam Voice Changer in the route.
+3. For both, record quiet, normal, and loud speech plus phrase beginnings and endings.
+4. Note cuts, missing syllables, clicks, or discontinuities that already exist at the physical microphone.
 
-## Live routing acceptance
+## B. Use page
 
-1. Launch the application.
-2. Refresh devices and verify all enabled input/output endpoints appear.
-3. Select a physical microphone as input and **CABLE Input** as output.
-4. Enable bypass, start the engine, and confirm it reaches `running`.
-5. Speak and confirm both meters respond.
-6. Monitor **CABLE Output** safely and verify continuous, unmodified audio.
-7. Stop and start ten times; confirm no stale streams or invalid state.
-8. Change devices while stopped, then restart.
-9. Disable or disconnect the selected output and confirm the engine enters a recoverable
-   error state with a useful message.
-10. Refresh devices, select an available output, and restart successfully.
-11. Run for 30 minutes and record underruns, overruns, and the latency estimate.
+1. Launch the app and confirm **Hear myself** is off and the engine is stopped.
+2. With only physical outputs present, confirm no processed destination is selected automatically and the routing notice explains the limitation.
+3. Select a real processed playback destination. Use a virtual playback endpoint when routing to another application.
+4. Start and stop the engine. Confirm meters move and engine state changes are clear.
+5. Switch Natural, Warm tone, Bright tone, Old Lady, and a saved preset.
+6. With local monitoring off, confirm no speaker/headphone talkback stream is opened merely for listening.
+7. Deliberately enable persistent local monitoring with headphones, then confirm destination and monitor carry the same processed performance.
 
-## DSP acceptance
+## C. Test page
 
-With safe monitoring available, verify mute, bypass, both gains, high-pass
-filtering, limiting and ceiling changes, pitch, formant shift, dry/wet, gate,
-warmth, and brightness while the engine is running. Check conservative and extreme
-valid values, then return every control to its default. Listen for clicks,
-non-finite failure symptoms, unstable volume, and unexpected channel differences.
-These manual checks do not replace the focused device-independent DSP tests.
+1. Put on headphones before enabling monitoring.
+2. Open Test and confirm monitoring remains off until the checkbox is explicitly enabled and Start is pressed.
+3. Compare bypass and processed output, then compare presets and DSP controls.
+4. Leave Test while running and confirm temporary monitoring stops.
+5. Repeat while the engine is starting or recovering and confirm monitoring does not remain active afterward.
+6. Never perform this section through open speakers; stop immediately if feedback starts.
 
-## Preset acceptance
+## D. Reliability profiles
 
-1. Select each built-in preset and confirm the controls match its parameter snapshot.
-2. Change several parameters, save a named preset, and confirm it appears under
-   **My presets** and becomes selected.
-3. Apply a different preset, return to the saved preset, and confirm every DSP
-   parameter is restored.
-4. Rename the user preset and confirm the new name persists.
-5. Duplicate both a built-in preset and a user preset; confirm each duplicate is a
-   newly selected, editable user preset with a unique copy name.
-6. Confirm built-in Rename and Delete actions are unavailable.
-7. Delete a non-selected user preset and confirm the active parameters do not change.
-8. Delete the selected user preset and confirm selection and parameters fall back to
-   `Natural`.
-9. Change parameters, choose Reset, and confirm `Natural` and its complete default
-   snapshot are restored.
-10. Close and relaunch the desktop application. Confirm user presets and the last
-    selected preset survive the restart and are applied before the engine starts.
-11. Trigger a recoverable invalid-name or storage error where practical, then retry
-    successfully and confirm the visible error clears.
+For Low latency, Balanced, and Reliable:
 
-## Old Lady vocal-aging acceptance
+1. Stop the engine, choose the profile, and restart.
+2. Record negotiated callback sizes, ring capacities implied by the profile, prefill target/actual, and estimated latency.
+3. Compare perceived latency, audible cuts, callback gaps, ring overflows/underruns, DSP deadline misses, and concealed frames.
+4. Run each relevant profile for 30 minutes and record min/current/max ring fill. Look for a steady long-term trend that could indicate device-clock drift.
 
-Use closed-back headphones at a conservative level. Do not use speakers or any
-routing that can create microphone feedback. Record the source voice, devices,
-sample rate, block/latency diagnostics, and observations; do not mark an item as
-passed from automated output alone.
+## E. Weak microphone behavior
 
-1. Select `Old Lady`, start in normal mode, and make repeated bypass comparisons.
-2. Test sustained vowels, normal speech, fast speech, quiet speech, and loud speech.
-3. Test sibilants, plosives, and silence between phrases.
-4. Test a low-pitched and high-pitched source. Include male and female source voices
-   where available.
-5. Sweep Age Character from 0% to 100%, then return to the preset value.
-6. Sweep Breathiness from 0% to 100%. Confirm zero adds no hiss and phrase gaps do
-   not carry constant noise, then return to the preset value.
-7. Sweep Tremor from 0% to 100%. Confirm the intended setting is subtle and does not
-   sound like musical vibrato, then return to the preset value.
-8. Switch between Natural, Old Lady, and a saved user preset while running. Repeat
-   start/stop ten times and check for clicks or stale modulation state.
-9. Run continuously for 30 minutes and record underruns, overruns, CPU observations,
-   latency, and any change in loudness or quality.
-10. Route through VB-CABLE and test Discord, OBS, and TikTok Live Studio separately.
+1. Compare Gate disabled with the speech expander enabled.
+2. Test quiet syllables, phrase beginnings/endings, and normal background noise.
+3. Listen for chopping, pumping, clicks, swallowed consonants, and excessive noise lift.
+4. Confirm quiet speech becomes smoothly attenuated rather than hard-zeroed.
 
-Listen specifically for cartoon pitch, metallic artifacts, robotic modulation,
-obvious musical vibrato, excessive hiss, noise during silence, pumping, clicking,
-harsh sibilance, loss of intelligibility, unstable loudness, excessive latency, and
-stereo phase instability.
+## F. Recovery
 
-## Device-selection restoration acceptance
+1. While running, disable and re-enable the selected microphone.
+2. Unplug and reconnect applicable USB input, destination, and monitor devices.
+3. Change the Windows default endpoint; verify the stored identifier remains authoritative and unique friendly-name restoration is conservative.
+4. Exercise sleep/wake.
+5. Confirm exact errors are visible, restart count is bounded, staged recovery does not loop tightly, and Stop works during recovery.
+6. With destination plus monitor active, fail only the monitor and confirm the destination continues in `degraded` state.
+7. Fail the main destination and confirm it enters bounded `recovering`, then `running` or `error`.
 
-1. Select known input and output endpoints while the engine is stopped, close the
-   application, relaunch it, and confirm both selections are restored without
-   starting the engine.
-2. Confirm restoration by stored identifier when the original endpoints remain.
-3. Rename or remove a stored endpoint and verify the conservative friendly-name or
-   default-device fallback shown by the UI.
-4. With duplicate friendly names, confirm no ambiguous name-only match is selected.
-5. Exercise missing, corrupt, and unsupported-version settings documents and confirm
-   startup remains usable with a visible, recoverable fallback state.
+## G. Receiving applications
 
-## Compatibility and extended-run acceptance
+1. Test Discord or OBS only when a real Windows capture endpoint exists, such as the capture side paired with a virtual playback device.
+2. Select the virtual playback endpoint as Mam Voice Changer's processed destination.
+3. Select the paired Windows capture endpoint in the receiving application.
+4. Do not mark direct routing as passed when only speakers/headphones are available. Mam Voice Changer itself is not a registered Windows microphone device.
 
-After local routing is safe and stable, test VB-CABLE, Discord microphone input, OBS
-capture, TikTok Live Studio where available, and a 30-minute continuous run. These
-are planned manual compatibility checks, not missing application features. Record
-the application versions, selected endpoints, stream format, estimated latency,
-overrun/underrun counts, and any audible artifacts.
+## Existing effect and persistence regression
 
-## Validation performed on 2026-07-18
+1. Exercise preset apply/save/rename/duplicate/delete/reset and restart persistence.
+2. Confirm the Old Lady Age Character, Breathiness, and Tremor controls still work.
+3. Confirm mute affects both destinations, bypass remains latency-aligned, and limiter ceiling remains respected.
+4. Relaunch after saving app settings. Confirm page, input, destination, monitor device, and profile restore, but the engine and temporary monitoring do not auto-start.
+5. Exercise migrated v1, malformed, and future-version application settings; monitoring must remain off under every unsafe fallback.
 
-- Tauri debug executable built and launched successfully.
-- React interface rendered successfully; screenshot captured in
-  `docs/screenshots/milestone-1-ui.png`.
-- WASAPI enumeration displayed the present Realtek microphone and speaker endpoints.
-- Windows `Get-PnpDevice -Class AudioEndpoint -PresentOnly` confirmed those same two
-  endpoints.
-- VB-CABLE was not installed; no CABLE endpoints were available.
-- Passthrough was not started against physical speakers because that could create
-  acoustic feedback.
-- Continuous audio, repeated start/stop, device disconnection, extended runtime,
-  Discord, OBS, and TikTok Live Studio remain manually unverified.
-- Preset apply/save/rename/duplicate/delete/reset and restart persistence were not
-  exercised and remain manually unverified.
-- Device-selection persistence and fallback behavior were not exercised and remain
-  manually unverified.
-- Old Lady listening, control sweeps, source-voice coverage, live preset switching,
-  and third-party routing remain manually unverified.
+## Manual record
 
-## Automated validation record
+### Previously performed on 2026-07-18
 
-The repository contains device-independent frontend and Rust tests, but this file
-does not record a complete automated command run for the current checkout. Add
-dated commands and actual results only after they are run; do not infer audible or
-third-party compatibility from a passing suite.
+- Tauri debug executable launched and the earlier React interface rendered.
+- Present Realtek microphone and speaker endpoints were enumerated.
+- VB-CABLE was not installed.
+- Live passthrough to physical speakers was deliberately not started because of feedback risk.
+
+### Performed for Phase 3 on 2026-07-20
+
+- No live microphone, audible comparison, UI interaction, endpoint-disconnection, sleep/wake, or third-party routing test was performed during this implementation run.
+- Automated commands are reported separately in the completion response; they are not evidence of audible improvement.
+
+### Pending
+
+- All Phase 3 sections A-G above.
+- Old Lady listening and full preset/application-settings persistence interaction.
+- Thirty-minute profile runs and clock-drift trend collection.
+- Discord/OBS routing when a real Windows capture endpoint becomes available.

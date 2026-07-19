@@ -1,12 +1,21 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import type { AudioDeviceList } from '../types/audio';
+import type {
+  ApplicationSettingsUpdate,
+  AudioDeviceList,
+  ReliabilityProfile,
+} from '../types/audio';
 import type { EngineStatus } from '../types/engine';
 import type { AudioParameters } from '../types/parameters';
 import type { PresetCatalog } from '../types/presets';
 
 export type StartEngineRequest = {
   inputId: string;
-  outputId: string;
+  inputName: string;
+  processedDestinationId: string | null;
+  processedDestinationName: string | null;
+  localMonitorId: string | null;
+  localMonitorName: string | null;
+  reliabilityProfile: ReliabilityProfile;
 };
 
 export const DESKTOP_RUNTIME_UNAVAILABLE = 'Desktop runtime unavailable. Launch with npm run dev.';
@@ -22,8 +31,8 @@ function invokeDesktop<T>(command: string, args?: Record<string, unknown>): Prom
 export const tauriAudioApi = {
   isDesktopRuntimeAvailable: isTauri,
   listAudioDevices: () => invokeDesktop<AudioDeviceList>('list_audio_devices'),
-  saveAudioDeviceSelection: (inputId: string, outputId: string) =>
-    invokeDesktop<void>('save_audio_device_selection', { inputId, outputId }),
+  saveApplicationSettings: (request: ApplicationSettingsUpdate) =>
+    invokeDesktop<void>('save_application_settings', { request }),
   startEngine: (request: StartEngineRequest) => invokeDesktop<void>('start_engine', { request }),
   stopEngine: () => invokeDesktop<void>('stop_engine'),
   getEngineStatus: () => invokeDesktop<EngineStatus>('get_engine_status'),

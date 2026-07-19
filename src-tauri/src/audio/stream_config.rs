@@ -9,8 +9,6 @@ use crate::{
     error::AudioError,
 };
 
-const TARGET_BUFFER_FRAMES: u32 = 256;
-
 type CandidateChoice<'a> = (
     (u32, u8, u16),
     &'a SupportedStreamConfigRange,
@@ -34,37 +32,25 @@ pub struct NegotiatedStreamConfig {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveStreamFormat {
-    pub sample_rate: u32,
+    pub input_sample_rate: u32,
+    pub processed_destination_sample_rate: Option<u32>,
+    pub local_monitor_sample_rate: Option<u32>,
     pub input_channels: u16,
-    pub output_channels: u16,
+    pub processed_destination_channels: Option<u16>,
+    pub local_monitor_channels: Option<u16>,
     pub input_sample_format: String,
-    pub output_sample_format: String,
+    pub processed_destination_sample_format: Option<String>,
+    pub local_monitor_sample_format: Option<String>,
     pub input_buffer_frames: u32,
-    pub output_buffer_frames: u32,
-}
-
-impl NegotiatedStreamConfig {
-    pub fn active_format(&self) -> ActiveStreamFormat {
-        ActiveStreamFormat {
-            sample_rate: self.sample_rate,
-            input_channels: self.input.config.channels,
-            output_channels: self.output.config.channels,
-            input_sample_format: format!("{:?}", self.input.sample_format),
-            output_sample_format: format!("{:?}", self.output.sample_format),
-            input_buffer_frames: self.input.buffer_frames,
-            output_buffer_frames: self.output.buffer_frames,
-        }
-    }
-
-    pub fn estimated_latency_ms(&self, prefill_frames: u32) -> f32 {
-        let total_frames = self.input.buffer_frames + self.output.buffer_frames + prefill_frames;
-        total_frames as f32 * 1_000.0 / self.sample_rate as f32
-    }
+    pub processed_destination_buffer_frames: Option<u32>,
+    pub local_monitor_buffer_frames: Option<u32>,
+    pub dsp_block_frames: u32,
 }
 
 pub fn negotiate(
     input: &cpal::Device,
     output: &cpal::Device,
+    target_buffer_frames: u32,
 ) -> Result<NegotiatedStreamConfig, AudioError> {
     let input_name = input
         .name()
@@ -110,10 +96,37 @@ pub fn negotiate(
     };
 
     Ok(NegotiatedStreamConfig {
-        input: stream_spec(input_range, sample_rate),
-        output: stream_spec(output_range, sample_rate),
+        input: stream_spec(input_range, sample_rate, target_buffer_frames),
+        output: stream_spec(output_range, sample_rate, target_buffer_frames),
         sample_rate,
     })
+}
+
+pub fn output_spec_at_rate(
+    output: &cpal::Device,
+    sample_rate: u32,
+    target_buffer_frames: u32,
+) -> Result<StreamSpec, AudioError> {
+    let output_name = output
+        .name()
+        .map_err(|error| AudioError::DeviceName(error.to_string()))?;
+    let output_configs = supported_configs(output, DeviceDirection::Output, &output_name)?;
+    let best = output_configs
+        .iter()
+        .filter(|config| {
+            (config.min_sample_rate().0..=config.max_sample_rate().0).contains(&sample_rate)
+        })
+        .min_by_key(|config| {
+            (
+                format_score(config.sample_format()),
+                channel_score(config.channels()),
+            )
+        });
+    best.map(|range| stream_spec(range, sample_rate, target_buffer_frames))
+        .ok_or(AudioError::OutputSampleRateUnavailable {
+            output: output_name,
+            sample_rate,
+        })
 }
 
 fn supported_configs(
@@ -145,9 +158,14 @@ fn supported_configs(
         .collect())
 }
 
-fn stream_spec(range: &SupportedStreamConfigRange, sample_rate: u32) -> StreamSpec {
+fn stream_spec(
+    range: &SupportedStreamConfigRange,
+    sample_rate: u32,
+    target_buffer_frames: u32,
+) -> StreamSpec {
     let supported = (*range).with_sample_rate(SampleRate(sample_rate));
-    let (buffer_size, buffer_frames) = choose_buffer_size(range.buffer_size());
+    let (buffer_size, buffer_frames) =
+        choose_buffer_size(range.buffer_size(), target_buffer_frames);
     let mut config = supported.config();
     config.buffer_size = buffer_size;
     StreamSpec {
@@ -157,13 +175,16 @@ fn stream_spec(range: &SupportedStreamConfigRange, sample_rate: u32) -> StreamSp
     }
 }
 
-fn choose_buffer_size(supported: &SupportedBufferSize) -> (BufferSize, u32) {
+fn choose_buffer_size(
+    supported: &SupportedBufferSize,
+    target_buffer_frames: u32,
+) -> (BufferSize, u32) {
     match supported {
         SupportedBufferSize::Range { min, max } => {
-            let frames = TARGET_BUFFER_FRAMES.clamp(*min, *max);
+            let frames = target_buffer_frames.clamp(*min, *max);
             (BufferSize::Fixed(frames), frames)
         }
-        SupportedBufferSize::Unknown => (BufferSize::Default, TARGET_BUFFER_FRAMES),
+        SupportedBufferSize::Unknown => (BufferSize::Default, target_buffer_frames),
     }
 }
 

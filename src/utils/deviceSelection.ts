@@ -13,32 +13,22 @@ function uniqueMatch(
   return matches.length === 1 ? matches[0] : null;
 }
 
-export function preferredDevice(devices: AudioDevice[], preferCable = false): string {
-  if (preferCable) {
-    const cable = uniqueMatch(devices, (device) =>
-      device.name.toLowerCase().includes('cable input'),
-    );
-    if (cable) return cable.id;
-  }
+export function preferredDevice(devices: AudioDevice[]): string {
   return uniqueMatch(devices, (device) => device.isDefault)?.id ?? devices[0]?.id ?? '';
 }
 
-export function reconcileSelection(
-  selected: string,
-  devices: AudioDevice[],
-  preferCable = false,
-): string {
-  return (
-    uniqueMatch(devices, (device) => device.id === selected)?.id ??
-    preferredDevice(devices, preferCable)
-  );
+export function preferredProcessedDestination(devices: AudioDevice[]): string {
+  return uniqueMatch(devices, (device) => device.isLikelyVirtual)?.id ?? '';
+}
+
+export function reconcileSelection(selected: string, devices: AudioDevice[]): string {
+  return uniqueMatch(devices, (device) => device.id === selected)?.id ?? preferredDevice(devices);
 }
 
 export function resolveStoredSelection(
   storedId: string | null,
   storedFriendlyName: string | null,
   devices: AudioDevice[],
-  preferCable = false,
 ): DeviceSelectionResolution {
   if (storedId) {
     const identifierMatch = uniqueMatch(devices, (device) => device.id === storedId);
@@ -58,6 +48,6 @@ export function resolveStoredSelection(
     }
   }
 
-  const fallback = preferredDevice(devices, preferCable);
+  const fallback = preferredDevice(devices);
   return fallback ? { id: fallback, source: 'fallback' } : { id: '', source: 'unavailable' };
 }

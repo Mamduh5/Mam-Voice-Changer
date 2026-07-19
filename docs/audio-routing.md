@@ -1,45 +1,35 @@
 # Audio routing
 
-## Prototype signal path
+## Separate route purposes
 
 ```text
 Physical microphone
         |
         v
-Mam Voice Changer (latency-aligned bypass or processed signal)
+one DSP chain (preset, bypass, limiter, mute)
         |
-        v
-CABLE Input
+        +--> processed destination (normal Use route)
         |
-        v
-CABLE Output
-        |
-        v
-Receiving application microphone input
+        +--> optional local monitor (off by default)
 ```
 
-`CABLE Input` is a Windows playback/output endpoint, so it belongs in Mam Voice
-Changer's output selector. `CABLE Output` is a Windows capture/input endpoint, so it
-belongs in Discord, OBS, or another receiving application's microphone selector.
+The DSP worker processes each block once and fans the same samples into independent bounded destination and monitor rings. Neither output callback waits for the other. A monitor failure degrades only monitoring when the main destination remains healthy; an input or main-destination failure enters bounded recovery.
 
-## Setup
+Use never opens a speaker/headphone merely so the user can hear themselves. Test opens a monitor-only route only after the user checks the temporary-monitor option and presses Start. Leaving Test clears that temporary choice and requests Stop.
 
-1. Install VB-CABLE from VB-Audio and restart Windows if the installer requests it.
-2. Open Windows Sound settings and confirm both CABLE endpoints are enabled.
-3. Prefer 48 kHz for the physical microphone and CABLE endpoints. Mam Voice Changer
-   negotiates a common rate but does not resample incompatible devices.
-4. Start Mam Voice Changer and refresh devices.
-5. Choose a physical microphone as input.
-6. Choose **CABLE Input** as output.
-7. Verify the selected output and start the engine. Use bypass for the clean,
-   latency-aligned routing comparison.
-8. Choose **CABLE Output** as the microphone in the receiving application.
+## Receiving applications
 
-Use headphones. Routing a live microphone to speakers can create an acoustic
-feedback loop. When the current output selection is unavailable, the frontend
-prefers an endpoint whose friendly name contains `CABLE Input`; if none exists it
-falls back to the Windows default output, which may be physical speakers. Always
-verify the output selector before starting the engine.
+A physical output endpoint plays through speakers or headphones. Discord, OBS, and similar applications can choose only Windows capture endpoints as microphone inputs. Mam Voice Changer does not register a Windows capture endpoint and this phase does not implement a virtual microphone driver.
 
-No Discord, OBS, TikTok Live Studio, browser, or Facebook Live compatibility claim is
-made until the corresponding manual test is completed and recorded.
+With a third-party virtual audio device, the route is commonly:
+
+```text
+physical microphone -> Mam Voice Changer -> virtual playback endpoint
+virtual capture endpoint -> Discord / OBS microphone input
+```
+
+Endpoint classification in the app is advisory and uses available friendly-name metadata; it is not hard-coded to one vendor. If no likely virtual playback endpoint is present, no physical speaker is automatically promoted to the processed destination.
+
+## Safety
+
+Use headphones for Test monitoring. Local monitoring defaults off on first launch and unsafe settings recovery. The engine never starts automatically after launch. Verify every destination before Start; endpoint labels do not guarantee a feedback-safe physical setup.

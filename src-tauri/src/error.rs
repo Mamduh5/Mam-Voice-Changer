@@ -2,6 +2,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AudioError {
+    #[error("Invalid audio route: {0}")]
+    InvalidConfiguration(String),
     #[error("Unable to enumerate {direction} audio devices: {details}")]
     DeviceEnumeration {
         direction: &'static str,
@@ -19,6 +21,10 @@ pub enum AudioError {
     },
     #[error("No compatible sample rate exists between input '{input}' and output '{output}'. Configure both devices to a common rate such as 48 kHz in Windows Sound settings.")]
     NoCommonSampleRate { input: String, output: String },
+    #[error(
+        "Output device '{output}' does not support the active DSP sample rate of {sample_rate} Hz."
+    )]
+    OutputSampleRateUnavailable { output: String, sample_rate: u32 },
     #[error("Unable to create the {direction} audio stream: {details}")]
     BuildStream {
         direction: &'static str,
@@ -37,4 +43,10 @@ pub enum AudioError {
     WorkerUnavailable,
     #[error("The audio engine did not respond within {0} seconds.")]
     WorkerTimeout(u64),
+    #[error("Startup prefill timed out after {timeout_ms} ms: achieved {achieved_frames} of {target_frames} frames.")]
+    StartupPrefillTimeout {
+        timeout_ms: u64,
+        achieved_frames: usize,
+        target_frames: usize,
+    },
 }

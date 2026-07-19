@@ -1,92 +1,108 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { tauriAudioApi } from '../services/tauriAudioApi';
-import type { AudioDevice } from '../types/audio';
-import { reconcileSelection } from '../utils/deviceSelection';
+import type {
+  ApplicationPage,
+  ApplicationSettingsUpdate,
+  AudioDevice,
+  ReliabilityProfile,
+} from '../types/audio';
+import { preferredDevice, reconcileSelection } from '../utils/deviceSelection';
 
 function errorMessage(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+export const defaultApplicationSettings: ApplicationSettingsUpdate = {
+  selectedInputId: null,
+  processedDestinationId: null,
+  localMonitorId: null,
+  localMonitorEnabled: false,
+  reliabilityProfile: 'balanced',
+  lastPage: 'use',
+};
+
 export function useAudioDevices(enabled = true) {
   const [inputs, setInputs] = useState<AudioDevice[]>([]);
   const [outputs, setOutputs] = useState<AudioDevice[]>([]);
-  const [inputId, setInputId] = useState('');
-  const [outputId, setOutputId] = useState('');
+  const [settings, setSettings] = useState(defaultApplicationSettings);
+  const [hasLikelyVirtualDestination, setHasLikelyVirtualDestination] = useState(false);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const activeRef = useRef(false);
-  const inputIdRef = useRef('');
-  const outputIdRef = useRef('');
+  const settingsRef = useRef(defaultApplicationSettings);
   const refreshRevisionRef = useRef(0);
-  const pendingSaveRef = useRef<{ inputId: string; outputId: string } | null>(null);
+  const pendingSaveRef = useRef<ApplicationSettingsUpdate | null>(null);
   const savingRef = useRef<Promise<void> | null>(null);
 
-  const flushSelection = useCallback(async () => {
+  const flushSettings = useCallback(async () => {
     while (pendingSaveRef.current || savingRef.current) {
       if (!savingRef.current) {
         const save = async () => {
           while (pendingSaveRef.current) {
-            const selection = pendingSaveRef.current;
+            const next = pendingSaveRef.current;
             pendingSaveRef.current = null;
             try {
-              await tauriAudioApi.saveAudioDeviceSelection(selection.inputId, selection.outputId);
-              if (activeRef.current && !pendingSaveRef.current) {
-                setError(null);
-              }
+              await tauriAudioApi.saveApplicationSettings(next);
+              if (activeRef.current && !pendingSaveRef.current) setError(null);
             } catch (cause) {
               if (activeRef.current && !pendingSaveRef.current) {
-                setError(`Could not save the selected audio devices: ${errorMessage(cause)}`);
+                setError(`Could not save application settings: ${errorMessage(cause)}`);
               }
             }
           }
         };
         savingRef.current = save();
       }
-
       const saving = savingRef.current;
       await saving;
-      if (savingRef.current === saving) {
-        savingRef.current = null;
-      }
+      if (savingRef.current === saving) savingRef.current = null;
     }
   }, []);
 
-  const queueSelection = useCallback(
-    (nextInputId: string, nextOutputId: string) => {
-      if (!enabled || !nextInputId || !nextOutputId) {
-        return;
-      }
-      pendingSaveRef.current = { inputId: nextInputId, outputId: nextOutputId };
-      void flushSelection();
+  const updateSettings = useCallback(
+    (changes: Partial<ApplicationSettingsUpdate>) => {
+      if (!enabled) return;
+      const next = { ...settingsRef.current, ...changes };
+      if (!next.localMonitorId) next.localMonitorEnabled = false;
+      settingsRef.current = next;
+      setSettings(next);
+      pendingSaveRef.current = next;
+      void flushSettings();
     },
-    [enabled, flushSelection],
+    [enabled, flushSettings],
   );
 
   const refresh = useCallback(async () => {
-    if (!enabled) {
-      return;
-    }
-
+    if (!enabled) return;
     const revision = ++refreshRevisionRef.current;
     setLoading(true);
     try {
-      while (pendingSaveRef.current || savingRef.current) {
-        await flushSelection();
-      }
+      while (pendingSaveRef.current || savingRef.current) await flushSettings();
       const devices = await tauriAudioApi.listAudioDevices();
       if (activeRef.current && revision === refreshRevisionRef.current) {
-        const nextInputId = reconcileSelection(devices.selectedInputId ?? '', devices.inputs);
-        const nextOutputId = reconcileSelection(
-          devices.selectedOutputId ?? '',
+        const inputId = reconcileSelection(devices.selectedInputId ?? '', devices.inputs);
+        const destinationId = devices.outputs.some(
+          (device) => device.id === devices.processedDestinationId,
+        )
+          ? (devices.processedDestinationId ?? '')
+          : '';
+        const monitorId = reconcileSelection(
+          devices.localMonitorId ?? preferredDevice(devices.outputs),
           devices.outputs,
-          true,
         );
-        inputIdRef.current = nextInputId;
-        outputIdRef.current = nextOutputId;
+        const next: ApplicationSettingsUpdate = {
+          selectedInputId: inputId || null,
+          processedDestinationId: destinationId || null,
+          localMonitorId: monitorId || null,
+          localMonitorEnabled: Boolean(devices.localMonitorEnabled && monitorId),
+          reliabilityProfile: devices.reliabilityProfile,
+          lastPage: devices.lastPage,
+        };
+        settingsRef.current = next;
+        setSettings(next);
         setInputs(devices.inputs);
         setOutputs(devices.outputs);
-        setInputId(nextInputId);
-        setOutputId(nextOutputId);
+        setHasLikelyVirtualDestination(devices.hasLikelyVirtualDestination);
         setError(devices.restorationWarning);
       }
     } catch (cause) {
@@ -94,17 +110,12 @@ export function useAudioDevices(enabled = true) {
         setError(`Could not refresh audio devices: ${errorMessage(cause)}`);
       }
     } finally {
-      if (activeRef.current && revision === refreshRevisionRef.current) {
-        setLoading(false);
-      }
+      if (activeRef.current && revision === refreshRevisionRef.current) setLoading(false);
     }
-  }, [enabled, flushSelection]);
+  }, [enabled, flushSettings]);
 
   useEffect(() => {
-    if (!enabled) {
-      return undefined;
-    }
-
+    if (!enabled) return undefined;
     activeRef.current = true;
     const initialRefresh = window.setTimeout(() => void refresh(), 0);
     return () => {
@@ -115,31 +126,47 @@ export function useAudioDevices(enabled = true) {
     };
   }, [enabled, refresh]);
 
-  const selectInput = useCallback(
-    (nextInputId: string) => {
-      inputIdRef.current = nextInputId;
-      setInputId(nextInputId);
-      queueSelection(nextInputId, outputIdRef.current);
-    },
-    [queueSelection],
+  const setInputId = useCallback(
+    (id: string) => updateSettings({ selectedInputId: id || null }),
+    [updateSettings],
   );
-
-  const selectOutput = useCallback(
-    (nextOutputId: string) => {
-      outputIdRef.current = nextOutputId;
-      setOutputId(nextOutputId);
-      queueSelection(inputIdRef.current, nextOutputId);
-    },
-    [queueSelection],
+  const setProcessedDestinationId = useCallback(
+    (id: string) => updateSettings({ processedDestinationId: id || null }),
+    [updateSettings],
+  );
+  const setLocalMonitorId = useCallback(
+    (id: string) => updateSettings({ localMonitorId: id || null }),
+    [updateSettings],
+  );
+  const setLocalMonitorEnabled = useCallback(
+    (enabled: boolean) => updateSettings({ localMonitorEnabled: enabled }),
+    [updateSettings],
+  );
+  const setReliabilityProfile = useCallback(
+    (profile: ReliabilityProfile) => updateSettings({ reliabilityProfile: profile }),
+    [updateSettings],
+  );
+  const setLastPage = useCallback(
+    (page: ApplicationPage) => updateSettings({ lastPage: page }),
+    [updateSettings],
   );
 
   return {
     inputs,
     outputs,
-    inputId,
-    outputId,
-    setInputId: selectInput,
-    setOutputId: selectOutput,
+    inputId: settings.selectedInputId ?? '',
+    processedDestinationId: settings.processedDestinationId ?? '',
+    localMonitorId: settings.localMonitorId ?? '',
+    localMonitorEnabled: settings.localMonitorEnabled,
+    reliabilityProfile: settings.reliabilityProfile,
+    lastPage: settings.lastPage,
+    hasLikelyVirtualDestination,
+    setInputId,
+    setProcessedDestinationId,
+    setLocalMonitorId,
+    setLocalMonitorEnabled,
+    setReliabilityProfile,
+    setLastPage,
     refresh,
     loading: enabled && loading,
     error,

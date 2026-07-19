@@ -8,8 +8,10 @@ pub enum EngineState {
     Stopped = 0,
     Starting = 1,
     Running = 2,
-    Stopping = 3,
-    Error = 4,
+    Degraded = 3,
+    Recovering = 4,
+    Stopping = 5,
+    Error = 6,
 }
 
 impl EngineState {
@@ -17,8 +19,10 @@ impl EngineState {
         match value {
             1 => Self::Starting,
             2 => Self::Running,
-            3 => Self::Stopping,
-            4 => Self::Error,
+            3 => Self::Degraded,
+            4 => Self::Recovering,
+            5 => Self::Stopping,
+            6 => Self::Error,
             _ => Self::Stopped,
         }
     }
@@ -28,7 +32,18 @@ impl EngineState {
             (self, next),
             (Self::Stopped, Self::Starting)
                 | (Self::Starting, Self::Running | Self::Error | Self::Stopped)
-                | (Self::Running, Self::Stopping | Self::Error)
+                | (
+                    Self::Running,
+                    Self::Degraded | Self::Recovering | Self::Stopping | Self::Error
+                )
+                | (
+                    Self::Degraded,
+                    Self::Running | Self::Recovering | Self::Stopping | Self::Error
+                )
+                | (
+                    Self::Recovering,
+                    Self::Running | Self::Stopping | Self::Error
+                )
                 | (Self::Stopping, Self::Stopped | Self::Error)
                 | (Self::Error, Self::Starting | Self::Stopped)
         ) || self == next
@@ -52,5 +67,15 @@ mod tests {
         assert!(EngineState::Running.can_transition_to(EngineState::Error));
         assert!(EngineState::Error.can_transition_to(EngineState::Starting));
         assert!(!EngineState::Stopped.can_transition_to(EngineState::Running));
+    }
+
+    #[test]
+    fn recovery_and_degraded_states_have_explicit_safe_transitions() {
+        assert!(EngineState::Running.can_transition_to(EngineState::Recovering));
+        assert!(EngineState::Recovering.can_transition_to(EngineState::Running));
+        assert!(EngineState::Recovering.can_transition_to(EngineState::Stopping));
+        assert!(EngineState::Running.can_transition_to(EngineState::Degraded));
+        assert!(EngineState::Degraded.can_transition_to(EngineState::Stopping));
+        assert!(!EngineState::Stopped.can_transition_to(EngineState::Recovering));
     }
 }

@@ -2,8 +2,9 @@
 
 Mam Voice Changer is a Windows 10/11 x64 desktop application built with Tauri 2,
 React, TypeScript, Rust, and CPAL. It captures a physical microphone, applies a
-local real-time DSP chain, and sends the result to a selected Windows output such
-as VB-CABLE's **CABLE Input**.
+local real-time DSP chain, and sends the result to an explicit processed playback
+destination such as VB-CABLE's **CABLE Input**. An independent local monitor is
+available for deliberate headphone testing and defaults off.
 
 ![Desktop interface](docs/screenshots/milestone-1-ui.png)
 
@@ -11,8 +12,11 @@ as VB-CABLE's **CABLE Input**.
 
 - Windows input/output device enumeration and selection
 - Common sample-rate negotiation and normalized `f32` processing
-- Bounded input/output rings and a dedicated fixed-block DSP worker
-- Input gain, 20 Hz high-pass filtering, optional noise gate, and output gain
+- Separate Use, Test, and Settings & Diagnostics pages
+- One DSP worker with independent bounded processed-destination and monitor rings
+- Low latency, Balanced, and Reliable buffering/prefill profiles
+- Short-dropout concealment, staged stream recovery, and detailed location-specific counters
+- Input gain, 20 Hz high-pass filtering, an optional soft speech expander, and output gain
 - Signalsmith Stretch pitch shifting with formant compensation and independent
   formant shift
 - Pitch-latency-aligned dry/wet mixing and bypass
@@ -35,9 +39,10 @@ user preset falls back to `Natural`.
 
 ### Automated coverage present
 
-Device-independent Rust tests cover preset schema validation, persistence and
-restored selection, duplicate/delete/reset behavior, and corrupt-file handling.
-Frontend tests cover device-selection fallback. These are descriptions of test
+Device-independent Rust tests cover presets, application-settings migration,
+routing fan-out, reliability profiles, the expander, concealment, counters, and
+bounded recovery policy. Frontend tests cover device selection, the three pages,
+monitoring safety, navigation, and diagnostics. These are descriptions of test
 coverage, not a claim that the commands below passed in the current checkout.
 
 ### Manual validation completed
@@ -63,7 +68,8 @@ telemetry, and non-Windows platforms are not part of the current prototype.
 
 ## Conservative defaults
 
-The application starts at 0 semitones pitch/formant, 35% wet, gate off,
+The application starts on Use with monitoring off, the Balanced reliability
+profile, 0 semitones pitch/formant, 35% wet, Gate/expander off,
 0 dB input, -6 dB output, neutral tone controls, a -3 dBFS master ceiling,
 limiter on, bypass off, and mute off.
 
@@ -95,8 +101,10 @@ npm run dev
 `npm run dev` launches the Tauri desktop runtime. `npm run dev:web` intentionally
 launches only Vite; native audio controls remain disabled there.
 
-Choose a physical microphone as input and **CABLE Input** as output. In the
-receiving application, choose **CABLE Output** as its microphone.
+Choose a physical microphone as input and **CABLE Input** as the processed
+destination. In the receiving application, choose **CABLE Output** as its
+microphone. Without a real virtual capture endpoint, the app can test through
+headphones but cannot appear as a Discord microphone.
 
 ## Validation commands
 

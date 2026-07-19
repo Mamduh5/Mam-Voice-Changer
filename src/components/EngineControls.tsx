@@ -8,7 +8,7 @@ type Props = {
 };
 
 export function EngineControls({ status, canStart, onStart, onStop }: Props) {
-  const running = status.state === 'running';
+  const active = ['running', 'degraded', 'recovering'].includes(status.state);
   const busy = status.state === 'starting' || status.state === 'stopping';
   return (
     <section className="transport card">
@@ -17,11 +17,11 @@ export function EngineControls({ status, canStart, onStart, onStop }: Props) {
         <small>Local real-time audio processing</small>
       </div>
       <button
-        className={running ? 'stop' : 'start'}
-        disabled={busy || (!running && !canStart)}
-        onClick={running ? onStop : onStart}
+        className={active ? 'stop' : 'start'}
+        disabled={busy || (!active && !canStart)}
+        onClick={active ? onStop : onStart}
       >
-        {busy ? 'Please wait…' : running ? 'Stop engine' : 'Start engine'}
+        {busy ? 'Please wait…' : active ? 'Stop engine' : 'Start engine'}
       </button>
     </section>
   );

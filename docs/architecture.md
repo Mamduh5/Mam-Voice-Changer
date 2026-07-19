@@ -11,7 +11,8 @@ React controls
 
 input callback -> normalized/channel-mapped input ring
   -> fixed-block DSP worker
-  -> processed output ring -> output callback
+  -> independent bounded destination ring -> destination callback
+  -> independent bounded monitor ring -> optional monitor callback
 ```
 
 The CPAL callbacks only convert/map samples, access bounded rings, signal the DSP
@@ -23,7 +24,7 @@ allocation, and DSP algorithms stay out of the callbacks.
 - `dsp/chain.rs`: validated parameters and exact processor order
 - `dsp/gain.rs`: smoothed input/output gain
 - `dsp/high_pass.rs`: per-channel DC-blocking filter
-- `dsp/noise_gate.rs`: linked detector, hysteresis, and gain envelope
+- `dsp/noise_gate.rs`: linked soft speech expander with hysteresis, hold, and an attenuation floor
 - `dsp/pitch.rs`: fixed-chunk formant-aware pitch frontend
 - `dsp/signalsmith.rs`: owned Rust boundary for the static C ABI
 - `dsp/dry_wet.rs`: pitch-latency alignment for dry and bypass signals
@@ -56,7 +57,7 @@ implementation.
 normalized input
   -> input gain
   -> 20 Hz high-pass
-  -> noise gate
+  -> soft speech expander (when Gate is enabled)
   -> formant-aware pitch
   -> pitch-aligned dry/wet
   -> warmth low shelf
@@ -85,8 +86,18 @@ DSP latency frames = Signalsmith input latency
                    + worker block frames
 ```
 
-The device estimate adds negotiated input/output buffers and output-ring prefill.
+The device estimate adds negotiated input/output buffers and profile-specific output-ring prefill.
 These values are configuration-derived estimates, not measured round-trip delay.
+
+## Reliability and recovery
+
+Low latency requests 128 callback frames, uses 80 ms input/output rings, 256 prefill frames, no worker underrun tolerance, and up to 3 ms concealment. Balanced (default) uses 256 frames, 250 ms rings, 1,024 prefill frames, one-block tolerance, and 6 ms concealment. Reliable uses 512 frames, 500 ms rings, 2,048 prefill frames, two-block tolerance, and 10 ms concealment. Actual callback sizes remain subject to CPAL/WASAPI negotiation.
+
+Input starts first. Output streams are constructed and started only after all configured processed-output rings reach the prefill target; 500/1,000/1,500 ms profile-specific timeouts prevent an indefinite startup wait. Very short underruns continue the last valid frame with linear decay, then crossfade back over 2 ms. Longer gaps become silence.
+
+Input or main-destination errors are retained verbatim and trigger at most three staged restart attempts with 100, 300, and 900 ms delays. Endpoints are re-enumerated by stable identifier, then by a unique matching friendly name. An optional monitor failure leaves the main destination running in `degraded`; a Test monitor-only failure is treated as the active route failure. Stop cancels any queued recovery.
+
+Ring-fill trends and a correction ratio/min/max of 1.0 are exposed for clock-drift observation. Adaptive resampling is intentionally pending until long-session evidence shows persistent drift.
 
 ## Live updates and allocation boundary
 

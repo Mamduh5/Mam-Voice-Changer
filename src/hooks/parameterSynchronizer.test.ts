@@ -48,6 +48,26 @@ describe('ParameterSynchronizer', () => {
     });
   });
 
+  it('synchronizes vocal-aging controls and reconciles a rejected update', async () => {
+    const authoritative = parameters({ ageCharacter: 0.2, breathiness: 0.1, tremor: 0.05 });
+    const getParameters = vi
+      .fn()
+      .mockResolvedValueOnce(parameters())
+      .mockResolvedValueOnce(authoritative);
+    const setParameters = vi.fn().mockRejectedValueOnce(new Error('aging rejected'));
+    const { synchronizer } = createSynchronizer(getParameters, setParameters);
+    await synchronizer.settle();
+
+    synchronizer.update({ ageCharacter: 0.8, breathiness: 0.5, tremor: 0.35 });
+    await synchronizer.settle();
+
+    expect(setParameters).toHaveBeenCalledWith(
+      parameters({ ageCharacter: 0.8, breathiness: 0.5, tremor: 0.35 }),
+    );
+    expect(synchronizer.snapshot().parameters).toEqual(authoritative);
+    expect(synchronizer.snapshot().error).toContain('Backend settings were restored');
+  });
+
   it('restores the last confirmed snapshot when update and reconciliation both fail', async () => {
     const getParameters = vi
       .fn()

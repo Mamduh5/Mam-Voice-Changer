@@ -88,6 +88,43 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
         disabled={disabled}
         onChange={(dryWet) => onChange({ dryWet })}
       />
+      <fieldset className="vocal-aging-controls">
+        <legend>Vocal aging</legend>
+        <p>Real-time DSP aging effect. This is not neural voice cloning.</p>
+        <SliderControl
+          label="Age Character"
+          value={parameters.ageCharacter}
+          displayValue={parameters.ageCharacter * 100}
+          min={0}
+          max={1}
+          step={0.01}
+          unit="%"
+          disabled={disabled}
+          onChange={(ageCharacter) => onChange({ ageCharacter })}
+        />
+        <SliderControl
+          label="Breathiness"
+          value={parameters.breathiness}
+          displayValue={parameters.breathiness * 100}
+          min={0}
+          max={1}
+          step={0.01}
+          unit="%"
+          disabled={disabled}
+          onChange={(breathiness) => onChange({ breathiness })}
+        />
+        <SliderControl
+          label="Tremor"
+          value={parameters.tremor}
+          displayValue={parameters.tremor * 100}
+          min={0}
+          max={1}
+          step={0.01}
+          unit="%"
+          disabled={disabled}
+          onChange={(tremor) => onChange({ tremor })}
+        />
+      </fieldset>
       <SliderControl
         label="Warmth"
         value={parameters.warmthDb}

@@ -10,6 +10,7 @@ pub struct PitchShifter {
     channel_count: usize,
     pitch_semitones: SmoothedValue,
     formant_shift_semitones: SmoothedValue,
+    dynamic_pitch_offset_semitones: f32,
     input_scratch: Vec<f32>,
     latency_frames: usize,
 }
@@ -21,6 +22,7 @@ impl Default for PitchShifter {
             channel_count: 1,
             pitch_semitones: SmoothedValue::new(0.0),
             formant_shift_semitones: SmoothedValue::new(0.0),
+            dynamic_pitch_offset_semitones: 0.0,
             input_scratch: Vec::new(),
             latency_frames: 0,
         }
@@ -34,6 +36,14 @@ impl PitchShifter {
 
     pub fn set_formant_shift_semitones(&mut self, semitones: f32) {
         self.formant_shift_semitones.set_target(semitones);
+    }
+
+    pub fn set_dynamic_pitch_offset_semitones(&mut self, semitones: f32) {
+        self.dynamic_pitch_offset_semitones = if semitones.is_finite() {
+            semitones.clamp(-0.3, 0.3)
+        } else {
+            0.0
+        };
     }
 
     pub const fn latency_frames(&self) -> usize {
@@ -76,7 +86,7 @@ impl AudioProcessor for PitchShifter {
                 formant = self.formant_shift_semitones.next();
             }
 
-            backend.set_parameters(pitch, formant);
+            backend.set_parameters(pitch + self.dynamic_pitch_offset_semitones, formant);
             self.input_scratch[..output.len()].copy_from_slice(output);
             backend.process(&mut self.input_scratch[..output.len()], output);
             for sample in output {
@@ -90,6 +100,7 @@ impl AudioProcessor for PitchShifter {
     fn reset(&mut self) {
         self.pitch_semitones.reset_to_target();
         self.formant_shift_semitones.reset_to_target();
+        self.dynamic_pitch_offset_semitones = 0.0;
         self.input_scratch.fill(0.0);
         if let Some(backend) = self.backend.as_mut() {
             backend.reset();

@@ -6,6 +6,9 @@ pub struct ParameterState {
     pitch_semitones: AtomicU32,
     formant_shift_semitones: AtomicU32,
     dry_wet: AtomicU32,
+    age_character: AtomicU32,
+    breathiness: AtomicU32,
+    tremor: AtomicU32,
     gate_enabled: AtomicBool,
     gate_threshold_db: AtomicU32,
     input_gain_db: AtomicU32,
@@ -25,6 +28,9 @@ impl Default for ParameterState {
             pitch_semitones: AtomicU32::new(parameters.pitch_semitones.to_bits()),
             formant_shift_semitones: AtomicU32::new(parameters.formant_shift_semitones.to_bits()),
             dry_wet: AtomicU32::new(parameters.dry_wet.to_bits()),
+            age_character: AtomicU32::new(parameters.age_character.to_bits()),
+            breathiness: AtomicU32::new(parameters.breathiness.to_bits()),
+            tremor: AtomicU32::new(parameters.tremor.to_bits()),
             gate_enabled: AtomicBool::new(parameters.gate_enabled),
             gate_threshold_db: AtomicU32::new(parameters.gate_threshold_db.to_bits()),
             input_gain_db: AtomicU32::new(parameters.input_gain_db.to_bits()),
@@ -50,6 +56,12 @@ impl ParameterState {
         );
         self.dry_wet
             .store(parameters.dry_wet.to_bits(), Ordering::Release);
+        self.age_character
+            .store(parameters.age_character.to_bits(), Ordering::Release);
+        self.breathiness
+            .store(parameters.breathiness.to_bits(), Ordering::Release);
+        self.tremor
+            .store(parameters.tremor.to_bits(), Ordering::Release);
         self.gate_enabled
             .store(parameters.gate_enabled, Ordering::Release);
         self.gate_threshold_db
@@ -78,6 +90,9 @@ impl ParameterState {
                 self.formant_shift_semitones.load(Ordering::Acquire),
             ),
             dry_wet: f32::from_bits(self.dry_wet.load(Ordering::Acquire)),
+            age_character: f32::from_bits(self.age_character.load(Ordering::Acquire)),
+            breathiness: f32::from_bits(self.breathiness.load(Ordering::Acquire)),
+            tremor: f32::from_bits(self.tremor.load(Ordering::Acquire)),
             gate_enabled: self.gate_enabled.load(Ordering::Acquire),
             gate_threshold_db: f32::from_bits(self.gate_threshold_db.load(Ordering::Acquire)),
             input_gain_db: f32::from_bits(self.input_gain_db.load(Ordering::Acquire)),
@@ -104,6 +119,9 @@ mod tests {
             pitch_semitones: 5.0,
             formant_shift_semitones: -2.0,
             dry_wet: 0.75,
+            age_character: 0.8,
+            breathiness: 0.45,
+            tremor: 0.3,
             gate_enabled: true,
             gate_threshold_db: -45.0,
             input_gain_db: 3.0,

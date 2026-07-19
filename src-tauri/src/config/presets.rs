@@ -12,9 +12,10 @@ use thiserror::Error;
 
 use crate::dsp::chain::DspParameters;
 
-pub const PRESET_SCHEMA_VERSION: u32 = 1;
+pub const PRESET_SCHEMA_VERSION: u32 = 2;
 pub const PRESET_FILE_NAME: &str = "presets.json";
 pub const NATURAL_PRESET_ID: &str = "builtin-natural";
+pub const OLD_LADY_PRESET_ID: &str = "builtin-old-lady";
 const MAX_PRESET_NAME_CHARS: usize = 64;
 const MAX_PRESET_ID_CHARS: usize = 128;
 static ID_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -35,6 +36,42 @@ pub struct UserPreset {
     pub parameters: DspParameters,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PresetDocumentV1 {
+    schema_version: u32,
+    presets: Vec<UserPresetV1>,
+    selected_preset_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UserPresetV1 {
+    id: String,
+    name: String,
+    parameters: DspParametersV1,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DspParametersV1 {
+    pitch_semitones: f32,
+    formant_shift_semitones: f32,
+    dry_wet: f32,
+    gate_enabled: bool,
+    gate_threshold_db: f32,
+    input_gain_db: f32,
+    output_gain_db: f32,
+    master_ceiling_db: f32,
+    warmth_db: f32,
+    brightness_db: f32,
+    limiter_enabled: bool,
+    bypass: bool,
+    muted: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -97,11 +134,15 @@ impl PresetStore {
         }
 
         let contents = fs::read_to_string(&path)?;
-        let document: PresetDocument = serde_json::from_str(&contents)?;
+        let (document, migrated) = decode_document(&contents)?;
         validate_document(&document)?;
-        remove_recovery_files(&path)?;
+        let store = Self { path, document };
+        if migrated {
+            store.persist_document(&store.document)?;
+        }
+        remove_recovery_files(&store.path)?;
 
-        Ok(Self { path, document })
+        Ok(store)
     }
 
     pub fn catalog(&self) -> Result<PresetCatalog, PresetError> {
@@ -302,7 +343,91 @@ pub fn built_in_presets() -> Vec<PresetView> {
             },
             built_in: true,
         },
+        PresetView {
+            id: OLD_LADY_PRESET_ID.to_owned(),
+            name: "Old Lady".to_owned(),
+            parameters: DspParameters {
+                pitch_semitones: 3.5,
+                formant_shift_semitones: 2.0,
+                dry_wet: 0.9,
+                age_character: 0.78,
+                breathiness: 0.48,
+                tremor: 0.34,
+                output_gain_db: -8.0,
+                warmth_db: -2.0,
+                brightness_db: -1.0,
+                limiter_enabled: true,
+                master_ceiling_db: -3.0,
+                ..DspParameters::default()
+            },
+            built_in: true,
+        },
     ]
+}
+
+fn decode_document(contents: &str) -> Result<(PresetDocument, bool), PresetError> {
+    let value: serde_json::Value = serde_json::from_str(contents)?;
+    let schema_version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            PresetError::Validation("Preset data must contain an integer schemaVersion.".to_owned())
+        })?;
+
+    match schema_version {
+        1 => {
+            let legacy: PresetDocumentV1 = serde_json::from_value(value)?;
+            Ok((migrate_v1(legacy), true))
+        }
+        version if version == u64::from(PRESET_SCHEMA_VERSION) => {
+            Ok((serde_json::from_value(value)?, false))
+        }
+        version => Err(PresetError::Validation(format!(
+            "Unsupported preset schema version {version}. Expected version {PRESET_SCHEMA_VERSION}."
+        ))),
+    }
+}
+
+fn migrate_v1(document: PresetDocumentV1) -> PresetDocument {
+    debug_assert_eq!(document.schema_version, 1);
+    PresetDocument {
+        schema_version: PRESET_SCHEMA_VERSION,
+        presets: document
+            .presets
+            .into_iter()
+            .map(|preset| UserPreset {
+                id: preset.id,
+                name: preset.name,
+                parameters: preset.parameters.into(),
+                created_at: preset.created_at,
+                updated_at: preset.updated_at,
+            })
+            .collect(),
+        selected_preset_id: document.selected_preset_id,
+    }
+}
+
+impl From<DspParametersV1> for DspParameters {
+    fn from(parameters: DspParametersV1) -> Self {
+        Self {
+            pitch_semitones: parameters.pitch_semitones,
+            formant_shift_semitones: parameters.formant_shift_semitones,
+            dry_wet: parameters.dry_wet,
+            age_character: 0.0,
+            breathiness: 0.0,
+            tremor: 0.0,
+            gate_enabled: parameters.gate_enabled,
+            gate_threshold_db: parameters.gate_threshold_db,
+            input_gain_db: parameters.input_gain_db,
+            output_gain_db: parameters.output_gain_db,
+            master_ceiling_db: parameters.master_ceiling_db,
+            warmth_db: parameters.warmth_db,
+            brightness_db: parameters.brightness_db,
+            limiter_enabled: parameters.limiter_enabled,
+            bypass: parameters.bypass,
+            muted: parameters.muted,
+        }
+    }
 }
 
 fn validate_document(document: &PresetDocument) -> Result<(), PresetError> {
@@ -469,8 +594,8 @@ mod tests {
     };
 
     use super::{
-        validate_document, PresetDocument, PresetStore, UserPreset, NATURAL_PRESET_ID,
-        PRESET_SCHEMA_VERSION,
+        built_in_presets, validate_document, PresetDocument, PresetStore, UserPreset,
+        NATURAL_PRESET_ID, OLD_LADY_PRESET_ID, PRESET_SCHEMA_VERSION,
     };
     use crate::dsp::chain::DspParameters;
 
@@ -505,7 +630,7 @@ mod tests {
         let decoded: PresetDocument = serde_json::from_str(&json).unwrap();
 
         assert_eq!(decoded, document);
-        assert!(json.contains("\"schemaVersion\":1"));
+        assert!(json.contains("\"schemaVersion\":2"));
         assert!(json.contains("\"selectedPresetId\":\"builtin-natural\""));
     }
 
@@ -530,8 +655,82 @@ mod tests {
         });
         assert!(validate_document(&document).is_err());
 
-        let unknown = r#"{"schemaVersion":1,"presets":[],"selectedPresetId":null,"extra":true}"#;
+        let unknown = r#"{"schemaVersion":2,"presets":[],"selectedPresetId":null,"extra":true}"#;
         assert!(serde_json::from_str::<PresetDocument>(unknown).is_err());
+    }
+
+    #[test]
+    fn migrates_v1_parameters_and_preserves_selection() {
+        let path = test_path("migrate-v1");
+        cleanup(&path);
+        let legacy = r#"{
+          "schemaVersion": 1,
+          "presets": [{
+            "id": "user-legacy",
+            "name": "Legacy",
+            "parameters": {
+              "pitchSemitones": 2.0,
+              "formantShiftSemitones": 1.0,
+              "dryWet": 0.7,
+              "gateEnabled": false,
+              "gateThresholdDb": -50.0,
+              "inputGainDb": 0.0,
+              "outputGainDb": -7.0,
+              "masterCeilingDb": -3.0,
+              "warmthDb": 1.0,
+              "brightnessDb": -1.0,
+              "limiterEnabled": true,
+              "bypass": false,
+              "muted": false
+            },
+            "createdAt": "1000",
+            "updatedAt": "1000"
+          }],
+          "selectedPresetId": "user-legacy"
+        }"#;
+        fs::write(&path, legacy).unwrap();
+
+        let store = PresetStore::load(path.clone()).unwrap();
+        let catalog = store.catalog().unwrap();
+        assert_eq!(catalog.schema_version, PRESET_SCHEMA_VERSION);
+        assert_eq!(catalog.selected_preset_id.as_deref(), Some("user-legacy"));
+        assert_eq!(catalog.active_parameters.age_character, 0.0);
+        assert_eq!(catalog.active_parameters.breathiness, 0.0);
+        assert_eq!(catalog.active_parameters.tremor, 0.0);
+
+        let persisted = fs::read_to_string(&path).unwrap();
+        assert!(persisted.contains("\"schemaVersion\": 2"));
+        assert!(persisted.contains("\"ageCharacter\": 0.0"));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn old_lady_is_valid_and_uses_dedicated_aging_parameters() {
+        let preset = built_in_presets()
+            .into_iter()
+            .find(|preset| preset.id == OLD_LADY_PRESET_ID)
+            .unwrap();
+        assert_eq!(preset.name, "Old Lady");
+        assert!(preset.parameters.validate().is_ok());
+        assert!(preset.parameters.age_character > 0.0);
+        assert!(preset.parameters.breathiness > 0.0);
+        assert!(preset.parameters.tremor > 0.0);
+    }
+
+    #[test]
+    fn loading_an_unsupported_future_schema_returns_a_clear_error() {
+        let path = test_path("future-schema");
+        cleanup(&path);
+        fs::write(
+            &path,
+            r#"{"schemaVersion":99,"presets":[],"selectedPresetId":null}"#,
+        )
+        .unwrap();
+
+        let error = PresetStore::load(path.clone()).err().unwrap().to_string();
+        assert!(error.contains("Unsupported preset schema version 99"));
+        assert!(path.exists());
+        cleanup(&path);
     }
 
     #[test]
@@ -544,6 +743,9 @@ mod tests {
             pitch_semitones: -2.0,
             warmth_db: 2.5,
             dry_wet: 0.4,
+            age_character: 0.65,
+            breathiness: 0.4,
+            tremor: 0.25,
             ..DspParameters::default()
         };
         store

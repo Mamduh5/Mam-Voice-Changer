@@ -313,6 +313,29 @@ select {
   accent-color: #9c5cf3;
 }
 
+.vocal-aging-controls {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid #3a2c4b;
+  border-radius: 12px;
+  background: #20172c;
+}
+
+.vocal-aging-controls legend {
+  padding: 0 8px;
+  color: #eee7f8;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.vocal-aging-controls p {
+  margin: 0;
+  color: #9288a3;
+  font-size: 12px;
+}
+
 .dsp-switches {
   display: grid;
   grid-template-columns: 1fr 1fr auto auto;

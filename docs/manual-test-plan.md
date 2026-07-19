@@ -58,6 +58,34 @@ These manual checks do not replace the focused device-independent DSP tests.
 11. Trigger a recoverable invalid-name or storage error where practical, then retry
     successfully and confirm the visible error clears.
 
+## Old Lady vocal-aging acceptance
+
+Use closed-back headphones at a conservative level. Do not use speakers or any
+routing that can create microphone feedback. Record the source voice, devices,
+sample rate, block/latency diagnostics, and observations; do not mark an item as
+passed from automated output alone.
+
+1. Select `Old Lady`, start in normal mode, and make repeated bypass comparisons.
+2. Test sustained vowels, normal speech, fast speech, quiet speech, and loud speech.
+3. Test sibilants, plosives, and silence between phrases.
+4. Test a low-pitched and high-pitched source. Include male and female source voices
+   where available.
+5. Sweep Age Character from 0% to 100%, then return to the preset value.
+6. Sweep Breathiness from 0% to 100%. Confirm zero adds no hiss and phrase gaps do
+   not carry constant noise, then return to the preset value.
+7. Sweep Tremor from 0% to 100%. Confirm the intended setting is subtle and does not
+   sound like musical vibrato, then return to the preset value.
+8. Switch between Natural, Old Lady, and a saved user preset while running. Repeat
+   start/stop ten times and check for clicks or stale modulation state.
+9. Run continuously for 30 minutes and record underruns, overruns, CPU observations,
+   latency, and any change in loudness or quality.
+10. Route through VB-CABLE and test Discord, OBS, and TikTok Live Studio separately.
+
+Listen specifically for cartoon pitch, metallic artifacts, robotic modulation,
+obvious musical vibrato, excessive hiss, noise during silence, pumping, clicking,
+harsh sibilance, loss of intelligibility, unstable loudness, excessive latency, and
+stereo phase instability.
+
 ## Device-selection restoration acceptance
 
 1. Select known input and output endpoints while the engine is stopped, close the
@@ -95,6 +123,8 @@ overrun/underrun counts, and any audible artifacts.
   exercised and remain manually unverified.
 - Device-selection persistence and fallback behavior were not exercised and remain
   manually unverified.
+- Old Lady listening, control sweeps, source-voice coverage, live preset switching,
+  and third-party routing remain manually unverified.
 
 ## Automated validation record
 

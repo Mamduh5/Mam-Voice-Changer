@@ -24,15 +24,15 @@ export default function App() {
   const transitioning = ['starting', 'stopping'].includes(engine.status.state);
 
   const deviceName = (id: string, output = false) =>
-    (output ? devices.outputs : devices.inputs).find((device) => device.id === id)?.name ?? '';
+    (output ? devices.outputs : devices.physicalInputs).find((device) => device.id === id)?.name ??
+    '';
 
   const startUse = () => {
     void engine.start({
       mode: 'use',
       inputId: devices.inputId,
       inputName: deviceName(devices.inputId),
-      processedDestinationId: devices.processedDestinationId,
-      processedDestinationName: deviceName(devices.processedDestinationId, true),
+      externalRouteId: devices.selectedRoute?.routeId ?? '',
       reliabilityProfile: devices.reliabilityProfile,
     });
   };
@@ -111,17 +111,30 @@ export default function App() {
 
       {devices.lastPage === 'use' && (
         <UsePage
+          physicalInputs={devices.physicalInputs}
           inputs={devices.inputs}
           outputs={devices.outputs}
           inputId={devices.inputId}
-          destinationId={devices.processedDestinationId}
-          hasLikelyVirtualDestination={devices.hasLikelyVirtualDestination}
+          routes={devices.externalRoutes}
+          selectedRoute={devices.selectedRoute}
+          validation={devices.routeValidation}
+          draftRouteId={devices.draftRouteId}
+          draftPlaybackId={devices.draftPlaybackId}
+          draftCaptureId={devices.draftCaptureId}
+          confirmPhysicalEndpoints={devices.confirmPhysicalEndpoints}
+          routeBusy={devices.routeBusy}
           disabled={!desktopRuntimeAvailable}
           status={engine.status}
           catalog={presets.catalog}
           presetBusy={presets.busy}
           onInputChange={devices.setInputId}
-          onDestinationChange={devices.setProcessedDestinationId}
+          onDraftRouteChange={devices.setDraftRouteId}
+          onDraftPlaybackChange={devices.setDraftPlaybackId}
+          onDraftCaptureChange={devices.setDraftCaptureId}
+          onConfirmPhysicalEndpointsChange={devices.setConfirmPhysicalEndpoints}
+          onSaveRoute={devices.saveExternalRoute}
+          onDeleteRoute={devices.deleteExternalRoute}
+          onValidateRoute={devices.validateSelectedRoute}
           onApplyPreset={presets.apply}
           onStart={startUse}
           onStop={stop}
@@ -129,7 +142,7 @@ export default function App() {
       )}
       {devices.lastPage === 'test' && (
         <TestPage
-          inputs={devices.inputs}
+          inputs={devices.physicalInputs}
           outputs={devices.outputs}
           inputId={devices.inputId}
           monitorId={devices.localMonitorId}
@@ -151,8 +164,9 @@ export default function App() {
           inputs={devices.inputs}
           outputs={devices.outputs}
           inputId={devices.inputId}
-          destinationId={devices.processedDestinationId}
           monitorId={devices.localMonitorId}
+          selectedRoute={devices.selectedRoute}
+          routeValidation={devices.routeValidation}
           reliabilityProfile={devices.reliabilityProfile}
           status={engine.status}
           disabled={!desktopRuntimeAvailable}

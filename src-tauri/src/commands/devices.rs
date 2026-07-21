@@ -18,7 +18,9 @@ pub struct AudioDeviceCatalog {
     pub inputs: Vec<DeviceInfo>,
     pub outputs: Vec<DeviceInfo>,
     pub selected_input_id: Option<String>,
-    pub processed_destination_id: Option<String>,
+    pub selected_external_route_id: Option<String>,
+    pub external_route_playback_id: Option<String>,
+    pub external_route_capture_id: Option<String>,
     pub local_monitor_id: Option<String>,
     pub reliability_profile: ReliabilityProfile,
     pub last_page: ApplicationPage,
@@ -30,7 +32,6 @@ pub struct AudioDeviceCatalog {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveApplicationSettingsRequest {
     pub selected_input_id: Option<String>,
-    pub processed_destination_id: Option<String>,
     pub local_monitor_id: Option<String>,
     pub reliability_profile: ReliabilityProfile,
     pub last_page: ApplicationPage,
@@ -58,7 +59,9 @@ pub fn list_audio_devices(state: tauri::State<'_, AppState>) -> Result<AudioDevi
         inputs,
         outputs,
         selected_input_id: resolved.selected_input_id,
-        processed_destination_id: resolved.processed_destination_id,
+        selected_external_route_id: document.selected_external_route_id,
+        external_route_playback_id: resolved.external_route_playback_id,
+        external_route_capture_id: resolved.external_route_capture_id,
         local_monitor_id: resolved.local_monitor_id,
         reliability_profile: document.reliability_profile,
         last_page: document.last_page,
@@ -75,35 +78,36 @@ pub fn save_application_settings(
     let DeviceList { inputs, outputs } =
         device::list_devices().map_err(|error| error.to_string())?;
     let input = selected_pair("input", request.selected_input_id.as_deref(), &inputs)?;
-    let destination = selected_pair(
-        "processed destination",
-        request.processed_destination_id.as_deref(),
-        &outputs,
-    )?;
+    if input.is_some_and(|device| device.is_likely_virtual) {
+        return Err("The application input must be a physical capture endpoint.".to_owned());
+    }
     let monitor = selected_pair(
         "local monitor",
         request.local_monitor_id.as_deref(),
         &outputs,
     )?;
+    let mut store = state
+        .application_settings()
+        .lock()
+        .map_err(|_| "Application settings storage is unavailable.".to_owned())?;
+    let existing = store.document().clone();
     let document = ApplicationSettingsDocument {
         schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
         selected_input_device_id: input.as_ref().map(|device| device.id.clone()),
         last_known_input_friendly_name: input.as_ref().map(|device| device.name.clone()),
-        processed_destination_device_id: destination.as_ref().map(|device| device.id.clone()),
-        last_known_processed_destination_friendly_name: destination
-            .as_ref()
-            .map(|device| device.name.clone()),
+        selected_external_route_id: existing.selected_external_route_id,
+        external_route_playback_device_id: existing.external_route_playback_device_id,
+        last_known_external_route_playback_name: existing.last_known_external_route_playback_name,
+        external_route_capture_device_id: existing.external_route_capture_device_id,
+        last_known_external_route_capture_name: existing.last_known_external_route_capture_name,
+        external_route_pairing_source: existing.external_route_pairing_source,
+        external_route_manual: existing.external_route_manual,
         local_monitor_device_id: monitor.as_ref().map(|device| device.id.clone()),
         last_known_local_monitor_friendly_name: monitor.as_ref().map(|device| device.name.clone()),
         reliability_profile: request.reliability_profile,
         last_page: request.last_page,
     };
-    state
-        .application_settings()
-        .lock()
-        .map_err(|_| "Application settings storage is unavailable.".to_owned())?
-        .save(document)
-        .map_err(|error| error.to_string())
+    store.save(document).map_err(|error| error.to_string())
 }
 
 fn selected_pair<'a>(
@@ -140,15 +144,10 @@ fn join_warnings(first: Option<String>, second: Option<String>) -> Option<String
 #[cfg(test)]
 mod tests {
     use super::selected_pair;
-    use crate::audio::device::DeviceInfo;
+    use crate::audio::device::{DeviceDirection, DeviceInfo};
 
     fn device(id: &str, name: &str) -> DeviceInfo {
-        DeviceInfo {
-            id: id.to_owned(),
-            name: name.to_owned(),
-            is_default: false,
-            is_likely_virtual: false,
-        }
+        DeviceInfo::test(id, name, DeviceDirection::Output, false, false)
     }
 
     #[test]

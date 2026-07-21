@@ -4,7 +4,9 @@ import type {
   ApplicationPage,
   ApplicationSettingsUpdate,
   AudioDevice,
+  ExternalAudioRouteCatalog,
   ReliabilityProfile,
+  RouteCompatibilityResult,
 } from '../types/audio';
 import { preferredDevice, reconcileSelection } from '../utils/deviceSelection';
 
@@ -14,21 +16,45 @@ function errorMessage(cause: unknown) {
 
 export const defaultApplicationSettings: ApplicationSettingsUpdate = {
   selectedInputId: null,
-  processedDestinationId: null,
   localMonitorId: null,
   reliabilityProfile: 'balanced',
   lastPage: 'use',
+};
+
+export const emptyExternalRouteCatalog: ExternalAudioRouteCatalog = {
+  routes: [],
+  virtualPlaybackDevices: [],
+  virtualCaptureDevices: [],
+  unpairedCaptureDevices: [],
+  selectedRouteId: null,
+  restorationWarning: null,
+};
+
+const missingRouteValidation: RouteCompatibilityResult = {
+  routeId: null,
+  readiness: 'missingPlayback',
+  message:
+    'No virtual audio route is available. Install or enable a compatible Windows virtual audio device, then refresh devices.',
+  negotiatedSampleRate: null,
+  captureEndpointAvailable: false,
 };
 
 export function useAudioDevices(enabled = true) {
   const [inputs, setInputs] = useState<AudioDevice[]>([]);
   const [outputs, setOutputs] = useState<AudioDevice[]>([]);
   const [settings, setSettings] = useState(defaultApplicationSettings);
-  const [hasLikelyVirtualDestination, setHasLikelyVirtualDestination] = useState(false);
+  const [externalRoutes, setExternalRoutes] = useState(emptyExternalRouteCatalog);
+  const [routeValidation, setRouteValidation] = useState(missingRouteValidation);
+  const [draftRouteId, setDraftRouteIdState] = useState('');
+  const [draftPlaybackId, setDraftPlaybackId] = useState('');
+  const [draftCaptureId, setDraftCaptureId] = useState('');
+  const [confirmPhysicalEndpoints, setConfirmPhysicalEndpoints] = useState(false);
+  const [routeBusy, setRouteBusy] = useState(false);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const activeRef = useRef(false);
   const settingsRef = useRef(defaultApplicationSettings);
+  const routesRef = useRef(emptyExternalRouteCatalog);
   const refreshRevisionRef = useRef(0);
   const pendingSaveRef = useRef<ApplicationSettingsUpdate | null>(null);
   const savingRef = useRef<Promise<void> | null>(null);
@@ -70,27 +96,60 @@ export function useAudioDevices(enabled = true) {
     [enabled, flushSettings],
   );
 
+  const validateRoute = useCallback(
+    async (inputId: string, routeId: string) => {
+      if (!enabled || !routeId) {
+        if (activeRef.current) setRouteValidation(missingRouteValidation);
+        return;
+      }
+      try {
+        const result = await tauriAudioApi.validateExternalAudioRoute(inputId, routeId);
+        if (activeRef.current) setRouteValidation(result);
+      } catch (cause) {
+        if (activeRef.current) {
+          setRouteValidation({
+            routeId,
+            readiness: 'deviceUnavailable',
+            message: `Could not validate the external route: ${errorMessage(cause)}`,
+            negotiatedSampleRate: null,
+            captureEndpointAvailable: false,
+          });
+        }
+      }
+    },
+    [enabled],
+  );
+
+  const applyRouteCatalog = useCallback((catalog: ExternalAudioRouteCatalog) => {
+    routesRef.current = catalog;
+    setExternalRoutes(catalog);
+    const selected = catalog.routes.find((route) => route.routeId === catalog.selectedRouteId);
+    const draft = selected ?? catalog.routes[0];
+    setDraftRouteIdState(draft?.routeId ?? '');
+    setDraftPlaybackId(draft?.playbackDevice.id ?? catalog.virtualPlaybackDevices[0]?.id ?? '');
+    setDraftCaptureId(draft?.captureDevice?.id ?? draft?.candidateCaptureDevices[0]?.id ?? '');
+    setConfirmPhysicalEndpoints(false);
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!enabled) return;
     const revision = ++refreshRevisionRef.current;
     setLoading(true);
     try {
       while (pendingSaveRef.current || savingRef.current) await flushSettings();
-      const devices = await tauriAudioApi.listAudioDevices();
+      const [devices, routes] = await Promise.all([
+        tauriAudioApi.listAudioDevices(),
+        tauriAudioApi.listExternalAudioRoutes(),
+      ]);
       if (activeRef.current && revision === refreshRevisionRef.current) {
-        const inputId = reconcileSelection(devices.selectedInputId ?? '', devices.inputs);
-        const destinationId = devices.outputs.some(
-          (device) => device.id === devices.processedDestinationId,
-        )
-          ? (devices.processedDestinationId ?? '')
-          : '';
+        const physicalInputs = devices.inputs.filter((device) => !device.isLikelyVirtual);
+        const inputId = reconcileSelection(devices.selectedInputId ?? '', physicalInputs);
         const monitorId = reconcileSelection(
           devices.localMonitorId ?? preferredDevice(devices.outputs),
           devices.outputs,
         );
         const next: ApplicationSettingsUpdate = {
           selectedInputId: inputId || null,
-          processedDestinationId: destinationId || null,
           localMonitorId: monitorId || null,
           reliabilityProfile: devices.reliabilityProfile,
           lastPage: devices.lastPage,
@@ -99,8 +158,11 @@ export function useAudioDevices(enabled = true) {
         setSettings(next);
         setInputs(devices.inputs);
         setOutputs(devices.outputs);
-        setHasLikelyVirtualDestination(devices.hasLikelyVirtualDestination);
-        setError(devices.restorationWarning);
+        applyRouteCatalog(routes);
+        setError(
+          [devices.restorationWarning, routes.restorationWarning].filter(Boolean).join(' ') || null,
+        );
+        await validateRoute(inputId, routes.selectedRouteId ?? '');
       }
     } catch (cause) {
       if (activeRef.current && revision === refreshRevisionRef.current) {
@@ -109,7 +171,7 @@ export function useAudioDevices(enabled = true) {
     } finally {
       if (activeRef.current && revision === refreshRevisionRef.current) setLoading(false);
     }
-  }, [enabled, flushSettings]);
+  }, [applyRouteCatalog, enabled, flushSettings, validateRoute]);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -124,12 +186,11 @@ export function useAudioDevices(enabled = true) {
   }, [enabled, refresh]);
 
   const setInputId = useCallback(
-    (id: string) => updateSettings({ selectedInputId: id || null }),
-    [updateSettings],
-  );
-  const setProcessedDestinationId = useCallback(
-    (id: string) => updateSettings({ processedDestinationId: id || null }),
-    [updateSettings],
+    (id: string) => {
+      updateSettings({ selectedInputId: id || null });
+      void validateRoute(id, routesRef.current.selectedRouteId ?? '');
+    },
+    [updateSettings, validateRoute],
   );
   const setLocalMonitorId = useCallback(
     (id: string) => updateSettings({ localMonitorId: id || null }),
@@ -143,21 +204,105 @@ export function useAudioDevices(enabled = true) {
     (page: ApplicationPage) => updateSettings({ lastPage: page }),
     [updateSettings],
   );
+  const setDraftRouteId = useCallback((routeId: string) => {
+    setDraftRouteIdState(routeId);
+    const route = routesRef.current.routes.find((candidate) => candidate.routeId === routeId);
+    if (route) {
+      setDraftPlaybackId(route.playbackDevice.id);
+      setDraftCaptureId(route.captureDevice?.id ?? route.candidateCaptureDevices[0]?.id ?? '');
+      setConfirmPhysicalEndpoints(false);
+    }
+  }, []);
+
+  const saveExternalRoute = useCallback(async () => {
+    if (!enabled || !draftPlaybackId || !draftCaptureId) return false;
+    setRouteBusy(true);
+    try {
+      const catalog = await tauriAudioApi.saveExternalAudioRoute({
+        candidateRouteId: draftRouteId || null,
+        playbackDeviceId: draftPlaybackId,
+        captureDeviceId: draftCaptureId,
+        confirmPhysicalEndpoints,
+      });
+      if (!activeRef.current) return false;
+      applyRouteCatalog(catalog);
+      setError(null);
+      await validateRoute(settingsRef.current.selectedInputId ?? '', catalog.selectedRouteId ?? '');
+      return true;
+    } catch (cause) {
+      if (activeRef.current) setError(`Could not save external route: ${errorMessage(cause)}`);
+      return false;
+    } finally {
+      if (activeRef.current) setRouteBusy(false);
+    }
+  }, [
+    applyRouteCatalog,
+    confirmPhysicalEndpoints,
+    draftCaptureId,
+    draftRouteId,
+    draftPlaybackId,
+    enabled,
+    validateRoute,
+  ]);
+
+  const deleteExternalRoute = useCallback(async () => {
+    if (!enabled) return false;
+    setRouteBusy(true);
+    try {
+      const catalog = await tauriAudioApi.deleteExternalAudioRoute();
+      if (!activeRef.current) return false;
+      applyRouteCatalog(catalog);
+      setRouteValidation(missingRouteValidation);
+      setError(null);
+      return true;
+    } catch (cause) {
+      if (activeRef.current) setError(`Could not delete external route: ${errorMessage(cause)}`);
+      return false;
+    } finally {
+      if (activeRef.current) setRouteBusy(false);
+    }
+  }, [applyRouteCatalog, enabled]);
+
+  const selectedRoute =
+    externalRoutes.routes.find((route) => route.routeId === externalRoutes.selectedRouteId) ?? null;
 
   return {
     inputs,
+    physicalInputs: inputs.filter((device) => !device.isLikelyVirtual),
     outputs,
     inputId: settings.selectedInputId ?? '',
-    processedDestinationId: settings.processedDestinationId ?? '',
     localMonitorId: settings.localMonitorId ?? '',
     reliabilityProfile: settings.reliabilityProfile,
     lastPage: settings.lastPage,
-    hasLikelyVirtualDestination,
+    externalRoutes,
+    selectedRoute,
+    routeValidation,
+    draftRouteId,
+    draftPlaybackId,
+    draftCaptureId,
+    confirmPhysicalEndpoints,
+    routeBusy,
     setInputId,
-    setProcessedDestinationId,
     setLocalMonitorId,
     setReliabilityProfile,
     setLastPage,
+    setDraftRouteId,
+    setDraftPlaybackId: (id: string) => {
+      setDraftRouteIdState('');
+      setDraftPlaybackId(id);
+    },
+    setDraftCaptureId: (id: string) => {
+      setDraftRouteIdState('');
+      setDraftCaptureId(id);
+    },
+    setConfirmPhysicalEndpoints,
+    saveExternalRoute,
+    deleteExternalRoute,
+    validateSelectedRoute: () =>
+      validateRoute(
+        settingsRef.current.selectedInputId ?? '',
+        routesRef.current.selectedRouteId ?? '',
+      ),
     refresh,
     loading: enabled && loading,
     error,

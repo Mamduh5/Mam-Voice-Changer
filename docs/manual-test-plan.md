@@ -9,18 +9,55 @@ Automated checks do not establish audible quality, live endpoint behavior, feedb
 3. For both, record quiet, normal, and loud speech plus phrase beginnings and endings.
 4. Note cuts, missing syllables, clicks, or discontinuities that already exist at the physical microphone.
 
-## B. Use page
+## B. External-route setup matrix
+
+### No virtual device
+
+1. Launch with only a Realtek or comparable physical microphone and speakers.
+2. Refresh devices and confirm no playback/capture pair is invented.
+3. Confirm **Start using** remains disabled with actionable installation guidance.
+4. Open Test and confirm headphone testing remains usable independently.
+
+### Clear virtual pair
+
+1. Install or enable one compatible virtual playback/capture pair and refresh.
+2. Confirm both endpoints and one conservative automatic route appear.
+3. Save and validate the route; record confidence, source, and negotiated rate.
+4. Start Use and select the displayed capture endpoint in Discord.
+5. Run Discord's microphone test and confirm the processed voice reaches it.
+6. Stop Use and confirm Discord no longer receives the processed voice.
+
+### Manual pair and persistence
+
+1. Choose **Manual playback/capture pair**, select both sides, and save.
+2. If deliberately testing a likely physical side, confirm the warning and record
+   why; otherwise verify physical choices are not silently accepted.
+3. Relaunch and confirm both sides restore uniquely with `manual / manual` provenance.
+4. Create duplicate friendly names where practical and confirm ambiguous restore
+   stays unset instead of selecting either endpoint.
+
+### Route failure cases
+
+1. Disable the paired capture while stopped, refresh, and verify `missingCapture`.
+2. Disable capture while Use is active; confirm health does not claim end-to-end
+   delivery, then stop/refresh and verify the missing state.
+3. Disable the playback endpoint and verify route-specific recovery is bounded.
+4. Rename or remove either side and confirm only unique friendly-name restoration.
+5. Change Windows Default Format values to remove the shared rate, then verify an
+   actionable incompatible-rate result; restore 48 kHz or 44.1 kHz afterward.
+
+## C. Use page
 
 1. Launch the app and confirm Use has no local-monitor control and the Use route is stopped.
-2. With only physical outputs present, confirm no processed destination is selected automatically and the routing notice explains the limitation.
-3. Select a real processed playback destination. Use a virtual playback endpoint when routing to another application.
+2. Confirm Use displays playback, paired capture, readiness, and receiving-app instructions but no local-monitor control.
+3. Save and validate a complete external route; incomplete, ambiguous, or incompatible routes must keep Start disabled.
 4. Press **Start using**, then **Stop using**. Confirm meters move and Use-route state changes are clear.
 5. Switch Natural, Warm tone, Bright tone, Old Lady, and a saved preset.
 6. Confirm Use never opens a speaker/headphone talkback stream.
 7. Navigate to Settings & Diagnostics while Use is active and confirm the Use route continues.
 8. Navigate into and back out of Test while Use is active without pressing **Start hearing test**; confirm Use continues.
 
-## C. Test page
+## D. Test page
 
 1. Put on headphones before starting monitoring.
 2. Open Test and confirm monitoring remains off until **Start hearing test** is pressed, with no extra enable checkbox.
@@ -29,7 +66,7 @@ Automated checks do not establish audible quality, live endpoint behavior, feedb
 5. Repeat while the engine is starting or recovering and confirm monitoring does not remain active afterward.
 6. Never perform this section through open speakers; stop immediately if feedback starts.
 
-## D. Reliability profiles
+## E. Reliability profiles
 
 For Low latency, Balanced, and Reliable:
 
@@ -38,14 +75,14 @@ For Low latency, Balanced, and Reliable:
 3. Compare perceived latency, audible cuts, callback gaps, ring overflows/underruns, DSP deadline misses, and concealed frames.
 4. Run each relevant profile for 30 minutes and record min/current/max ring fill. Look for a steady long-term trend that could indicate device-clock drift.
 
-## E. Weak microphone behavior
+## F. Weak microphone behavior
 
 1. Compare Gate disabled with the speech expander enabled.
 2. Test quiet syllables, phrase beginnings/endings, and normal background noise.
 3. Listen for chopping, pumping, clicks, swallowed consonants, and excessive noise lift.
 4. Confirm quiet speech becomes smoothly attenuated rather than hard-zeroed.
 
-## F. Recovery
+## G. Recovery
 
 1. While running, disable and re-enable the selected microphone.
 2. Unplug and reconnect applicable USB input, destination, and monitor devices.
@@ -55,20 +92,27 @@ For Low latency, Balanced, and Reliable:
 6. Fail the Test monitor and confirm the Test route enters bounded `recovering`, then `running` or `error`.
 7. Fail the Use destination and confirm it enters bounded `recovering`, then `running` or `error`.
 
-## G. Receiving applications
+## H. Receiving applications
 
-1. Test Discord or OBS only when a real Windows capture endpoint exists, such as the capture side paired with a virtual playback device.
-2. Select the virtual playback endpoint as Mam Voice Changer's processed destination.
-3. Select the paired Windows capture endpoint in the receiving application.
-4. Do not mark direct routing as passed when only speakers/headphones are available. Mam Voice Changer itself is not a registered Windows microphone device.
+1. Test only when a real Windows capture endpoint is paired with the selected virtual playback endpoint.
+2. Test Discord, OBS, browser microphone selection, and one additional available streaming or communication app.
+3. In each application, select the exact paired capture endpoint displayed on Use and run its own meter or microphone test.
+4. Record application version, virtual-device product/version, endpoint names,
+   sample rates, reliability profile, latency estimate, underruns, concealed
+   frames, recovery events, and audible observations.
+5. Do not mark direct routing as passed when only speakers/headphones are available or merely because the capture endpoint is enumerated.
 
-## Existing effect and persistence regression
+## I. Shared settings and persistence regression
 
 1. Exercise preset apply/save/rename/duplicate/delete/reset and restart persistence.
 2. Confirm the Old Lady Age Character, Breathiness, and Tremor controls still work.
 3. Confirm mute affects both route purposes, bypass remains latency-aligned, and limiter ceiling remains respected.
-4. Relaunch after saving app settings. Confirm page, input, destination, monitor device, and profile restore, but neither route auto-starts.
-5. Exercise migrated v1/v2, malformed, and future-version application settings; Test monitoring must never auto-start.
+4. Change DSP controls in Test, start Use, and confirm Use uses the same snapshot.
+5. Apply a preset in Use, open Test, and confirm the same preset and controls render.
+6. Relaunch after saving app settings. Confirm page, input, playback/capture pair,
+   manual source, monitor device, and profile restore, but neither route auto-starts.
+7. Exercise migrated v1/v2/v3, malformed, and future-version application settings;
+   capture stays unset when migration is ambiguous and neither route auto-starts.
 
 ## Manual record
 
@@ -86,7 +130,7 @@ For Low latency, Balanced, and Reliable:
 
 ### Pending
 
-- All Phase 3 sections A-G above.
+- All live/audio sections A-I above for this external-routing phase.
 - Old Lady listening and full preset/application-settings persistence interaction.
 - Thirty-minute profile runs and clock-drift trend collection.
-- Discord/OBS routing when a real Windows capture endpoint becomes available.
+- Discord, OBS, browser, and another receiving-app route when a real virtual pair is available.

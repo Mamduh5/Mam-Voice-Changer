@@ -28,6 +28,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .invoke_handler(tauri::generate_handler![
             commands::devices::list_audio_devices,
             commands::devices::save_application_settings,
+            commands::external_routes::list_external_audio_routes,
+            commands::external_routes::save_external_audio_route,
+            commands::external_routes::delete_external_audio_route,
+            commands::external_routes::validate_external_audio_route,
             commands::engine::start_engine,
             commands::engine::stop_engine,
             commands::engine::stop_test_route,

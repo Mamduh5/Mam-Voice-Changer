@@ -2,15 +2,17 @@
 
 Mam Voice Changer is a Windows 10/11 x64 desktop application built with Tauri 2,
 React, TypeScript, Rust, and CPAL. It captures a physical microphone, applies a
-local real-time DSP chain, and sends the result to an explicit processed playback
-destination such as VB-CABLE's **CABLE Input**. An independent local monitor is
-available for deliberate headphone testing and defaults off.
+local real-time DSP chain, and sends the result to a saved external route's
+virtual playback endpoint. The paired Windows capture endpoint is shown for
+selection in Discord, OBS, a browser, or another receiving application. An
+independent local monitor is available only on Test and defaults off.
 
 ![Desktop interface](docs/screenshots/milestone-1-ui.png)
 
 ## Current implementation
 
 - Windows input/output device enumeration and selection
+- Conservative virtual playback/capture discovery, explicit manual pairing, and route readiness
 - Common sample-rate negotiation and normalized `f32` processing
 - Separate Use, Test, and Settings & Diagnostics pages
 - One DSP worker with independent bounded processed-destination and monitor rings
@@ -55,8 +57,8 @@ and limitations of that session are recorded in the
 ### Manual validation still required
 
 Preset workflows across a real application restart, continuous monitored audio,
-VB-CABLE routing, repeated start/stop and disconnection recovery, long-duration
-stability, and Discord/OBS/TikTok Live Studio compatibility remain pending. A
+virtual-device routing, repeated start/stop and disconnection recovery,
+long-duration stability, and Discord/OBS/TikTok Live Studio compatibility remain pending. A
 planned compatibility milestone is manual validation work, not evidence that the
 corresponding application features are absent.
 
@@ -101,10 +103,12 @@ npm run dev
 `npm run dev` launches the Tauri desktop runtime. `npm run dev:web` intentionally
 launches only Vite; native audio controls remain disabled there.
 
-Choose a physical microphone as input and **CABLE Input** as the processed
-destination. In the receiving application, choose **CABLE Output** as its
-microphone. Without a real virtual capture endpoint, the app can test through
-headphones but cannot appear as a Discord microphone.
+On Use, refresh devices and save a detected or manual playback/capture pair. For
+VB-CABLE this is commonly **CABLE Input** as Mam Voice Changer's playback endpoint
+and **CABLE Output** as the receiving application's microphone. Names vary by
+product; follow the paired capture endpoint shown by the app. Without a real
+virtual capture endpoint, Test can still use headphones, but Use cannot become a
+microphone source for another application.
 
 ## Validation commands
 
@@ -132,6 +136,7 @@ monitoring levels.
 - [DSP design and parameters](docs/dsp.md)
 - [Architecture](docs/architecture.md)
 - [Audio routing](docs/audio-routing.md)
+- [External-routing implementation note](docs/external-routing-implementation-note.md)
 - [Prototype scope](docs/prototype-scope.md)
 - [Manual test plan](docs/manual-test-plan.md)
 - [Troubleshooting](docs/troubleshooting.md)
@@ -141,7 +146,11 @@ monitoring levels.
 
 - Input and output must expose a common sample rate.
 - CPAL 0.15 device IDs are deterministic friendly-name fingerprints, not WASAPI
-  endpoint GUIDs.
+  endpoint GUIDs; duplicate friendly names therefore remain ambiguous.
+- Virtual-device classification and automatic pairing use advisory endpoint names.
+  Unknown or ambiguous products require a confirmed manual pair.
+- The app does not install or bundle a virtual audio driver and cannot prove that a
+  receiving application is consuming an enumerated capture endpoint.
 - Latency is estimated from configured buffers and reported DSP delay; it is not a
   measured acoustic round trip.
 - Formant processing is spectral and polyphonic rather than a monophonic PSOLA

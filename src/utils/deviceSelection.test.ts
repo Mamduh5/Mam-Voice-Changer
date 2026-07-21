@@ -7,9 +7,19 @@ import {
   resolveStoredSelection,
 } from './deviceSelection';
 
+const metadata = {
+  direction: 'output' as const,
+  virtualFamily: null,
+  minimumSampleRate: 44_100,
+  maximumSampleRate: 48_000,
+  commonSampleRates: [44_100, 48_000],
+  channelCounts: [2],
+};
+
 const devices: AudioDevice[] = [
-  { id: 'speakers', name: 'Speakers', isDefault: true, isLikelyVirtual: false },
+  { ...metadata, id: 'speakers', name: 'Speakers', isDefault: true, isLikelyVirtual: false },
   {
+    ...metadata,
     id: 'cable',
     name: 'CABLE Input (VB-Audio Virtual Cable)',
     isDefault: false,
@@ -40,9 +50,27 @@ describe('device selection', () => {
 
   it('does not claim an ambiguous friendly-name match', () => {
     const duplicateNames: AudioDevice[] = [
-      { id: 'first-usb', name: 'USB Microphone', isDefault: false, isLikelyVirtual: false },
-      { id: 'second-usb', name: 'USB Microphone', isDefault: false, isLikelyVirtual: false },
-      { id: 'default-mic', name: 'Built-in Microphone', isDefault: true, isLikelyVirtual: false },
+      {
+        ...metadata,
+        id: 'first-usb',
+        name: 'USB Microphone',
+        isDefault: false,
+        isLikelyVirtual: false,
+      },
+      {
+        ...metadata,
+        id: 'second-usb',
+        name: 'USB Microphone',
+        isDefault: false,
+        isLikelyVirtual: false,
+      },
+      {
+        ...metadata,
+        id: 'default-mic',
+        name: 'Built-in Microphone',
+        isDefault: true,
+        isLikelyVirtual: false,
+      },
     ];
 
     expect(resolveStoredSelection('missing', 'USB Microphone', duplicateNames)).toEqual({
@@ -53,9 +81,27 @@ describe('device selection', () => {
 
   it('does not keep a duplicated derived identifier as a confirmed selection', () => {
     const duplicateIds: AudioDevice[] = [
-      { id: 'same-id', name: 'USB Microphone', isDefault: false, isLikelyVirtual: false },
-      { id: 'same-id', name: 'USB Microphone', isDefault: false, isLikelyVirtual: false },
-      { id: 'default-mic', name: 'Built-in Microphone', isDefault: true, isLikelyVirtual: false },
+      {
+        ...metadata,
+        id: 'same-id',
+        name: 'USB Microphone',
+        isDefault: false,
+        isLikelyVirtual: false,
+      },
+      {
+        ...metadata,
+        id: 'same-id',
+        name: 'USB Microphone',
+        isDefault: false,
+        isLikelyVirtual: false,
+      },
+      {
+        ...metadata,
+        id: 'default-mic',
+        name: 'Built-in Microphone',
+        isDefault: true,
+        isLikelyVirtual: false,
+      },
     ];
 
     expect(reconcileSelection('same-id', duplicateIds)).toBe('default-mic');

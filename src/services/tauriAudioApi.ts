@@ -2,7 +2,10 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import type {
   ApplicationSettingsUpdate,
   AudioDeviceList,
+  ExternalAudioRouteCatalog,
   ReliabilityProfile,
+  RouteCompatibilityResult,
+  SaveExternalAudioRouteRequest,
 } from '../types/audio';
 import type { EngineStatus } from '../types/engine';
 import type { AudioParameters } from '../types/parameters';
@@ -13,8 +16,7 @@ export type StartAudioRequest =
       mode: 'use';
       inputId: string;
       inputName: string;
-      processedDestinationId: string;
-      processedDestinationName: string;
+      externalRouteId: string;
       reliabilityProfile: ReliabilityProfile;
     }
   | {
@@ -41,6 +43,17 @@ export const tauriAudioApi = {
   listAudioDevices: () => invokeDesktop<AudioDeviceList>('list_audio_devices'),
   saveApplicationSettings: (request: ApplicationSettingsUpdate) =>
     invokeDesktop<void>('save_application_settings', { request }),
+  listExternalAudioRoutes: () =>
+    invokeDesktop<ExternalAudioRouteCatalog>('list_external_audio_routes'),
+  saveExternalAudioRoute: (request: SaveExternalAudioRouteRequest) =>
+    invokeDesktop<ExternalAudioRouteCatalog>('save_external_audio_route', { request }),
+  deleteExternalAudioRoute: () =>
+    invokeDesktop<ExternalAudioRouteCatalog>('delete_external_audio_route'),
+  validateExternalAudioRoute: (inputId: string, routeId: string) =>
+    invokeDesktop<RouteCompatibilityResult>('validate_external_audio_route', {
+      inputId,
+      routeId,
+    }),
   startEngine: (request: StartAudioRequest) => invokeDesktop<void>('start_engine', { request }),
   stopEngine: () => invokeDesktop<void>('stop_engine'),
   stopTestRoute: () => invokeDesktop<void>('stop_test_route'),

@@ -3,7 +3,8 @@ use serde::Serialize;
 
 use crate::error::AudioError;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum DeviceDirection {
     Input,
     Output,
@@ -18,13 +19,43 @@ impl DeviceDirection {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceInfo {
     pub id: String,
     pub name: String,
+    pub direction: DeviceDirection,
     pub is_default: bool,
     pub is_likely_virtual: bool,
+    pub virtual_family: Option<String>,
+    pub minimum_sample_rate: Option<u32>,
+    pub maximum_sample_rate: Option<u32>,
+    pub common_sample_rates: Vec<u32>,
+    pub channel_counts: Vec<u16>,
+}
+
+impl DeviceInfo {
+    #[cfg(test)]
+    pub(crate) fn test(
+        id: &str,
+        name: &str,
+        direction: DeviceDirection,
+        is_default: bool,
+        is_likely_virtual: bool,
+    ) -> Self {
+        Self {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            direction,
+            is_default,
+            is_likely_virtual,
+            virtual_family: is_likely_virtual.then(|| normalized_virtual_family(name)),
+            minimum_sample_rate: Some(44_100),
+            maximum_sample_rate: Some(48_000),
+            common_sample_rates: vec![44_100, 48_000],
+            channel_counts: vec![2],
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -54,11 +85,19 @@ fn enumerate(host: &cpal::Host, direction: DeviceDirection) -> Result<Vec<Device
             let name = device
                 .name()
                 .map_err(|error| AudioError::DeviceName(error.to_string()))?;
+            let (minimum_sample_rate, maximum_sample_rate, common_sample_rates, channel_counts) =
+                capability_summary(&device, direction);
+            let is_likely_virtual = is_likely_virtual_endpoint_name(direction, &name);
             Ok(DeviceInfo {
                 id: stable_device_id(direction, &name),
+                direction,
                 is_default: default_name.as_deref() == Some(name.as_str()),
-                is_likely_virtual: matches!(direction, DeviceDirection::Output)
-                    && is_likely_virtual_output_name(&name),
+                is_likely_virtual,
+                virtual_family: is_likely_virtual.then(|| normalized_virtual_family(&name)),
+                minimum_sample_rate,
+                maximum_sample_rate,
+                common_sample_rates,
+                channel_counts,
                 name,
             })
         })
@@ -118,18 +157,102 @@ fn restoration_index(
     (friendly.len() == 1).then(|| friendly[0])
 }
 
-pub fn is_likely_virtual_output_name(name: &str) -> bool {
+pub fn is_likely_virtual_endpoint_name(direction: DeviceDirection, name: &str) -> bool {
     let normalized = name.trim().to_lowercase();
-    [
+    let strong_hint = [
         "virtual",
-        "cable input",
-        "voicemeeter input",
+        "vb-audio",
+        "voicemeeter",
         "loopback",
         "audio router",
-        "vac input",
+        "virtual audio cable",
+        "vac ",
     ]
     .iter()
-    .any(|hint| normalized.contains(hint))
+    .any(|hint| normalized.contains(hint));
+    strong_hint
+        || match direction {
+            DeviceDirection::Output => {
+                normalized.contains("cable input") || normalized.contains("virtual in")
+            }
+            DeviceDirection::Input => {
+                normalized.contains("cable output") || normalized.contains("virtual out")
+            }
+        }
+}
+
+pub fn normalized_virtual_family(name: &str) -> String {
+    let normalized = name
+        .trim()
+        .to_lowercase()
+        .replace("vb-audio", " vbaudio ")
+        .replace("voicemeeter", " voicemeeter ")
+        .replace("virtual audio cable", " vac ");
+    let ignored = [
+        "input",
+        "output",
+        "playback",
+        "recording",
+        "capture",
+        "microphone",
+        "speakers",
+        "endpoint",
+        "device",
+        "virtual",
+        "audio",
+    ];
+    let mut tokens = normalized
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty() && !ignored.contains(token))
+        .collect::<Vec<_>>();
+    tokens.sort_unstable();
+    tokens.dedup();
+    if tokens.is_empty() {
+        "generic-virtual-route".to_owned()
+    } else {
+        tokens.join("-")
+    }
+}
+
+fn capability_summary(
+    device: &cpal::Device,
+    direction: DeviceDirection,
+) -> (Option<u32>, Option<u32>, Vec<u32>, Vec<u16>) {
+    let configs = match direction {
+        DeviceDirection::Input => device
+            .supported_input_configs()
+            .map(|configs| configs.collect()),
+        DeviceDirection::Output => device
+            .supported_output_configs()
+            .map(|configs| configs.collect()),
+    };
+    let Ok(configs): Result<Vec<_>, _> = configs else {
+        return (None, None, Vec::new(), Vec::new());
+    };
+    let minimum = configs
+        .iter()
+        .map(|config| config.min_sample_rate().0)
+        .min();
+    let maximum = configs
+        .iter()
+        .map(|config| config.max_sample_rate().0)
+        .max();
+    let mut common_sample_rates = [44_100, 48_000]
+        .into_iter()
+        .filter(|rate| {
+            configs.iter().any(|config| {
+                (config.min_sample_rate().0..=config.max_sample_rate().0).contains(rate)
+            })
+        })
+        .collect::<Vec<_>>();
+    common_sample_rates.sort_unstable();
+    let mut channel_counts = configs
+        .iter()
+        .map(cpal::SupportedStreamConfigRange::channels)
+        .collect::<Vec<_>>();
+    channel_counts.sort_unstable();
+    channel_counts.dedup();
+    (minimum, maximum, common_sample_rates, channel_counts)
 }
 
 fn devices(host: &cpal::Host, direction: DeviceDirection) -> Result<Vec<cpal::Device>, AudioError> {
@@ -171,7 +294,8 @@ pub fn stable_device_id(direction: DeviceDirection, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_likely_virtual_output_name, restoration_index, stable_device_id, DeviceDirection,
+        is_likely_virtual_endpoint_name, normalized_virtual_family, restoration_index,
+        stable_device_id, DeviceDirection,
     };
 
     #[test]
@@ -186,10 +310,35 @@ mod tests {
     }
 
     #[test]
-    fn virtual_output_classification_is_advisory_and_not_vendor_specific() {
-        assert!(is_likely_virtual_output_name("VB-Audio CABLE Input"));
-        assert!(is_likely_virtual_output_name("My Virtual Audio Router"));
-        assert!(!is_likely_virtual_output_name("Realtek Speakers"));
+    fn virtual_endpoint_classification_is_directional_and_advisory() {
+        assert!(is_likely_virtual_endpoint_name(
+            DeviceDirection::Output,
+            "VB-Audio CABLE Input"
+        ));
+        assert!(is_likely_virtual_endpoint_name(
+            DeviceDirection::Input,
+            "VB-Audio CABLE Output"
+        ));
+        assert!(is_likely_virtual_endpoint_name(
+            DeviceDirection::Output,
+            "My Virtual Audio Router"
+        ));
+        assert!(!is_likely_virtual_endpoint_name(
+            DeviceDirection::Output,
+            "Realtek HDMI Output"
+        ));
+        assert!(!is_likely_virtual_endpoint_name(
+            DeviceDirection::Input,
+            "Physical input microphone"
+        ));
+    }
+
+    #[test]
+    fn complementary_endpoint_names_share_a_normalized_family() {
+        assert_eq!(
+            normalized_virtual_family("CABLE Input (VB-Audio Virtual Cable)"),
+            normalized_virtual_family("CABLE Output (VB-Audio Virtual Cable)")
+        );
     }
 
     #[test]

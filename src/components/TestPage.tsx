@@ -40,6 +40,8 @@ export function TestPage(props: Props) {
   const monitoringActive =
     props.status.routePurpose === 'test' &&
     ['running', 'degraded', 'recovering'].includes(props.status.state);
+  const useActive =
+    props.status.routePurpose === 'use' && !['stopped', 'error'].includes(props.status.state);
   return (
     <div className="page-stack" data-page="test">
       <section className="card test-warning" role="alert">
@@ -101,7 +103,7 @@ export function TestPage(props: Props) {
       <EngineControls
         status={props.status}
         purpose="test"
-        canStart={Boolean(props.inputId && props.monitorId)}
+        canStart={Boolean(props.inputId && props.monitorId && !useActive)}
         startLabel="Start hearing test"
         stopLabel="Stop test"
         description="Selected local monitor only; stops automatically when you leave Test"

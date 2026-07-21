@@ -1,23 +1,25 @@
-export function RoutingNotice({
-  hasLikelyVirtualDestination,
-}: {
-  hasLikelyVirtualDestination: boolean;
-}) {
+import type { ExternalAudioRoute } from '../types/audio';
+
+export function RoutingNotice({ route }: { route: ExternalAudioRoute | null }) {
   return (
-    <div
-      className={hasLikelyVirtualDestination ? 'routing-notice' : 'routing-notice warning'}
-      role="note"
-    >
-      {hasLikelyVirtualDestination ? (
+    <div className={route?.captureDevice ? 'routing-notice' : 'routing-notice warning'} role="note">
+      {route?.captureDevice ? (
         <>
-          A likely virtual playback endpoint is available. Its paired Windows capture endpoint must
-          still be selected inside Discord or OBS.
+          <strong>Receiving-application microphone</strong>
+          <p>In Discord, OBS, or another receiving application, select:</p>
+          <code>{route.captureDevice.name}</code>
+          <p>
+            Playback active means Mam Voice Changer is writing to the virtual playback endpoint. It
+            does not prove that Discord or another application is consuming this capture endpoint.
+          </p>
         </>
       ) : (
         <>
-          No likely virtual processed destination was found. Physical outputs play through speakers
-          or headphones; Discord can select only Windows capture devices. Direct Discord routing
-          requires a real virtual capture endpoint or future driver support.
+          <strong>No virtual audio route is available.</strong>
+          <p>
+            Install or enable a compatible Windows virtual audio device, then refresh devices.
+            Physical speakers are not selected automatically.
+          </p>
         </>
       )}
     </div>

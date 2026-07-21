@@ -7,9 +7,11 @@ use std::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::audio::{device::DeviceInfo, reliability::ReliabilityProfile};
+use crate::audio::{
+    device::DeviceInfo, external_route::PairingSource, reliability::ReliabilityProfile,
+};
 
-pub const APPLICATION_SETTINGS_SCHEMA_VERSION: u32 = 3;
+pub const APPLICATION_SETTINGS_SCHEMA_VERSION: u32 = 4;
 pub const APPLICATION_SETTINGS_FILE_NAME: &str = "application-settings.json";
 const MAX_DEVICE_ID_CHARS: usize = 512;
 const MAX_FRIENDLY_NAME_CHARS: usize = 512;
@@ -29,8 +31,13 @@ pub struct ApplicationSettingsDocument {
     pub schema_version: u32,
     pub selected_input_device_id: Option<String>,
     pub last_known_input_friendly_name: Option<String>,
-    pub processed_destination_device_id: Option<String>,
-    pub last_known_processed_destination_friendly_name: Option<String>,
+    pub selected_external_route_id: Option<String>,
+    pub external_route_playback_device_id: Option<String>,
+    pub last_known_external_route_playback_name: Option<String>,
+    pub external_route_capture_device_id: Option<String>,
+    pub last_known_external_route_capture_name: Option<String>,
+    pub external_route_pairing_source: Option<PairingSource>,
+    pub external_route_manual: bool,
     pub local_monitor_device_id: Option<String>,
     pub last_known_local_monitor_friendly_name: Option<String>,
     pub reliability_profile: ReliabilityProfile,
@@ -43,8 +50,13 @@ impl Default for ApplicationSettingsDocument {
             schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
             selected_input_device_id: None,
             last_known_input_friendly_name: None,
-            processed_destination_device_id: None,
-            last_known_processed_destination_friendly_name: None,
+            selected_external_route_id: None,
+            external_route_playback_device_id: None,
+            last_known_external_route_playback_name: None,
+            external_route_capture_device_id: None,
+            last_known_external_route_capture_name: None,
+            external_route_pairing_source: None,
+            external_route_manual: false,
             local_monitor_device_id: None,
             last_known_local_monitor_friendly_name: None,
             reliability_profile: ReliabilityProfile::Balanced,
@@ -74,6 +86,20 @@ struct ApplicationSettingsDocumentV2 {
     local_monitor_device_id: Option<String>,
     last_known_local_monitor_friendly_name: Option<String>,
     local_monitor_enabled: bool,
+    reliability_profile: ReliabilityProfile,
+    last_page: ApplicationPage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplicationSettingsDocumentV3 {
+    schema_version: u32,
+    selected_input_device_id: Option<String>,
+    last_known_input_friendly_name: Option<String>,
+    processed_destination_device_id: Option<String>,
+    last_known_processed_destination_friendly_name: Option<String>,
+    local_monitor_device_id: Option<String>,
+    last_known_local_monitor_friendly_name: Option<String>,
     reliability_profile: ReliabilityProfile,
     last_page: ApplicationPage,
 }
@@ -145,7 +171,8 @@ impl ApplicationSettingsStore {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedDeviceSelections {
     pub selected_input_id: Option<String>,
-    pub processed_destination_id: Option<String>,
+    pub external_route_playback_id: Option<String>,
+    pub external_route_capture_id: Option<String>,
     pub local_monitor_id: Option<String>,
     pub restoration_warning: Option<String>,
 }
@@ -162,14 +189,19 @@ pub fn resolve_device_selections(
         inputs,
         FallbackPolicy::DefaultThenFirst,
     );
-    let destination = resolve_one(
-        "processed destination",
-        document.processed_destination_device_id.as_deref(),
-        document
-            .last_known_processed_destination_friendly_name
-            .as_deref(),
+    let playback = resolve_one(
+        "external-route playback endpoint",
+        document.external_route_playback_device_id.as_deref(),
+        document.last_known_external_route_playback_name.as_deref(),
         outputs,
         FallbackPolicy::LikelyVirtualOnly,
+    );
+    let capture = resolve_one(
+        "external-route capture endpoint",
+        document.external_route_capture_device_id.as_deref(),
+        document.last_known_external_route_capture_name.as_deref(),
+        inputs,
+        FallbackPolicy::None,
     );
     let monitor = resolve_one(
         "local monitor",
@@ -178,15 +210,21 @@ pub fn resolve_device_selections(
         outputs,
         FallbackPolicy::DefaultThenFirst,
     );
-    let restoration_warning = [input.warning, destination.warning, monitor.warning]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let restoration_warning = [
+        input.warning,
+        playback.warning,
+        capture.warning,
+        monitor.warning,
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
 
     ResolvedDeviceSelections {
         selected_input_id: input.id,
-        processed_destination_id: destination.id,
+        external_route_playback_id: playback.id,
+        external_route_capture_id: capture.id,
         local_monitor_id: monitor.id,
         restoration_warning: (!restoration_warning.is_empty()).then_some(restoration_warning),
     }
@@ -196,6 +234,7 @@ pub fn resolve_device_selections(
 enum FallbackPolicy {
     DefaultThenFirst,
     LikelyVirtualOnly,
+    None,
 }
 
 struct ResolvedDevice {
@@ -261,9 +300,11 @@ fn resolve_one(
 fn fallback_device(devices: &[DeviceInfo], policy: FallbackPolicy) -> Option<&DeviceInfo> {
     match policy {
         FallbackPolicy::LikelyVirtualOnly => unique(devices, |device| device.is_likely_virtual),
-        FallbackPolicy::DefaultThenFirst => {
-            unique(devices, |device| device.is_default).or_else(|| devices.first())
-        }
+        FallbackPolicy::DefaultThenFirst => unique(devices, |device| {
+            device.is_default && !device.is_likely_virtual
+        })
+        .or_else(|| devices.iter().find(|device| !device.is_likely_virtual)),
+        FallbackPolicy::None => None,
     }
 }
 
@@ -304,6 +345,10 @@ fn load_document(
             let legacy: ApplicationSettingsDocumentV2 = serde_json::from_value(value)?;
             (migrate_v2(legacy), true)
         }
+        3 => {
+            let legacy: ApplicationSettingsDocumentV3 = serde_json::from_value(value)?;
+            (migrate_v3(legacy), true)
+        }
         version if version == u64::from(APPLICATION_SETTINGS_SCHEMA_VERSION) => {
             (serde_json::from_value(value)?, false)
         }
@@ -324,8 +369,13 @@ fn migrate_v1(document: ApplicationSettingsDocumentV1) -> ApplicationSettingsDoc
         schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
         selected_input_device_id: document.selected_input_device_id,
         last_known_input_friendly_name: document.last_known_input_friendly_name,
-        processed_destination_device_id: document.selected_output_device_id,
-        last_known_processed_destination_friendly_name: document.last_known_output_friendly_name,
+        selected_external_route_id: None,
+        external_route_playback_device_id: document.selected_output_device_id,
+        last_known_external_route_playback_name: document.last_known_output_friendly_name,
+        external_route_capture_device_id: None,
+        last_known_external_route_capture_name: None,
+        external_route_pairing_source: None,
+        external_route_manual: false,
         local_monitor_device_id: None,
         last_known_local_monitor_friendly_name: None,
         reliability_profile: ReliabilityProfile::Balanced,
@@ -340,9 +390,35 @@ fn migrate_v2(document: ApplicationSettingsDocumentV2) -> ApplicationSettingsDoc
         schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
         selected_input_device_id: document.selected_input_device_id,
         last_known_input_friendly_name: document.last_known_input_friendly_name,
-        processed_destination_device_id: document.processed_destination_device_id,
-        last_known_processed_destination_friendly_name: document
+        selected_external_route_id: None,
+        external_route_playback_device_id: document.processed_destination_device_id,
+        last_known_external_route_playback_name: document
             .last_known_processed_destination_friendly_name,
+        external_route_capture_device_id: None,
+        last_known_external_route_capture_name: None,
+        external_route_pairing_source: None,
+        external_route_manual: false,
+        local_monitor_device_id: document.local_monitor_device_id,
+        last_known_local_monitor_friendly_name: document.last_known_local_monitor_friendly_name,
+        reliability_profile: document.reliability_profile,
+        last_page: document.last_page,
+    }
+}
+
+fn migrate_v3(document: ApplicationSettingsDocumentV3) -> ApplicationSettingsDocument {
+    debug_assert_eq!(document.schema_version, 3);
+    ApplicationSettingsDocument {
+        schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
+        selected_input_device_id: document.selected_input_device_id,
+        last_known_input_friendly_name: document.last_known_input_friendly_name,
+        selected_external_route_id: None,
+        external_route_playback_device_id: document.processed_destination_device_id,
+        last_known_external_route_playback_name: document
+            .last_known_processed_destination_friendly_name,
+        external_route_capture_device_id: None,
+        last_known_external_route_capture_name: None,
+        external_route_pairing_source: None,
+        external_route_manual: false,
         local_monitor_device_id: document.local_monitor_device_id,
         last_known_local_monitor_friendly_name: document.last_known_local_monitor_friendly_name,
         reliability_profile: document.reliability_profile,
@@ -365,17 +441,37 @@ fn validate_document(
         document.last_known_input_friendly_name.as_deref(),
     )?;
     validate_device_pair(
-        "processed destination",
-        document.processed_destination_device_id.as_deref(),
-        document
-            .last_known_processed_destination_friendly_name
-            .as_deref(),
+        "external-route playback endpoint",
+        document.external_route_playback_device_id.as_deref(),
+        document.last_known_external_route_playback_name.as_deref(),
+    )?;
+    validate_device_pair(
+        "external-route capture endpoint",
+        document.external_route_capture_device_id.as_deref(),
+        document.last_known_external_route_capture_name.as_deref(),
     )?;
     validate_device_pair(
         "local monitor",
         document.local_monitor_device_id.as_deref(),
         document.last_known_local_monitor_friendly_name.as_deref(),
     )?;
+    if document.selected_external_route_id.is_some()
+        && (document.external_route_playback_device_id.is_none()
+            || document.external_route_capture_device_id.is_none())
+    {
+        return Err(ApplicationSettingsError::Validation(
+            "A selected external route requires both playback and capture endpoints.".to_owned(),
+        ));
+    }
+    if document.external_route_manual
+        && (document.external_route_pairing_source != Some(PairingSource::Manual)
+            || document.selected_external_route_id.is_none())
+    {
+        return Err(ApplicationSettingsError::Validation(
+            "A manual external route requires a selected route ID and manual pairing source."
+                .to_owned(),
+        ));
+    }
     Ok(())
 }
 
@@ -494,13 +590,24 @@ mod tests {
 
     use super::*;
 
-    fn device(id: &str, name: &str, default: bool, virtual_output: bool) -> DeviceInfo {
-        DeviceInfo {
-            id: id.to_owned(),
-            name: name.to_owned(),
-            is_default: default,
-            is_likely_virtual: virtual_output,
-        }
+    fn input(id: &str, name: &str, default: bool, virtual_endpoint: bool) -> DeviceInfo {
+        DeviceInfo::test(
+            id,
+            name,
+            crate::audio::device::DeviceDirection::Input,
+            default,
+            virtual_endpoint,
+        )
+    }
+
+    fn output(id: &str, name: &str, default: bool, virtual_endpoint: bool) -> DeviceInfo {
+        DeviceInfo::test(
+            id,
+            name,
+            crate::audio::device::DeviceDirection::Output,
+            default,
+            virtual_endpoint,
+        )
     }
 
     fn path(label: &str) -> PathBuf {
@@ -532,11 +639,11 @@ mod tests {
     fn physical_speakers_are_not_an_automatic_processed_destination() {
         let resolved = resolve_device_selections(
             &ApplicationSettingsDocument::default(),
-            &[device("mic", "Realtek microphone", true, false)],
-            &[device("speakers", "Realtek speakers", true, false)],
+            &[input("mic", "Realtek microphone", true, false)],
+            &[output("speakers", "Realtek speakers", true, false)],
         );
         assert_eq!(resolved.selected_input_id.as_deref(), Some("mic"));
-        assert_eq!(resolved.processed_destination_id, None);
+        assert_eq!(resolved.external_route_playback_id, None);
         assert_eq!(resolved.local_monitor_id.as_deref(), Some("speakers"));
     }
 
@@ -544,16 +651,67 @@ mod tests {
     fn unique_virtual_output_is_the_only_automatic_destination() {
         let resolved = resolve_device_selections(
             &ApplicationSettingsDocument::default(),
-            &[device("mic", "Microphone", true, false)],
+            &[input("mic", "Microphone", true, false)],
             &[
-                device("speakers", "Speakers", true, false),
-                device("virtual", "Virtual Audio Router", false, true),
+                output("speakers", "Speakers", true, false),
+                output("virtual", "Virtual Audio Router", false, true),
             ],
         );
         assert_eq!(
-            resolved.processed_destination_id.as_deref(),
+            resolved.external_route_playback_id.as_deref(),
             Some("virtual")
         );
+    }
+
+    #[test]
+    fn route_endpoints_restore_only_by_unique_identity_or_friendly_name() {
+        let document = ApplicationSettingsDocument {
+            external_route_playback_device_id: Some("old-playback".to_owned()),
+            last_known_external_route_playback_name: Some("Studio Playback".to_owned()),
+            external_route_capture_device_id: Some("old-capture".to_owned()),
+            last_known_external_route_capture_name: Some("Studio Capture".to_owned()),
+            ..ApplicationSettingsDocument::default()
+        };
+        let resolved = resolve_device_selections(
+            &document,
+            &[
+                input("new-capture", "Studio Capture", false, true),
+                input("mic", "Physical microphone", true, false),
+            ],
+            &[output("new-playback", "Studio Playback", false, true)],
+        );
+        assert_eq!(
+            resolved.external_route_playback_id.as_deref(),
+            Some("new-playback")
+        );
+        assert_eq!(
+            resolved.external_route_capture_id.as_deref(),
+            Some("new-capture")
+        );
+        assert!(resolved.restoration_warning.is_some());
+    }
+
+    #[test]
+    fn missing_or_ambiguous_capture_is_never_silently_restored() {
+        let document = ApplicationSettingsDocument {
+            external_route_capture_device_id: Some("old-capture".to_owned()),
+            last_known_external_route_capture_name: Some("Duplicate Capture".to_owned()),
+            ..ApplicationSettingsDocument::default()
+        };
+        let resolved = resolve_device_selections(
+            &document,
+            &[
+                input("first", "Duplicate Capture", false, true),
+                input("second", "Duplicate Capture", false, true),
+                input("mic", "Physical microphone", true, false),
+            ],
+            &[],
+        );
+        assert_eq!(resolved.external_route_capture_id, None);
+        assert!(resolved
+            .restoration_warning
+            .as_deref()
+            .is_some_and(|warning| warning.contains("no safe automatic fallback")));
     }
 
     #[test]
@@ -567,7 +725,10 @@ mod tests {
         .unwrap();
         let store = ApplicationSettingsStore::load(path.clone());
         assert_eq!(
-            store.document().processed_destination_device_id.as_deref(),
+            store
+                .document()
+                .external_route_playback_device_id
+                .as_deref(),
             Some("out")
         );
         assert_eq!(
@@ -576,7 +737,7 @@ mod tests {
         );
         let persisted: serde_json::Value =
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(persisted["schemaVersion"], 3);
+        assert_eq!(persisted["schemaVersion"], 4);
         assert!(persisted.get("localMonitorEnabled").is_none());
         cleanup(&path);
     }
@@ -598,8 +759,31 @@ mod tests {
         assert_eq!(store.document().last_page, ApplicationPage::Test);
         let persisted: serde_json::Value =
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(persisted["schemaVersion"], 3);
+        assert_eq!(persisted["schemaVersion"], 4);
         assert!(persisted.get("localMonitorEnabled").is_none());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn v3_migration_preserves_playback_candidate_without_inventing_capture() {
+        let path = path("v3");
+        cleanup(&path);
+        fs::write(
+            &path,
+            r#"{"schemaVersion":3,"selectedInputDeviceId":"mic","lastKnownInputFriendlyName":"Mic","processedDestinationDeviceId":"playback","lastKnownProcessedDestinationFriendlyName":"CABLE Input","localMonitorDeviceId":"headphones","lastKnownLocalMonitorFriendlyName":"Headphones","reliabilityProfile":"balanced","lastPage":"use"}"#,
+        )
+        .unwrap();
+        let store = ApplicationSettingsStore::load(path.clone());
+        assert_eq!(
+            store
+                .document()
+                .external_route_playback_device_id
+                .as_deref(),
+            Some("playback")
+        );
+        assert!(store.document().external_route_capture_device_id.is_none());
+        assert!(store.document().selected_external_route_id.is_none());
+        assert!(!store.document().external_route_manual);
         cleanup(&path);
     }
 
@@ -631,8 +815,13 @@ mod tests {
             schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
             selected_input_device_id: Some("mic".to_owned()),
             last_known_input_friendly_name: Some("Mic".to_owned()),
-            processed_destination_device_id: Some("destination".to_owned()),
-            last_known_processed_destination_friendly_name: Some("Destination".to_owned()),
+            selected_external_route_id: Some("route".to_owned()),
+            external_route_playback_device_id: Some("destination".to_owned()),
+            last_known_external_route_playback_name: Some("Destination".to_owned()),
+            external_route_capture_device_id: Some("capture".to_owned()),
+            last_known_external_route_capture_name: Some("Capture".to_owned()),
+            external_route_pairing_source: Some(PairingSource::Manual),
+            external_route_manual: true,
             local_monitor_device_id: Some("headphones".to_owned()),
             last_known_local_monitor_friendly_name: Some("Headphones".to_owned()),
             reliability_profile: ReliabilityProfile::Reliable,

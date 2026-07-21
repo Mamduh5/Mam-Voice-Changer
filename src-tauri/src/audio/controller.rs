@@ -7,10 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cpal::traits::StreamTrait;
-use ringbuf::traits::Observer;
-use serde::Deserialize;
-
 use crate::{
     audio::{
         device::{find_device_with_fallback, DeviceDirection},
@@ -25,6 +21,8 @@ use crate::{
     error::AudioError,
     state::{engine_state::EngineState, parameter_state::ParameterState},
 };
+use cpal::traits::StreamTrait;
+use ringbuf::traits::Observer;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(20);
@@ -62,13 +60,7 @@ fn estimated_device_latency_ms(
         / sample_rate.max(1) as f32
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(
-    tag = "mode",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase",
-    deny_unknown_fields
-)]
+#[derive(Clone, Debug)]
 pub enum StartAudioRequest {
     Use {
         input_id: String,
@@ -336,12 +328,26 @@ fn worker_loop(
                             transition(&mut state, EngineState::Degraded, &metrics);
                         }
                     }
-                    RuntimeEvent::InputDeviceStopped(details)
-                    | RuntimeEvent::DestinationDeviceStopped(details) => {
+                    RuntimeEvent::InputDeviceStopped(details) => {
                         streams = None;
                         runtime_events = None;
-                        metrics.set_last_error(Some(format!(
-                            "Audio stream stopped: {details}. Bounded recovery is in progress."
+                        metrics.set_last_error(Some(route_failure_message(
+                            "Physical input",
+                            &details,
+                        )));
+                        if let Some(request) = active_request.clone() {
+                            recovery = Some(RecoveryPlan::new(request));
+                            transition(&mut state, EngineState::Recovering, &metrics);
+                        } else {
+                            transition(&mut state, EngineState::Error, &metrics);
+                        }
+                    }
+                    RuntimeEvent::DestinationDeviceStopped(details) => {
+                        streams = None;
+                        runtime_events = None;
+                        metrics.set_last_error(Some(route_failure_message(
+                            "Virtual playback",
+                            &details,
                         )));
                         if let Some(request) = active_request.clone() {
                             recovery = Some(RecoveryPlan::new(request));
@@ -354,6 +360,8 @@ fn worker_loop(
                         streams = None;
                         runtime_events = None;
                         recovery = None;
+                        active_request = None;
+                        metrics.set_route_purpose(None);
                         metrics.set_last_error(Some(
                             "DSP processing produced invalid audio. Reset processing controls before restarting."
                                 .to_owned(),
@@ -397,6 +405,8 @@ fn worker_loop(
                             RECOVERY_BACKOFF_MS.len()
                         )));
                         metrics.clear_stream_details();
+                        active_request = None;
+                        metrics.set_route_purpose(None);
                         transition(&mut state, EngineState::Error, &metrics);
                     }
                 }
@@ -405,9 +415,17 @@ fn worker_loop(
 
         match commands.recv_timeout(WORKER_POLL_INTERVAL) {
             Ok(EngineCommand::Start { request, reply }) => {
-                if streams.take().is_some() || recovery.take().is_some() {
-                    transition(&mut state, EngineState::Stopping, &metrics);
-                    transition(&mut state, EngineState::Stopped, &metrics);
+                if streams.is_some() || recovery.is_some() || active_request.is_some() {
+                    let active = active_request
+                        .as_ref()
+                        .map_or("audio", |request| match request {
+                            StartAudioRequest::Use { .. } => "Use",
+                            StartAudioRequest::Test { .. } => "Test",
+                        });
+                    let _ = reply.try_send(Err(format!(
+                        "The {active} route is already active. Stop it before starting another route."
+                    )));
+                    continue;
                 }
                 runtime_events = None;
                 active_request = Some(request.clone());
@@ -472,6 +490,10 @@ fn worker_loop(
             Err(RecvTimeoutError::Disconnected) => break,
         }
     }
+}
+
+fn route_failure_message(endpoint: &str, details: &str) -> String {
+    format!("{endpoint} stream stopped: {details}. Bounded recovery is in progress.")
 }
 
 fn transition(state: &mut EngineState, next: EngineState, metrics: &SharedMetrics) {
@@ -758,11 +780,10 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        estimated_device_latency_ms, startup_prefill_decision, RecoveryPlan, StartAudioRequest,
-        StartupPrefillDecision, RECOVERY_BACKOFF_MS,
+        estimated_device_latency_ms, route_failure_message, startup_prefill_decision, RecoveryPlan,
+        StartAudioRequest, StartupPrefillDecision, RECOVERY_BACKOFF_MS,
     };
     use crate::audio::reliability::ReliabilityProfile;
-    use serde_json::json;
 
     fn use_request() -> StartAudioRequest {
         StartAudioRequest::Use {
@@ -775,7 +796,7 @@ mod tests {
     }
 
     #[test]
-    fn tagged_start_requests_require_exactly_one_route_purpose() {
+    fn internal_start_requests_require_valid_route_devices() {
         assert!(use_request().validate().is_ok());
         assert!(StartAudioRequest::Test {
             input_id: "input".to_owned(),
@@ -787,29 +808,15 @@ mod tests {
         .validate()
         .is_ok());
 
-        let ambiguous_use = json!({
-            "mode": "use",
-            "inputId": "input",
-            "inputName": "Input",
-            "processedDestinationId": "destination",
-            "processedDestinationName": "Destination",
-            "monitorId": "headphones",
-            "monitorName": "Headphones",
-            "reliabilityProfile": "balanced"
-        });
-        assert!(serde_json::from_value::<StartAudioRequest>(ambiguous_use).is_err());
-
-        let test_with_destination = json!({
-            "mode": "test",
-            "inputId": "input",
-            "inputName": "Input",
-            "monitorId": "headphones",
-            "monitorName": "Headphones",
-            "processedDestinationId": "destination",
-            "processedDestinationName": "Destination",
-            "reliabilityProfile": "balanced"
-        });
-        assert!(serde_json::from_value::<StartAudioRequest>(test_with_destination).is_err());
+        assert!(StartAudioRequest::Use {
+            input_id: "input".to_owned(),
+            input_name: "Input".to_owned(),
+            processed_destination_id: String::new(),
+            processed_destination_name: String::new(),
+            reliability_profile: ReliabilityProfile::Balanced,
+        }
+        .validate()
+        .is_err());
     }
 
     #[test]
@@ -820,6 +827,14 @@ mod tests {
         assert!(plan.schedule_next());
         assert!(!plan.schedule_next());
         assert_eq!(plan.attempts, RECOVERY_BACKOFF_MS.len());
+    }
+
+    #[test]
+    fn stream_failure_messages_identify_the_failed_route_endpoint() {
+        assert!(route_failure_message("Physical input", "device removed")
+            .starts_with("Physical input stream stopped"));
+        assert!(route_failure_message("Virtual playback", "device removed")
+            .starts_with("Virtual playback stream stopped"));
     }
 
     #[test]

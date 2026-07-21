@@ -11,13 +11,38 @@ React controls
 
 input callback -> normalized/channel-mapped input ring
   -> fixed-block DSP worker
-  -> independent bounded destination ring -> destination callback
+  -> independent bounded destination ring -> virtual playback callback (Use)
   -> independent bounded monitor ring -> optional monitor callback
 ```
 
 The CPAL callbacks only convert/map samples, access bounded rings, signal the DSP
 worker, and update atomics. Device discovery, frontend calls, logging, locks,
 allocation, and DSP algorithms stay out of the callbacks.
+
+## External-route ownership
+
+`audio/device.rs` exposes raw input/output endpoints plus advisory direction,
+virtual-family, common-rate, and channel metadata. `audio/external_route.rs`
+performs conservative playback/capture pairing without opening either endpoint.
+`commands/external_routes.rs` owns list, save, delete, and readiness validation;
+schema-v4 settings persist both endpoint identities, friendly-name fallbacks,
+pairing source, and whether the user explicitly created the pair.
+
+The Use start boundary accepts only a saved route id. Rust resolves it back to a
+ready route, opens the physical input and virtual playback endpoint, and retains
+the capture endpoint as metadata for the receiving application. It does not open
+the paired capture endpoint continuously. Test remains a separate tagged request
+that opens only the physical input and selected local monitor. The controller
+rejects a second start while either route owns streams or recovery state.
+
+```text
+physical microphone -> DSP -> virtual playback endpoint
+virtual device transport -> paired capture endpoint -> receiving application
+```
+
+CPAL 0.15 does not provide stable WASAPI endpoint GUIDs through this seam, so app
+ids are direction-scoped friendly-name fingerprints. Unique friendly-name restore
+is allowed; duplicate matches remain unset and produce a warning.
 
 ## DSP ownership
 
@@ -95,7 +120,7 @@ Low latency requests 128 callback frames, uses 80 ms input/output rings, 256 pre
 
 Input starts first. Output streams are constructed and started only after all configured processed-output rings reach the prefill target; 500/1,000/1,500 ms profile-specific timeouts prevent an indefinite startup wait. Very short underruns continue the last valid frame with linear decay, then crossfade back over 2 ms. Longer gaps become silence.
 
-Input or main-destination errors are retained verbatim and trigger at most three staged restart attempts with 100, 300, and 900 ms delays. Endpoints are re-enumerated by stable identifier, then by a unique matching friendly name. An optional monitor failure leaves the main destination running in `degraded`; a Test monitor-only failure is treated as the active route failure. Stop cancels any queued recovery.
+Input or active-output errors are retained and trigger at most three staged restart attempts with 100, 300, and 900 ms delays. Use recovery reopens only its physical input and saved virtual playback endpoint; Test recovery reopens only its input and monitor. Endpoints are re-enumerated by stable identifier, then by a unique matching friendly name. Stop cancels queued recovery, and exhausted or invalid-DSP recovery clears route ownership so a later explicit start can proceed.
 
 Ring-fill trends and a correction ratio/min/max of 1.0 are exposed for clock-drift observation. Adaptive resampling is intentionally pending until long-session evidence shows persistent drift.
 

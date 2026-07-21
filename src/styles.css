@@ -158,6 +158,111 @@ small {
   gap: 16px;
 }
 
+.route-setup {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #3a2c4b;
+  border-radius: 14px;
+  background: #1b1425;
+}
+
+.route-setup h3,
+.route-setup ol {
+  margin: 0;
+}
+
+.route-setup ol {
+  display: grid;
+  gap: 6px;
+  padding-left: 22px;
+  color: #aaa0b8;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.route-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.route-actions button {
+  padding: 10px 14px;
+  border: 1px solid #4a3861;
+  border-radius: 10px;
+  color: #eee7f8;
+  background: #2a1d39;
+  cursor: pointer;
+}
+
+.route-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.physical-confirmation {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid #815734;
+  border-radius: 10px;
+  color: #f1c69d;
+  background: #312114;
+}
+
+.physical-confirmation input {
+  width: 17px;
+  height: 17px;
+  accent-color: #9c5cf3;
+}
+
+.route-health {
+  display: grid;
+  gap: 6px;
+  padding: 13px 14px;
+  border: 1px solid #815734;
+  border-radius: 10px;
+  color: #f1c69d;
+  background: #312114;
+}
+
+.route-health.ready {
+  border-color: #386b4c;
+  color: #b8e3ca;
+  background: #193024;
+}
+
+.route-health p,
+.route-health small {
+  margin: 0;
+}
+
+.route-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.route-summary > div {
+  padding: 12px;
+  border-radius: 10px;
+  background: #20172c;
+}
+
+.route-summary dt {
+  margin-bottom: 6px;
+  color: #8e82a1;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.route-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .route {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -543,6 +648,7 @@ footer {
 
   .grid,
   .route-grid,
+  .route-summary,
   .preset-row,
   .diagnostics dl,
   .settings-summary dl {

@@ -39,6 +39,13 @@ pub fn start_engine(
     request: StartEngineRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+    let _audio_operation = state
+        .audio_operation()
+        .lock()
+        .map_err(|_| "Audio operations are temporarily unavailable.".to_owned())?;
+    if state.voice_lab().is_audio_active() {
+        return Err("Stop Voice Lab recording or preview before starting Use or Test.".to_owned());
+    }
     let request = match request {
         StartEngineRequest::Use {
             input_id,

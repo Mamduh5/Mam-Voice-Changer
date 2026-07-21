@@ -48,6 +48,18 @@ export function useAudioParameters(enabled = true) {
     (next?: AudioParameters) => synchronizer.finishPresetOperation(next),
     [synchronizer],
   );
+  const applySnapshot = useCallback(
+    async (next: AudioParameters) => {
+      if (!enabled || !synchronizer.update(next)) return false;
+      await synchronizer.settle();
+      const snapshot = synchronizer.snapshot();
+      return (
+        snapshot.error === null &&
+        JSON.stringify(snapshot.confirmedParameters) === JSON.stringify(next)
+      );
+    },
+    [enabled, synchronizer],
+  );
 
   return {
     parameters,
@@ -55,6 +67,7 @@ export function useAudioParameters(enabled = true) {
     settle,
     beginPresetOperation,
     finishPresetOperation,
+    applySnapshot,
     error,
   };
 }

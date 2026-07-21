@@ -129,6 +129,40 @@ pub fn output_spec_at_rate(
         })
 }
 
+/// Selects a standalone input format for bounded, non-realtime capture.
+///
+/// This intentionally does not participate in live input/output negotiation.
+pub fn input_spec(
+    input: &cpal::Device,
+    target_buffer_frames: u32,
+) -> Result<StreamSpec, AudioError> {
+    let input_name = input
+        .name()
+        .map_err(|error| AudioError::DeviceName(error.to_string()))?;
+    let input_configs = supported_configs(input, DeviceDirection::Input, &input_name)?;
+    for sample_rate in [48_000, 44_100] {
+        let best = input_configs
+            .iter()
+            .filter(|config| {
+                (config.min_sample_rate().0..=config.max_sample_rate().0).contains(&sample_rate)
+            })
+            .min_by_key(|config| {
+                (
+                    format_score(config.sample_format()),
+                    channel_score(config.channels()),
+                )
+            });
+        if let Some(range) = best {
+            return Ok(stream_spec(range, sample_rate, target_buffer_frames));
+        }
+    }
+    Err(AudioError::SupportedFormats {
+        direction: DeviceDirection::Input.label(),
+        name: input_name,
+        details: "Voice Lab requires 44.1 kHz or 48 kHz input support.".to_owned(),
+    })
+}
+
 fn supported_configs(
     device: &cpal::Device,
     direction: DeviceDirection,

@@ -14,7 +14,7 @@ independent local monitor is available only on Test and defaults off.
 - Windows input/output device enumeration and selection
 - Conservative virtual playback/capture discovery, explicit manual pairing, and route readiness
 - Common sample-rate negotiation and normalized `f32` processing
-- Separate Use, Test, and Settings & Diagnostics pages
+- Separate Use, Test, Voice Lab, and Settings & Diagnostics pages
 - One DSP worker with independent bounded processed-destination and monitor rings
 - Low latency, Balanced, and Reliable buffering/prefill profiles
 - Short-dropout concealment, staged stream recovery, and detailed location-specific counters
@@ -31,6 +31,9 @@ independent local monitor is available only on Test and defaults off.
   user presets created from the complete live DSP parameter snapshot
 - Preset apply, save, rename, duplicate, delete, and reset workflows; the selected
   preset is restored at startup, and reset selects `Natural`
+- An isolated, memory-bounded Voice Lab for recording or importing up to 15 seconds,
+  offline rendering through the existing DSP, latency-aligned A/B preview and loop,
+  non-selecting preset development, explicit live apply, and explicit WAV export
 - Browser-safe frontend boundary when Vite is opened outside Tauri
 
 Built-in presets may be applied or duplicated, but they cannot be renamed or
@@ -64,9 +67,9 @@ corresponding application features are absent.
 
 ### Deferred functionality
 
-Recording, resampling devices without a common rate, AI/neural voice conversion,
-voice cloning, custom virtual audio drivers, cloud processing, accounts,
-telemetry, and non-Windows platforms are not part of the current prototype.
+Resampling unsupported Voice Lab rates, AI/neural voice conversion, model training,
+speaker embeddings, voice cloning, custom virtual audio drivers, cloud processing,
+accounts, telemetry, and non-Windows platforms are not part of the current prototype.
 
 ## Conservative defaults
 
@@ -137,6 +140,7 @@ monitoring levels.
 - [Architecture](docs/architecture.md)
 - [Audio routing](docs/audio-routing.md)
 - [External-routing implementation note](docs/external-routing-implementation-note.md)
+- [Voice Lab Phase 1 design](docs/voice-lab-phase-1-design.md)
 - [Prototype scope](docs/prototype-scope.md)
 - [Manual test plan](docs/manual-test-plan.md)
 - [Troubleshooting](docs/troubleshooting.md)

@@ -1,16 +1,19 @@
-import { PageNavigation } from './components/PageNavigation';
+import { useState } from 'react';
+import { PageNavigation, type NavigationPage } from './components/PageNavigation';
 import { SettingsDiagnosticsPage } from './components/SettingsDiagnosticsPage';
 import { TestPage } from './components/TestPage';
 import { UsePage } from './components/UsePage';
+import { VoiceLabPage } from './components/VoiceLabPage';
 import { useAudioDevices } from './hooks/useAudioDevices';
 import { useAudioParameters } from './hooks/useAudioParameters';
 import { useEngineState } from './hooks/useEngineState';
 import { usePresets } from './hooks/usePresets';
+import { useVoiceLab } from './hooks/useVoiceLab';
 import { DESKTOP_RUNTIME_UNAVAILABLE, tauriAudioApi } from './services/tauriAudioApi';
-import type { ApplicationPage } from './types/audio';
 import { isLeavingTest } from './utils/monitoringMode';
 
 export default function App() {
+  const [voiceLabOpen, setVoiceLabOpen] = useState(false);
   const desktopRuntimeAvailable = tauriAudioApi.isDesktopRuntimeAvailable();
   const devices = useAudioDevices(desktopRuntimeAvailable);
   const engine = useEngineState(desktopRuntimeAvailable);
@@ -20,6 +23,7 @@ export default function App() {
     audioParameters.beginPresetOperation,
     audioParameters.finishPresetOperation,
   );
+  const voiceLab = useVoiceLab(voiceLabOpen && desktopRuntimeAvailable, audioParameters.parameters);
   const active = ['running', 'degraded', 'recovering'].includes(engine.status.state);
   const transitioning = ['starting', 'stopping'].includes(engine.status.state);
 
@@ -52,11 +56,19 @@ export default function App() {
     void engine.stop();
   };
 
-  const navigate = (nextPage: ApplicationPage) => {
-    if (isLeavingTest(devices.lastPage, nextPage)) {
+  const activePage: NavigationPage = voiceLabOpen ? 'voiceLab' : devices.lastPage;
+
+  const navigate = (nextPage: NavigationPage) => {
+    if (isLeavingTest(devices.lastPage, nextPage === 'voiceLab' ? 'use' : nextPage)) {
       void engine.stopTestRoute();
     }
-    devices.setLastPage(nextPage);
+    if (nextPage === 'voiceLab') {
+      voiceLab.initialize(audioParameters.parameters);
+      setVoiceLabOpen(true);
+    } else {
+      setVoiceLabOpen(false);
+      devices.setLastPage(nextPage);
+    }
   };
 
   const errors: Array<{ id: string; label: string; message: string }> = [];
@@ -75,6 +87,8 @@ export default function App() {
     if (audioParameters.error)
       errors.push({ id: 'parameters', label: 'Audio settings', message: audioParameters.error });
     if (presets.error) errors.push({ id: 'presets', label: 'Presets', message: presets.error });
+    if (voiceLabOpen && voiceLab.error)
+      errors.push({ id: 'voice-lab', label: 'Voice Lab', message: voiceLab.error });
   }
 
   return (
@@ -89,7 +103,7 @@ export default function App() {
           <span className="logo">M</span>
           <div>
             <h1>Mam Voice Changer</h1>
-            <p>Local Windows audio routing - no recording or cloud processing</p>
+            <p>Local Windows routing and an isolated offline Voice Lab</p>
           </div>
         </div>
         <span className={active ? 'live' : 'idle'}>
@@ -98,7 +112,7 @@ export default function App() {
       </header>
 
       <div className="navigation-row">
-        <PageNavigation page={devices.lastPage} onNavigate={navigate} />
+        <PageNavigation page={activePage} onNavigate={navigate} />
         <button
           type="button"
           className="refresh"
@@ -109,7 +123,7 @@ export default function App() {
         </button>
       </div>
 
-      {devices.lastPage === 'use' && (
+      {!voiceLabOpen && devices.lastPage === 'use' && (
         <UsePage
           physicalInputs={devices.physicalInputs}
           inputs={devices.inputs}
@@ -140,7 +154,7 @@ export default function App() {
           onStop={stop}
         />
       )}
-      {devices.lastPage === 'test' && (
+      {!voiceLabOpen && devices.lastPage === 'test' && (
         <TestPage
           inputs={devices.physicalInputs}
           outputs={devices.outputs}
@@ -159,7 +173,7 @@ export default function App() {
           onStop={stop}
         />
       )}
-      {devices.lastPage === 'diagnostics' && (
+      {!voiceLabOpen && devices.lastPage === 'diagnostics' && (
         <SettingsDiagnosticsPage
           inputs={devices.inputs}
           outputs={devices.outputs}
@@ -171,6 +185,33 @@ export default function App() {
           status={engine.status}
           disabled={!desktopRuntimeAvailable}
           onReliabilityProfileChange={devices.setReliabilityProfile}
+        />
+      )}
+      {voiceLabOpen && (
+        <VoiceLabPage
+          inputs={devices.physicalInputs}
+          outputs={devices.outputs}
+          defaultInputId={devices.inputId}
+          defaultOutputId={devices.localMonitorId}
+          disabled={!desktopRuntimeAvailable}
+          liveActive={engine.status.state !== 'stopped'}
+          parameters={voiceLab.parameters}
+          status={voiceLab.status}
+          catalog={presets.catalog}
+          busy={voiceLab.busy || presets.busy}
+          renderStale={voiceLab.renderStale}
+          onParametersChange={voiceLab.updateParameters}
+          onApplyPreset={voiceLab.applyPreset}
+          onRecord={voiceLab.record}
+          onStopRecording={voiceLab.stopRecording}
+          onImport={voiceLab.importWav}
+          onRender={voiceLab.render}
+          onPreview={voiceLab.preview}
+          onStopPreview={voiceLab.stopPreview}
+          onSavePreset={presets.saveVoiceLab}
+          onApplyLive={audioParameters.applySnapshot}
+          onExport={voiceLab.exportWav}
+          onClear={voiceLab.clear}
         />
       )}
 

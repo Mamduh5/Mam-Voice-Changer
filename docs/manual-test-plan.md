@@ -114,6 +114,19 @@ For Low latency, Balanced, and Reliable:
 7. Exercise migrated v1/v2/v3, malformed, and future-version application settings;
    capture stays unset when migration is ambiguous and neither route auto-starts.
 
+## J. Voice Lab Phase 1
+
+1. With Use and Test stopped, record short mono/stereo microphone clips at both supported rates where the device permits. Confirm recording stops at 15 seconds and Clear releases the clip.
+2. Import PCM 16/24/32-bit and 32-bit-float WAV files at 44.1/48 kHz. Confirm unsupported rates, channel counts, encodings, and clips longer than 15 seconds produce actionable errors.
+3. Render Natural and Old Lady settings. Compare original and processed playback through headphones, replay each, enable loop before starting preview, and verify A/B timing is aligned.
+4. Change Lab controls and confirm Test/Use controls and sound do not change. Apply an existing preset to Lab and confirm the live selected preset does not change.
+5. Save the Lab configuration as a new user preset. Confirm it appears in the catalog while the prior live selected preset and live parameters remain unchanged across restart.
+6. Press **Apply to live settings** and only then confirm Test/Use receive the complete Lab parameter snapshot.
+7. Export original and processed WAV files to explicit paths. Re-import each and confirm duration, channels, rate, and audible content. Cancel each dialog once and confirm no file is created.
+8. Start Use or Test and confirm Lab record, render, and preview are unavailable. Start a Lab record or preview and confirm Use/Test cannot start until it stops.
+9. Navigate away during recording and preview. Confirm Lab audio stops, the source remains available on return, and Clear drops both original and processed buffers.
+10. Confirm no model download, voice-cloning, training, embedding, neural inference, cloud request, or realtime AI conversion occurs.
+
 ## Manual record
 
 ### Previously performed on 2026-07-18
@@ -134,3 +147,5 @@ For Low latency, Balanced, and Reliable:
 - Old Lady listening and full preset/application-settings persistence interaction.
 - Thirty-minute profile runs and clock-drift trend collection.
 - Discord, OBS, browser, and another receiving-app route when a real virtual pair is available.
+- Voice Lab microphone capture, Windows open/save dialogs, audible A/B alignment and quality,
+  looping, explicit export/re-import, live isolation, and memory-clear behavior in section J.

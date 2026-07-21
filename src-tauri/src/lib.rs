@@ -4,6 +4,7 @@ mod config;
 mod dsp;
 mod error;
 mod state;
+mod voice_lab;
 
 use tauri::Manager;
 
@@ -13,6 +14,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let controller = audio::controller::EngineController::new()?;
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;
             let preset_path = app_data_dir.join(config::presets::PRESET_FILE_NAME);
@@ -40,11 +42,22 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             commands::parameters::set_parameters,
             commands::presets::list_presets,
             commands::presets::save_preset,
+            commands::presets::save_voice_lab_preset,
             commands::presets::rename_preset,
             commands::presets::duplicate_preset,
             commands::presets::delete_preset,
             commands::presets::apply_preset,
             commands::presets::reset_preset,
+            commands::voice_lab::get_voice_lab_status,
+            commands::voice_lab::start_voice_lab_capture,
+            commands::voice_lab::stop_voice_lab_capture,
+            commands::voice_lab::import_voice_lab_wav,
+            commands::voice_lab::render_voice_lab,
+            commands::voice_lab::start_voice_lab_preview,
+            commands::voice_lab::stop_voice_lab_preview,
+            commands::voice_lab::stop_voice_lab_audio,
+            commands::voice_lab::export_voice_lab_wav,
+            commands::voice_lab::clear_voice_lab,
         ])
         .run(tauri::generate_context!())?;
     Ok(())

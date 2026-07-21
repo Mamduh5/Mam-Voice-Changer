@@ -1,8 +1,11 @@
 import type { ApplicationPage } from '../types/audio';
 
-const pages: Array<{ id: ApplicationPage; label: string }> = [
+export type NavigationPage = ApplicationPage | 'voiceLab';
+
+const pages: Array<{ id: NavigationPage; label: string }> = [
   { id: 'use', label: 'Use' },
   { id: 'test', label: 'Test' },
+  { id: 'voiceLab', label: 'Voice Lab' },
   { id: 'diagnostics', label: 'Settings & Diagnostics' },
 ];
 
@@ -10,8 +13,8 @@ export function PageNavigation({
   page,
   onNavigate,
 }: {
-  page: ApplicationPage;
-  onNavigate: (page: ApplicationPage) => void;
+  page: NavigationPage;
+  onNavigate: (page: NavigationPage) => void;
 }) {
   return (
     <nav className="page-navigation" aria-label="Application sections">

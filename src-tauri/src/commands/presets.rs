@@ -35,6 +35,22 @@ pub fn save_preset(
 }
 
 #[tauri::command]
+pub fn save_voice_lab_preset(
+    name: String,
+    parameters: DspParameters,
+    state: tauri::State<'_, AppState>,
+) -> Result<PresetCatalog, String> {
+    let mut store = state
+        .preset_store()
+        .lock()
+        .map_err(|_| "Preset storage is unavailable.".to_owned())?;
+    store
+        .save_preset_unselected(name, parameters)
+        .map_err(|error| error.to_string())?;
+    store.catalog().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn rename_preset(
     id: String,
     name: String,

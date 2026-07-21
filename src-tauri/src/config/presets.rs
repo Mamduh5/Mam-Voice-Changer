@@ -169,6 +169,25 @@ impl PresetStore {
         name: String,
         parameters: DspParameters,
     ) -> Result<(), PresetError> {
+        let (mut next, id) = self.next_with_new_preset(name, parameters)?;
+        next.selected_preset_id = Some(id);
+        self.commit(next)
+    }
+
+    pub fn save_preset_unselected(
+        &mut self,
+        name: String,
+        parameters: DspParameters,
+    ) -> Result<(), PresetError> {
+        let (next, _) = self.next_with_new_preset(name, parameters)?;
+        self.commit(next)
+    }
+
+    fn next_with_new_preset(
+        &self,
+        name: String,
+        parameters: DspParameters,
+    ) -> Result<(PresetDocument, String), PresetError> {
         let name = validate_name(&name)?;
         let parameters = parameters.validate().map_err(PresetError::Validation)?;
         let timestamp = unix_timestamp_millis()?;
@@ -176,7 +195,6 @@ impl PresetStore {
         while self.document.presets.iter().any(|preset| preset.id == id) {
             id = new_user_preset_id(&timestamp);
         }
-
         let mut next = self.document.clone();
         next.presets.push(UserPreset {
             id: id.clone(),
@@ -185,8 +203,7 @@ impl PresetStore {
             created_at: timestamp.clone(),
             updated_at: timestamp,
         });
-        next.selected_preset_id = Some(id);
-        self.commit(next)
+        Ok((next, id))
     }
 
     pub fn rename_preset(&mut self, id: &str, name: String) -> Result<(), PresetError> {
@@ -766,6 +783,30 @@ mod tests {
             .iter()
             .any(|preset| !preset.built_in && preset.name == "Deeper warm"));
 
+        cleanup(&path);
+    }
+
+    #[test]
+    fn voice_lab_save_preserves_selected_preset_and_active_parameters() {
+        let path = test_path("voice-lab-save");
+        cleanup(&path);
+        let mut store = PresetStore::load(path.clone()).unwrap();
+        let selected_before = store.catalog().unwrap().selected_preset_id;
+        let active_before = store.selected_parameters().unwrap();
+        let lab_parameters = DspParameters {
+            pitch_semitones: 4.0,
+            age_character: 0.7,
+            ..DspParameters::default()
+        };
+        store
+            .save_preset_unselected("Lab experiment".to_owned(), lab_parameters)
+            .unwrap();
+        let catalog = store.catalog().unwrap();
+        assert_eq!(catalog.selected_preset_id, selected_before);
+        assert_eq!(catalog.active_parameters, active_before);
+        assert!(catalog.presets.iter().any(|preset| {
+            preset.name == "Lab experiment" && preset.parameters == lab_parameters
+        }));
         cleanup(&path);
     }
 

@@ -10,6 +10,7 @@ import type {
 import type { EngineStatus } from '../types/engine';
 import type { AudioParameters } from '../types/parameters';
 import type { PresetCatalog } from '../types/presets';
+import type { VoiceLabClipVersion, VoiceLabStatus } from '../types/voiceLab';
 
 export type StartAudioRequest =
   | {
@@ -64,10 +65,37 @@ export const tauriAudioApi = {
   listPresets: () => invokeDesktop<PresetCatalog>('list_presets'),
   savePreset: (name: string, parameters: AudioParameters) =>
     invokeDesktop<PresetCatalog>('save_preset', { name, parameters }),
+  saveVoiceLabPreset: (name: string, parameters: AudioParameters) =>
+    invokeDesktop<PresetCatalog>('save_voice_lab_preset', { name, parameters }),
   renamePreset: (id: string, name: string) =>
     invokeDesktop<PresetCatalog>('rename_preset', { id, name }),
   duplicatePreset: (id: string) => invokeDesktop<PresetCatalog>('duplicate_preset', { id }),
   deletePreset: (id: string) => invokeDesktop<PresetCatalog>('delete_preset', { id }),
   applyPreset: (id: string) => invokeDesktop<PresetCatalog>('apply_preset', { id }),
   resetPreset: () => invokeDesktop<PresetCatalog>('reset_preset'),
+  getVoiceLabStatus: () => invokeDesktop<VoiceLabStatus>('get_voice_lab_status'),
+  startVoiceLabCapture: (inputId: string, inputName: string) =>
+    invokeDesktop<VoiceLabStatus>('start_voice_lab_capture', { inputId, inputName }),
+  stopVoiceLabCapture: () => invokeDesktop<VoiceLabStatus>('stop_voice_lab_capture'),
+  importVoiceLabWav: (path: string) =>
+    invokeDesktop<VoiceLabStatus>('import_voice_lab_wav', { path }),
+  renderVoiceLab: (parameters: AudioParameters) =>
+    invokeDesktop<VoiceLabStatus>('render_voice_lab', { parameters }),
+  startVoiceLabPreview: (
+    version: VoiceLabClipVersion,
+    outputId: string,
+    outputName: string,
+    looping: boolean,
+  ) =>
+    invokeDesktop<VoiceLabStatus>('start_voice_lab_preview', {
+      version,
+      outputId,
+      outputName,
+      looping,
+    }),
+  stopVoiceLabPreview: () => invokeDesktop<VoiceLabStatus>('stop_voice_lab_preview'),
+  stopVoiceLabAudio: () => invokeDesktop<VoiceLabStatus>('stop_voice_lab_audio'),
+  exportVoiceLabWav: (version: VoiceLabClipVersion, path: string) =>
+    invokeDesktop<void>('export_voice_lab_wav', { version, path }),
+  clearVoiceLab: () => invokeDesktop<VoiceLabStatus>('clear_voice_lab'),
 };

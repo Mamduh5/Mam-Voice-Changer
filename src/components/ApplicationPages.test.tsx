@@ -14,6 +14,8 @@ import { RoutingNotice } from './RoutingNotice';
 import { SettingsDiagnosticsPage } from './SettingsDiagnosticsPage';
 import { TestPage } from './TestPage';
 import { UsePage } from './UsePage';
+import { VoiceLabPage } from './VoiceLabPage';
+import { emptyVoiceLabStatus } from '../types/voiceLab';
 
 function device(
   id: string,
@@ -286,6 +288,7 @@ describe('application pages', () => {
     expect(navigation).toContain('Settings &amp; Diagnostics');
     expect(navigation).toContain('Use');
     expect(navigation).toContain('Test');
+    expect(navigation).toContain('Voice Lab');
     expect(diagnostics).toContain('Expected paired capture endpoint');
     expect(diagnostics).toContain('exact / knownPattern');
     expect(diagnostics).toContain('Capture endpoint available');
@@ -298,6 +301,77 @@ describe('application pages', () => {
     expect(diagnostics).toContain('None');
     expect(diagnostics).toContain('does not prove');
     expect(diagnostics).not.toContain('Discord connected');
+  });
+
+  it('renders the bounded, explicit Voice Lab workflow without live mutation claims', () => {
+    const action = vi.fn(async () => true);
+    const markup = renderToStaticMarkup(
+      <VoiceLabPage
+        inputs={[input]}
+        outputs={[monitor]}
+        defaultInputId={input.id}
+        defaultOutputId={monitor.id}
+        disabled={false}
+        liveActive={false}
+        parameters={defaultAudioParameters}
+        status={{
+          ...emptyVoiceLabStatus,
+          original: {
+            sourceName: 'dry.wav',
+            durationMs: 1_000,
+            sampleRate: 48_000,
+            channels: 1,
+            frames: 48_000,
+            peak: 0.5,
+            waveform: [0.1, 0.5, 0.2],
+          },
+        }}
+        catalog={{
+          schemaVersion: 2,
+          presets: [
+            {
+              id: 'builtin-natural',
+              name: 'Natural',
+              parameters: defaultAudioParameters,
+              builtIn: true,
+            },
+          ],
+          selectedPresetId: 'builtin-natural',
+          activeParameters: defaultAudioParameters,
+        }}
+        busy={false}
+        renderStale={false}
+        onParametersChange={vi.fn()}
+        onApplyPreset={vi.fn()}
+        onRecord={action}
+        onStopRecording={action}
+        onImport={action}
+        onRender={action}
+        onPreview={action}
+        onStopPreview={action}
+        onSavePreset={action}
+        onApplyLive={action}
+        onExport={action}
+        onClear={action}
+      />,
+    );
+
+    expect(markup).toContain('Isolated offline workspace');
+    expect(markup).toContain('15 seconds max');
+    expect(markup).toContain('Record dry sample');
+    expect(markup).toContain('Import WAV');
+    expect(markup).toContain('Play original');
+    expect(markup).toContain('Play processed');
+    expect(markup).toContain('Loop replay');
+    expect(markup).toContain('Apply preset to Lab');
+    expect(markup).toContain('Save as new preset');
+    expect(markup).toContain('Apply to live settings');
+    expect(markup).toContain('Export original WAV');
+    expect(markup).toContain('Export processed WAV');
+    expect(markup).toContain('Clear temporary audio');
+    expect(markup).toContain('not neural voice cloning');
+    expect(markup).not.toContain('Train model');
+    expect(markup).not.toContain('Realtime AI');
   });
 
   it('renders route-specific recovery controls and honest routing notice', () => {

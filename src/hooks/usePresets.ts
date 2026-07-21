@@ -114,6 +114,16 @@ export function usePresets(
     [execute],
   );
 
+  const saveVoiceLab = useCallback(
+    (name: string, parameters: AudioParameters) =>
+      execute(
+        'Save Voice Lab preset',
+        () => tauriAudioApi.saveVoiceLabPreset(name, parameters),
+        false,
+      ),
+    [execute],
+  );
+
   const duplicate = useCallback(
     (id: string) => execute('Duplicate preset', () => tauriAudioApi.duplicatePreset(id), true),
     [execute],
@@ -134,5 +144,5 @@ export function usePresets(
     [execute],
   );
 
-  return { catalog, busy, error, save, rename, duplicate, remove, apply, reset };
+  return { catalog, busy, error, save, saveVoiceLab, rename, duplicate, remove, apply, reset };
 }

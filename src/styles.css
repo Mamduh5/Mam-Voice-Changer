@@ -634,6 +634,165 @@ select {
   background: #7d294e;
 }
 
+.voice-lab-intro,
+.voice-lab-intro > div,
+.voice-lab-source,
+.voice-lab-transport,
+.voice-lab-presets,
+.voice-lab-finish {
+  display: grid;
+  gap: 16px;
+}
+
+.voice-lab-intro {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  background: linear-gradient(135deg, #1a1226, #211337);
+}
+
+.voice-lab-intro h2 {
+  margin: 0;
+  color: #f4f1ff;
+  font-size: 25px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.eyebrow,
+.bounded-label {
+  color: #bd8dff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bounded-label {
+  padding: 9px 12px;
+  border: 1px solid #5a3b78;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.voice-lab-notice {
+  padding: 13px 15px;
+  border: 1px solid #815734;
+  border-radius: 12px;
+  color: #f1c69d;
+  background: #312114;
+}
+
+.voice-lab-device-grid,
+.voice-lab-preset-grid,
+.voice-lab-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.voice-lab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.voice-lab-actions button,
+.voice-lab-preset-grid button {
+  padding: 10px 14px;
+  border: 1px solid #4a3861;
+  border-radius: 10px;
+  color: #eee7f8;
+  background: #2a1d39;
+  cursor: pointer;
+}
+
+.voice-lab-actions .start {
+  border: 0;
+  background: linear-gradient(135deg, #874af1, #c349d4);
+}
+
+.voice-lab-actions .stop {
+  border: 0;
+  background: #a52f60;
+}
+
+.voice-lab-actions .danger-outline {
+  border-color: #78324f;
+  color: #ff9ab8;
+  background: transparent;
+}
+
+.voice-lab-clip {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #2d233b;
+  border-radius: 16px;
+  background: #15101e;
+}
+
+.voice-lab-clip h3 {
+  margin: 0;
+  color: #c9b7e7;
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.voice-lab-waveform {
+  height: 92px;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  margin: 14px 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: #0f0b16;
+  overflow: hidden;
+}
+
+.voice-lab-waveform span {
+  flex: 1;
+  min-width: 1px;
+  border-radius: 2px;
+  background: linear-gradient(#c06eff, #6131c2);
+}
+
+.voice-lab-progress {
+  height: 5px;
+  border-radius: 999px;
+  background: #2a2036;
+  overflow: hidden;
+}
+
+.voice-lab-progress span {
+  display: block;
+  height: 100%;
+  background: #a86cf5;
+}
+
+.voice-lab-preset-grid {
+  align-items: end;
+}
+
+.voice-lab-preset-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.voice-lab-preset-grid input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #403052;
+  border-radius: 10px;
+  color: #f4f1ff;
+  background: #20172c;
+}
+
+.warning {
+  color: #f1c69d;
+}
+
 footer {
   padding: 24px;
   color: #756b84;
@@ -652,6 +811,13 @@ footer {
   .preset-row,
   .diagnostics dl,
   .settings-summary dl {
+    grid-template-columns: 1fr;
+  }
+
+  .voice-lab-intro,
+  .voice-lab-device-grid,
+  .voice-lab-preset-grid,
+  .voice-lab-comparison {
     grid-template-columns: 1fr;
   }
 

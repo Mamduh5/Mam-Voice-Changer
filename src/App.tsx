@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { PageNavigation } from './components/PageNavigation';
 import { SettingsDiagnosticsPage } from './components/SettingsDiagnosticsPage';
 import { TestPage } from './components/TestPage';
@@ -9,9 +8,7 @@ import { useEngineState } from './hooks/useEngineState';
 import { usePresets } from './hooks/usePresets';
 import { DESKTOP_RUNTIME_UNAVAILABLE, tauriAudioApi } from './services/tauriAudioApi';
 import type { ApplicationPage } from './types/audio';
-import { shouldStopTemporaryTestMonitoring } from './utils/monitoringMode';
-
-type EngineMode = 'use' | 'test' | null;
+import { isLeavingTest } from './utils/monitoringMode';
 
 export default function App() {
   const desktopRuntimeAvailable = tauriAudioApi.isDesktopRuntimeAvailable();
@@ -23,8 +20,6 @@ export default function App() {
     audioParameters.beginPresetOperation,
     audioParameters.finishPresetOperation,
   );
-  const [temporaryTestMonitoring, setTemporaryTestMonitoring] = useState(false);
-  const [engineMode, setEngineMode] = useState<EngineMode>(null);
   const active = ['running', 'degraded', 'recovering'].includes(engine.status.state);
   const transitioning = ['starting', 'stopping'].includes(engine.status.state);
 
@@ -32,64 +27,34 @@ export default function App() {
     (output ? devices.outputs : devices.inputs).find((device) => device.id === id)?.name ?? '';
 
   const startUse = () => {
-    setEngineMode('use');
     void engine.start({
+      mode: 'use',
       inputId: devices.inputId,
       inputName: deviceName(devices.inputId),
-      processedDestinationId: devices.processedDestinationId || null,
-      processedDestinationName: devices.processedDestinationId
-        ? deviceName(devices.processedDestinationId, true)
-        : null,
-      localMonitorId: devices.localMonitorEnabled ? devices.localMonitorId || null : null,
-      localMonitorName:
-        devices.localMonitorEnabled && devices.localMonitorId
-          ? deviceName(devices.localMonitorId, true)
-          : null,
+      processedDestinationId: devices.processedDestinationId,
+      processedDestinationName: deviceName(devices.processedDestinationId, true),
       reliabilityProfile: devices.reliabilityProfile,
     });
   };
 
   const startTest = () => {
-    setEngineMode('test');
     void engine.start({
+      mode: 'test',
       inputId: devices.inputId,
       inputName: deviceName(devices.inputId),
-      processedDestinationId: null,
-      processedDestinationName: null,
-      localMonitorId: temporaryTestMonitoring ? devices.localMonitorId || null : null,
-      localMonitorName:
-        temporaryTestMonitoring && devices.localMonitorId
-          ? deviceName(devices.localMonitorId, true)
-          : null,
+      monitorId: devices.localMonitorId,
+      monitorName: deviceName(devices.localMonitorId, true),
       reliabilityProfile: devices.reliabilityProfile,
     });
   };
 
   const stop = () => {
-    setEngineMode(null);
     void engine.stop();
   };
 
   const navigate = (nextPage: ApplicationPage) => {
-    if (devices.lastPage === 'test' && nextPage !== 'test') {
-      setTemporaryTestMonitoring(false);
-      if (
-        shouldStopTemporaryTestMonitoring(
-          devices.lastPage,
-          nextPage,
-          engineMode,
-          engine.status.state,
-        )
-      ) {
-        stop();
-      }
-    }
-    if (
-      nextPage === 'test' &&
-      engineMode === 'use' &&
-      !['stopped', 'error'].includes(engine.status.state)
-    ) {
-      stop();
+    if (isLeavingTest(devices.lastPage, nextPage)) {
+      void engine.stopTestRoute();
     }
     devices.setLastPage(nextPage);
   };
@@ -150,8 +115,6 @@ export default function App() {
           outputs={devices.outputs}
           inputId={devices.inputId}
           destinationId={devices.processedDestinationId}
-          monitorId={devices.localMonitorId}
-          monitorEnabled={devices.localMonitorEnabled}
           hasLikelyVirtualDestination={devices.hasLikelyVirtualDestination}
           disabled={!desktopRuntimeAvailable}
           status={engine.status}
@@ -159,8 +122,6 @@ export default function App() {
           presetBusy={presets.busy}
           onInputChange={devices.setInputId}
           onDestinationChange={devices.setProcessedDestinationId}
-          onMonitorDeviceChange={devices.setLocalMonitorId}
-          onMonitorEnabledChange={devices.setLocalMonitorEnabled}
           onApplyPreset={presets.apply}
           onStart={startUse}
           onStop={stop}
@@ -172,8 +133,6 @@ export default function App() {
           outputs={devices.outputs}
           inputId={devices.inputId}
           monitorId={devices.localMonitorId}
-          temporaryMonitoring={temporaryTestMonitoring}
-          routeIsTest={engineMode === 'test'}
           disabled={!desktopRuntimeAvailable}
           status={engine.status}
           parameters={audioParameters.parameters}
@@ -182,7 +141,6 @@ export default function App() {
           presetActions={presets}
           onInputChange={devices.setInputId}
           onMonitorDeviceChange={devices.setLocalMonitorId}
-          onTemporaryMonitoringChange={setTemporaryTestMonitoring}
           onParametersChange={audioParameters.update}
           onStart={startTest}
           onStop={stop}

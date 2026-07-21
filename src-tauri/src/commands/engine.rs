@@ -1,11 +1,11 @@
 use crate::{
-    audio::{controller::StartRequest, metrics::EngineStatus},
+    audio::{controller::StartAudioRequest, metrics::EngineStatus},
     state::app_state::AppState,
 };
 
 #[tauri::command]
 pub fn start_engine(
-    request: StartRequest,
+    request: StartAudioRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     state.controller().start(request)
@@ -14,6 +14,11 @@ pub fn start_engine(
 #[tauri::command]
 pub fn stop_engine(state: tauri::State<'_, AppState>) -> Result<(), String> {
     state.controller().stop()
+}
+
+#[tauri::command]
+pub fn stop_test_route(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state.controller().stop_test()
 }
 
 #[tauri::command]

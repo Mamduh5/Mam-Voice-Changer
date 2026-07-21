@@ -22,8 +22,6 @@ type Props = {
   outputs: AudioDevice[];
   inputId: string;
   monitorId: string;
-  temporaryMonitoring: boolean;
-  routeIsTest: boolean;
   disabled: boolean;
   status: EngineStatus;
   parameters: AudioParameters;
@@ -32,7 +30,6 @@ type Props = {
   presetActions: PresetActions;
   onInputChange: (id: string) => void;
   onMonitorDeviceChange: (id: string) => void;
-  onTemporaryMonitoringChange: (enabled: boolean) => void;
   onParametersChange: (changes: Partial<AudioParameters>) => void;
   onStart: () => void;
   onStop: () => void;
@@ -41,12 +38,16 @@ type Props = {
 export function TestPage(props: Props) {
   const routeLocked = !['stopped', 'error'].includes(props.status.state);
   const monitoringActive =
-    props.routeIsTest && ['running', 'degraded', 'recovering'].includes(props.status.state);
+    props.status.routePurpose === 'test' &&
+    ['running', 'degraded', 'recovering'].includes(props.status.state);
   return (
     <div className="page-stack" data-page="test">
       <section className="card test-warning" role="alert">
         <strong>Feedback warning</strong>
-        <p>Use headphones. Test monitoring starts only after you enable it and press Start.</p>
+        <p>
+          Use headphones to prevent feedback. Monitoring starts only when you press Start hearing
+          test.
+        </p>
       </section>
       <section className="card routing">
         <div className="section-heading">
@@ -64,7 +65,7 @@ export function TestPage(props: Props) {
             onChange={props.onInputChange}
           />
           <DeviceSelector
-            label="Headphone / local monitor device"
+            label="Test monitor device"
             value={props.monitorId}
             devices={props.outputs}
             disabled={props.disabled || routeLocked}
@@ -72,15 +73,6 @@ export function TestPage(props: Props) {
             onChange={props.onMonitorDeviceChange}
           />
         </div>
-        <label className="monitor-toggle prominent">
-          <input
-            type="checkbox"
-            checked={props.temporaryMonitoring}
-            disabled={props.disabled || routeLocked || !props.monitorId}
-            onChange={(event) => props.onTemporaryMonitoringChange(event.target.checked)}
-          />
-          Enable temporary test monitoring
-        </label>
       </section>
       <PresetControls
         catalog={props.catalog}
@@ -108,7 +100,11 @@ export function TestPage(props: Props) {
       </div>
       <EngineControls
         status={props.status}
-        canStart={Boolean(props.inputId && props.monitorId && props.temporaryMonitoring)}
+        purpose="test"
+        canStart={Boolean(props.inputId && props.monitorId)}
+        startLabel="Start hearing test"
+        stopLabel="Stop test"
+        description="Selected local monitor only; stops automatically when you leave Test"
         onStart={props.onStart}
         onStop={props.onStop}
       />

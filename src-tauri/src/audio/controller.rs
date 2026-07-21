@@ -15,7 +15,7 @@ use crate::{
     audio::{
         device::{find_device_with_fallback, DeviceDirection},
         input_stream,
-        metrics::{EngineStatus, SharedMetrics},
+        metrics::{AudioRoutePurpose, EngineStatus, SharedMetrics},
         output_stream::{self, OutputRole},
         reliability::ReliabilityProfile,
         ring_buffer::AudioRingBuffer,
@@ -63,70 +63,113 @@ fn estimated_device_latency_ms(
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct StartRequest {
-    pub input_id: String,
-    pub input_name: String,
-    pub processed_destination_id: Option<String>,
-    pub processed_destination_name: Option<String>,
-    pub local_monitor_id: Option<String>,
-    pub local_monitor_name: Option<String>,
-    pub reliability_profile: ReliabilityProfile,
+#[serde(
+    tag = "mode",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum StartAudioRequest {
+    Use {
+        input_id: String,
+        input_name: String,
+        processed_destination_id: String,
+        processed_destination_name: String,
+        reliability_profile: ReliabilityProfile,
+    },
+    Test {
+        input_id: String,
+        input_name: String,
+        monitor_id: String,
+        monitor_name: String,
+        reliability_profile: ReliabilityProfile,
+    },
 }
 
-impl StartRequest {
+impl StartAudioRequest {
     fn validate(&self) -> Result<(), String> {
-        validate_optional_device_pair(
-            "processed destination",
-            self.processed_destination_id.as_deref(),
-            self.processed_destination_name.as_deref(),
-        )?;
-        validate_optional_device_pair(
-            "local monitor",
-            self.local_monitor_id.as_deref(),
-            self.local_monitor_name.as_deref(),
-        )?;
-        if self.input_id.trim().is_empty() || self.input_name.trim().is_empty() {
-            return Err("An input microphone must be selected.".to_owned());
+        match self {
+            Self::Use {
+                input_id,
+                input_name,
+                processed_destination_id,
+                processed_destination_name,
+                ..
+            } => {
+                validate_device("input microphone", input_id, input_name)?;
+                validate_device(
+                    "processed destination",
+                    processed_destination_id,
+                    processed_destination_name,
+                )?;
+            }
+            Self::Test {
+                input_id,
+                input_name,
+                monitor_id,
+                monitor_name,
+                ..
+            } => {
+                validate_device("input microphone", input_id, input_name)?;
+                validate_device("Test monitor", monitor_id, monitor_name)?;
+            }
         }
-        if self.processed_destination_id.is_none() && self.local_monitor_id.is_none() {
-            return Err(
-                "Select a processed destination or explicitly enable a local monitor.".to_owned(),
-            );
+        Ok(())
+    }
+
+    fn input(&self) -> (&str, &str) {
+        match self {
+            Self::Use {
+                input_id,
+                input_name,
+                ..
+            }
+            | Self::Test {
+                input_id,
+                input_name,
+                ..
+            } => (input_id, input_name),
         }
-        if self.processed_destination_id == self.local_monitor_id
-            && self.processed_destination_id.is_some()
-        {
-            return Err(
-                "Processed destination and local monitor must be different devices.".to_owned(),
-            );
+    }
+
+    const fn reliability_profile(&self) -> ReliabilityProfile {
+        match self {
+            Self::Use {
+                reliability_profile,
+                ..
+            }
+            | Self::Test {
+                reliability_profile,
+                ..
+            } => *reliability_profile,
         }
+    }
+
+    const fn route_purpose(&self) -> AudioRoutePurpose {
+        match self {
+            Self::Use { .. } => AudioRoutePurpose::Use,
+            Self::Test { .. } => AudioRoutePurpose::Test,
+        }
+    }
+}
+
+fn validate_device(purpose: &str, id: &str, name: &str) -> Result<(), String> {
+    if id.trim().is_empty() || name.trim().is_empty() {
+        Err(format!("A valid {purpose} must be selected."))
+    } else {
         Ok(())
     }
 }
 
-fn validate_optional_device_pair(
-    purpose: &str,
-    id: Option<&str>,
-    name: Option<&str>,
-) -> Result<(), String> {
-    if id.is_some() != name.is_some() {
-        return Err(format!(
-            "The {purpose} identifier and name must be supplied together."
-        ));
-    }
-    if id.is_some_and(str::is_empty) || name.is_some_and(str::is_empty) {
-        return Err(format!("The selected {purpose} is not valid."));
-    }
-    Ok(())
-}
-
 enum EngineCommand {
     Start {
-        request: StartRequest,
+        request: StartAudioRequest,
         reply: SyncSender<Result<(), String>>,
     },
     Stop {
+        reply: SyncSender<Result<(), String>>,
+    },
+    StopTest {
         reply: SyncSender<Result<(), String>>,
     },
 }
@@ -163,7 +206,7 @@ impl EngineController {
         })
     }
 
-    pub fn start(&self, request: StartRequest) -> Result<(), String> {
+    pub fn start(&self, request: StartAudioRequest) -> Result<(), String> {
         request.validate()?;
         let (reply, response) = mpsc::sync_channel(1);
         self.commands
@@ -176,6 +219,14 @@ impl EngineController {
         let (reply, response) = mpsc::sync_channel(1);
         self.commands
             .send(EngineCommand::Stop { reply })
+            .map_err(|_| AudioError::WorkerUnavailable.to_string())?;
+        receive_response(response)
+    }
+
+    pub fn stop_test(&self) -> Result<(), String> {
+        let (reply, response) = mpsc::sync_channel(1);
+        self.commands
+            .send(EngineCommand::StopTest { reply })
             .map_err(|_| AudioError::WorkerUnavailable.to_string())?;
         receive_response(response)
     }
@@ -218,13 +269,13 @@ struct StartedStreams {
 }
 
 struct RecoveryPlan {
-    request: StartRequest,
+    request: StartAudioRequest,
     attempts: usize,
     next_attempt: Instant,
 }
 
 impl RecoveryPlan {
-    fn new(request: StartRequest) -> Self {
+    fn new(request: StartAudioRequest) -> Self {
         Self {
             request,
             attempts: 0,
@@ -250,7 +301,7 @@ fn worker_loop(
 ) {
     let mut streams: Option<StreamBundle> = None;
     let mut runtime_events: Option<Receiver<RuntimeEvent>> = None;
-    let mut active_request: Option<StartRequest> = None;
+    let mut active_request: Option<StartAudioRequest> = None;
     let mut recovery: Option<RecoveryPlan> = None;
     let mut state = EngineState::Stopped;
 
@@ -259,9 +310,10 @@ fn worker_loop(
             if let Ok(event) = receiver.try_recv() {
                 match event {
                     RuntimeEvent::MonitorDeviceStopped(details) => {
-                        let monitor_is_only_output = active_request
-                            .as_ref()
-                            .is_some_and(|request| request.processed_destination_id.is_none());
+                        let monitor_is_only_output =
+                            active_request.as_ref().is_some_and(|request| {
+                                matches!(request, StartAudioRequest::Test { .. })
+                            });
                         if monitor_is_only_output {
                             streams = None;
                             runtime_events = None;
@@ -360,7 +412,7 @@ fn worker_loop(
                 runtime_events = None;
                 active_request = Some(request.clone());
                 transition(&mut state, EngineState::Starting, &metrics);
-                metrics.reset_session(request.reliability_profile);
+                metrics.reset_session(request.reliability_profile(), request.route_purpose());
                 metrics.set_last_error(None);
                 match start_streams(&request, Arc::clone(&metrics), Arc::clone(&parameters)) {
                     Ok(started) => {
@@ -377,6 +429,7 @@ fn worker_loop(
                     Err(error) => {
                         let message = error.to_string();
                         active_request = None;
+                        metrics.set_route_purpose(None);
                         metrics.set_last_error(Some(message.clone()));
                         metrics.clear_stream_details();
                         transition(&mut state, EngineState::Error, &metrics);
@@ -393,7 +446,26 @@ fn worker_loop(
                 recovery = None;
                 active_request = None;
                 transition(&mut state, EngineState::Stopped, &metrics);
+                metrics.set_route_purpose(None);
                 metrics.clear_stream_details();
+                let _ = reply.try_send(Ok(()));
+            }
+            Ok(EngineCommand::StopTest { reply }) => {
+                if active_request
+                    .as_ref()
+                    .is_some_and(|request| matches!(request, StartAudioRequest::Test { .. }))
+                {
+                    if streams.is_some() || recovery.is_some() {
+                        transition(&mut state, EngineState::Stopping, &metrics);
+                    }
+                    streams = None;
+                    runtime_events = None;
+                    recovery = None;
+                    active_request = None;
+                    transition(&mut state, EngineState::Stopped, &metrics);
+                    metrics.set_route_purpose(None);
+                    metrics.clear_stream_details();
+                }
                 let _ = reply.try_send(Ok(()));
             }
             Err(RecvTimeoutError::Timeout) => {}
@@ -411,43 +483,44 @@ fn transition(state: &mut EngineState, next: EngineState, metrics: &SharedMetric
 
 #[allow(clippy::too_many_lines)]
 fn start_streams(
-    request: &StartRequest,
+    request: &StartAudioRequest,
     metrics: Arc<SharedMetrics>,
     parameters: Arc<ParameterState>,
 ) -> Result<StartedStreams, AudioError> {
-    let input_device = find_device_with_fallback(
-        DeviceDirection::Input,
-        &request.input_id,
-        &request.input_name,
-    )?;
-    let destination_device = match (
-        request.processed_destination_id.as_deref(),
-        request.processed_destination_name.as_deref(),
-    ) {
-        (Some(id), Some(name)) => Some(find_device_with_fallback(
-            DeviceDirection::Output,
-            id,
-            name,
-        )?),
-        _ => None,
+    let (input_id, input_name) = request.input();
+    let input_device = find_device_with_fallback(DeviceDirection::Input, input_id, input_name)?;
+    let (destination_device, monitor_device) = match request {
+        StartAudioRequest::Use {
+            processed_destination_id,
+            processed_destination_name,
+            ..
+        } => (
+            Some(find_device_with_fallback(
+                DeviceDirection::Output,
+                processed_destination_id,
+                processed_destination_name,
+            )?),
+            None,
+        ),
+        StartAudioRequest::Test {
+            monitor_id,
+            monitor_name,
+            ..
+        } => (
+            None,
+            Some(find_device_with_fallback(
+                DeviceDirection::Output,
+                monitor_id,
+                monitor_name,
+            )?),
+        ),
     };
-    let monitor_device = match (
-        request.local_monitor_id.as_deref(),
-        request.local_monitor_name.as_deref(),
-    ) {
-        (Some(id), Some(name)) => Some(find_device_with_fallback(
-            DeviceDirection::Output,
-            id,
-            name,
-        )?),
-        _ => None,
-    };
-    let Some(primary_output) = destination_device.as_ref().or(monitor_device.as_ref()) else {
-        return Err(AudioError::InvalidConfiguration(
-            "A processed destination or local monitor is required".to_owned(),
-        ));
-    };
-    let reliability = request.reliability_profile.config();
+    let primary_output = destination_device
+        .as_ref()
+        .or(monitor_device.as_ref())
+        .expect("a tagged audio route always has exactly one output");
+    let reliability_profile = request.reliability_profile();
+    let reliability = reliability_profile.config();
     let negotiated = stream_config::negotiate(
         &input_device,
         primary_output,
@@ -524,7 +597,7 @@ fn start_streams(
         negotiated.sample_rate,
         dsp_channels,
         dsp_block_frames,
-        request.reliability_profile,
+        reliability_profile,
     )?;
     let input = input_stream::build(
         &input_device,
@@ -559,7 +632,7 @@ fn start_streams(
             achieved,
             prefill_target_frames,
             startup_started.elapsed(),
-            request.reliability_profile.startup_timeout(),
+            reliability_profile.startup_timeout(),
         ) {
             StartupPrefillDecision::Ready => break achieved,
             StartupPrefillDecision::TimedOut => {
@@ -685,47 +758,63 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        estimated_device_latency_ms, startup_prefill_decision, RecoveryPlan, StartRequest,
+        estimated_device_latency_ms, startup_prefill_decision, RecoveryPlan, StartAudioRequest,
         StartupPrefillDecision, RECOVERY_BACKOFF_MS,
     };
     use crate::audio::reliability::ReliabilityProfile;
+    use serde_json::json;
 
-    fn request() -> StartRequest {
-        StartRequest {
+    fn use_request() -> StartAudioRequest {
+        StartAudioRequest::Use {
             input_id: "input".to_owned(),
             input_name: "Input".to_owned(),
-            processed_destination_id: Some("destination".to_owned()),
-            processed_destination_name: Some("Destination".to_owned()),
-            local_monitor_id: None,
-            local_monitor_name: None,
+            processed_destination_id: "destination".to_owned(),
+            processed_destination_name: "Destination".to_owned(),
             reliability_profile: ReliabilityProfile::Balanced,
         }
     }
 
     #[test]
-    fn start_request_supports_destination_only_and_rejects_ambiguous_routing() {
-        assert!(request().validate().is_ok());
-        let mut with_monitor = request();
-        with_monitor.local_monitor_id = Some("headphones".to_owned());
-        with_monitor.local_monitor_name = Some("Headphones".to_owned());
-        assert!(with_monitor.validate().is_ok());
+    fn tagged_start_requests_require_exactly_one_route_purpose() {
+        assert!(use_request().validate().is_ok());
+        assert!(StartAudioRequest::Test {
+            input_id: "input".to_owned(),
+            input_name: "Input".to_owned(),
+            monitor_id: "headphones".to_owned(),
+            monitor_name: "Headphones".to_owned(),
+            reliability_profile: ReliabilityProfile::Balanced,
+        }
+        .validate()
+        .is_ok());
 
-        let mut monitor_only = request();
-        monitor_only.processed_destination_id = None;
-        monitor_only.processed_destination_name = None;
-        monitor_only.local_monitor_id = Some("headphones".to_owned());
-        monitor_only.local_monitor_name = Some("Headphones".to_owned());
-        assert!(monitor_only.validate().is_ok());
+        let ambiguous_use = json!({
+            "mode": "use",
+            "inputId": "input",
+            "inputName": "Input",
+            "processedDestinationId": "destination",
+            "processedDestinationName": "Destination",
+            "monitorId": "headphones",
+            "monitorName": "Headphones",
+            "reliabilityProfile": "balanced"
+        });
+        assert!(serde_json::from_value::<StartAudioRequest>(ambiguous_use).is_err());
 
-        let mut invalid = request();
-        invalid.local_monitor_id = invalid.processed_destination_id.clone();
-        invalid.local_monitor_name = invalid.processed_destination_name.clone();
-        assert!(invalid.validate().is_err());
+        let test_with_destination = json!({
+            "mode": "test",
+            "inputId": "input",
+            "inputName": "Input",
+            "monitorId": "headphones",
+            "monitorName": "Headphones",
+            "processedDestinationId": "destination",
+            "processedDestinationName": "Destination",
+            "reliabilityProfile": "balanced"
+        });
+        assert!(serde_json::from_value::<StartAudioRequest>(test_with_destination).is_err());
     }
 
     #[test]
     fn recovery_attempts_and_backoff_are_strictly_bounded() {
-        let mut plan = RecoveryPlan::new(request());
+        let mut plan = RecoveryPlan::new(use_request());
         assert_eq!(plan.attempts, 0);
         assert!(plan.schedule_next());
         assert!(plan.schedule_next());

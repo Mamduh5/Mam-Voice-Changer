@@ -20,7 +20,6 @@ pub struct AudioDeviceCatalog {
     pub selected_input_id: Option<String>,
     pub processed_destination_id: Option<String>,
     pub local_monitor_id: Option<String>,
-    pub local_monitor_enabled: bool,
     pub reliability_profile: ReliabilityProfile,
     pub last_page: ApplicationPage,
     pub has_likely_virtual_destination: bool,
@@ -33,7 +32,6 @@ pub struct SaveApplicationSettingsRequest {
     pub selected_input_id: Option<String>,
     pub processed_destination_id: Option<String>,
     pub local_monitor_id: Option<String>,
-    pub local_monitor_enabled: bool,
     pub reliability_profile: ReliabilityProfile,
     pub last_page: ApplicationPage,
 }
@@ -62,7 +60,6 @@ pub fn list_audio_devices(state: tauri::State<'_, AppState>) -> Result<AudioDevi
         selected_input_id: resolved.selected_input_id,
         processed_destination_id: resolved.processed_destination_id,
         local_monitor_id: resolved.local_monitor_id,
-        local_monitor_enabled: document.local_monitor_enabled,
         reliability_profile: document.reliability_profile,
         last_page: document.last_page,
         has_likely_virtual_destination,
@@ -75,9 +72,6 @@ pub fn save_application_settings(
     request: SaveApplicationSettingsRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    if request.local_monitor_enabled && request.local_monitor_id.is_none() {
-        return Err("Local monitoring cannot be enabled without a monitor device.".to_owned());
-    }
     let DeviceList { inputs, outputs } =
         device::list_devices().map_err(|error| error.to_string())?;
     let input = selected_pair("input", request.selected_input_id.as_deref(), &inputs)?;
@@ -101,7 +95,6 @@ pub fn save_application_settings(
             .map(|device| device.name.clone()),
         local_monitor_device_id: monitor.as_ref().map(|device| device.id.clone()),
         last_known_local_monitor_friendly_name: monitor.as_ref().map(|device| device.name.clone()),
-        local_monitor_enabled: request.local_monitor_enabled,
         reliability_profile: request.reliability_profile,
         last_page: request.last_page,
     };

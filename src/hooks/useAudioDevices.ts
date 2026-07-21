@@ -16,7 +16,6 @@ export const defaultApplicationSettings: ApplicationSettingsUpdate = {
   selectedInputId: null,
   processedDestinationId: null,
   localMonitorId: null,
-  localMonitorEnabled: false,
   reliabilityProfile: 'balanced',
   lastPage: 'use',
 };
@@ -63,7 +62,6 @@ export function useAudioDevices(enabled = true) {
     (changes: Partial<ApplicationSettingsUpdate>) => {
       if (!enabled) return;
       const next = { ...settingsRef.current, ...changes };
-      if (!next.localMonitorId) next.localMonitorEnabled = false;
       settingsRef.current = next;
       setSettings(next);
       pendingSaveRef.current = next;
@@ -94,7 +92,6 @@ export function useAudioDevices(enabled = true) {
           selectedInputId: inputId || null,
           processedDestinationId: destinationId || null,
           localMonitorId: monitorId || null,
-          localMonitorEnabled: Boolean(devices.localMonitorEnabled && monitorId),
           reliabilityProfile: devices.reliabilityProfile,
           lastPage: devices.lastPage,
         };
@@ -138,10 +135,6 @@ export function useAudioDevices(enabled = true) {
     (id: string) => updateSettings({ localMonitorId: id || null }),
     [updateSettings],
   );
-  const setLocalMonitorEnabled = useCallback(
-    (enabled: boolean) => updateSettings({ localMonitorEnabled: enabled }),
-    [updateSettings],
-  );
   const setReliabilityProfile = useCallback(
     (profile: ReliabilityProfile) => updateSettings({ reliabilityProfile: profile }),
     [updateSettings],
@@ -157,14 +150,12 @@ export function useAudioDevices(enabled = true) {
     inputId: settings.selectedInputId ?? '',
     processedDestinationId: settings.processedDestinationId ?? '',
     localMonitorId: settings.localMonitorId ?? '',
-    localMonitorEnabled: settings.localMonitorEnabled,
     reliabilityProfile: settings.reliabilityProfile,
     lastPage: settings.lastPage,
     hasLikelyVirtualDestination,
     setInputId,
     setProcessedDestinationId,
     setLocalMonitorId,
-    setLocalMonitorEnabled,
     setReliabilityProfile,
     setLastPage,
     refresh,

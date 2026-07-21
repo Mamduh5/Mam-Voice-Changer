@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { tauriAudioApi } from '../services/tauriAudioApi';
-import type { StartEngineRequest } from '../services/tauriAudioApi';
+import type { StartAudioRequest } from '../services/tauriAudioApi';
 import { stoppedStatus, type EngineStatus } from '../types/engine';
 
 export function useEngineState(enabled = true) {
@@ -58,7 +58,7 @@ export function useEngineState(enabled = true) {
   }, [enabled, refreshStatus]);
 
   const start = useCallback(
-    async (request: StartEngineRequest) => {
+    async (request: StartAudioRequest) => {
       if (!enabled) {
         return;
       }
@@ -94,5 +94,22 @@ export function useEngineState(enabled = true) {
     }
   }, [enabled, refreshStatus]);
 
-  return { status, commandError, pollError, start, stop };
+  const stopTestRoute = useCallback(async () => {
+    if (!enabled) {
+      return;
+    }
+
+    setCommandError(null);
+    try {
+      await tauriAudioApi.stopTestRoute();
+    } catch (cause) {
+      if (mountedRef.current) {
+        setCommandError(`Unable to stop Test monitoring: ${String(cause)}`);
+      }
+    } finally {
+      await refreshStatus();
+    }
+  }, [enabled, refreshStatus]);
+
+  return { status, commandError, pollError, start, stop, stopTestRoute };
 }

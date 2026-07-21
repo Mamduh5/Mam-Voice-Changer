@@ -12,10 +12,18 @@ use crate::{
 
 const UNOBSERVED_MINIMUM: u64 = u64::MAX;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AudioRoutePurpose {
+    Use,
+    Test,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineStatus {
     pub state: EngineState,
+    pub route_purpose: Option<AudioRoutePurpose>,
     pub input_level: f32,
     pub output_level: f32,
     pub monitor_level: f32,
@@ -58,6 +66,7 @@ pub struct EngineStatus {
 
 pub struct SharedMetrics {
     state: AtomicU8,
+    route_purpose: AtomicU8,
     input_level: AtomicU32,
     output_level: AtomicU32,
     monitor_level: AtomicU32,
@@ -101,6 +110,7 @@ impl Default for SharedMetrics {
     fn default() -> Self {
         Self {
             state: AtomicU8::new(EngineState::Stopped as u8),
+            route_purpose: AtomicU8::new(0),
             input_level: AtomicU32::new(0.0_f32.to_bits()),
             output_level: AtomicU32::new(0.0_f32.to_bits()),
             monitor_level: AtomicU32::new(0.0_f32.to_bits()),
@@ -143,6 +153,11 @@ impl Default for SharedMetrics {
 }
 
 impl SharedMetrics {
+    pub fn set_route_purpose(&self, purpose: Option<AudioRoutePurpose>) {
+        self.route_purpose
+            .store(route_purpose_to_u8(purpose), Ordering::Release);
+    }
+
     pub fn set_state(&self, state: EngineState) {
         self.state.store(state as u8, Ordering::Release);
         if !matches!(state, EngineState::Running | EngineState::Degraded) {
@@ -270,7 +285,8 @@ impl SharedMetrics {
             .store(timed_out, Ordering::Relaxed);
     }
 
-    pub fn reset_session(&self, profile: ReliabilityProfile) {
+    pub fn reset_session(&self, profile: ReliabilityProfile, purpose: AudioRoutePurpose) {
+        self.set_route_purpose(Some(purpose));
         self.reliability_profile
             .store(profile_to_u8(profile), Ordering::Relaxed);
         for counter in [
@@ -352,9 +368,11 @@ impl SharedMetrics {
 
     pub fn snapshot(&self) -> EngineStatus {
         let state = EngineState::from_u8(self.state.load(Ordering::Acquire));
+        let route_purpose = route_purpose_from_u8(self.route_purpose.load(Ordering::Acquire));
         let minimum_fill = self.minimum_input_ring_fill_frames.load(Ordering::Relaxed);
         EngineStatus {
             state,
+            route_purpose,
             input_level: load_f32(&self.input_level),
             output_level: load_f32(&self.output_level),
             monitor_level: load_f32(&self.monitor_level),
@@ -431,16 +449,26 @@ impl SharedMetrics {
                 .unwrap_or_else(|_| {
                     Some("Runtime diagnostics are temporarily unavailable".to_owned())
                 }),
-            message: match state {
-                EngineState::Stopped => "Ready to start".to_owned(),
-                EngineState::Starting => "Starting and prefilling audio streams".to_owned(),
-                EngineState::Running => "Audio processing is active".to_owned(),
-                EngineState::Degraded => {
-                    "Destination is active; local monitoring is degraded".to_owned()
+            message: match (state, route_purpose) {
+                (EngineState::Starting, Some(AudioRoutePurpose::Use)) => {
+                    "Starting and prefilling the Use route".to_owned()
                 }
-                EngineState::Recovering => "Recovering audio streams".to_owned(),
-                EngineState::Stopping => "Stopping audio streams".to_owned(),
-                EngineState::Error => "Audio engine needs attention".to_owned(),
+                (EngineState::Starting, Some(AudioRoutePurpose::Test)) => {
+                    "Starting and prefilling Test monitoring".to_owned()
+                }
+                (EngineState::Running, Some(AudioRoutePurpose::Use)) => {
+                    "Processed output is active".to_owned()
+                }
+                (EngineState::Running, Some(AudioRoutePurpose::Test)) => {
+                    "Test monitoring is active".to_owned()
+                }
+                (EngineState::Stopped, _) => "Ready to start".to_owned(),
+                (EngineState::Starting, None) => "Starting audio route".to_owned(),
+                (EngineState::Running, None) => "Audio processing is active".to_owned(),
+                (EngineState::Degraded, _) => "Audio route is degraded".to_owned(),
+                (EngineState::Recovering, _) => "Recovering audio route".to_owned(),
+                (EngineState::Stopping, _) => "Stopping audio route".to_owned(),
+                (EngineState::Error, _) => "Audio route needs attention".to_owned(),
             },
         }
     }
@@ -482,9 +510,25 @@ const fn profile_from_u8(value: u8) -> ReliabilityProfile {
     }
 }
 
+const fn route_purpose_to_u8(purpose: Option<AudioRoutePurpose>) -> u8 {
+    match purpose {
+        None => 0,
+        Some(AudioRoutePurpose::Use) => 1,
+        Some(AudioRoutePurpose::Test) => 2,
+    }
+}
+
+const fn route_purpose_from_u8(value: u8) -> Option<AudioRoutePurpose> {
+    match value {
+        1 => Some(AudioRoutePurpose::Use),
+        2 => Some(AudioRoutePurpose::Test),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::SharedMetrics;
+    use super::{AudioRoutePurpose, SharedMetrics};
     use crate::audio::reliability::ReliabilityProfile;
 
     #[test]
@@ -499,11 +543,12 @@ mod tests {
         assert_eq!(before.monitor_output_underruns, 0);
         assert_eq!(before.concealed_frames, 12);
 
-        metrics.reset_session(ReliabilityProfile::Reliable);
+        metrics.reset_session(ReliabilityProfile::Reliable, AudioRoutePurpose::Use);
         let after = metrics.snapshot();
         assert_eq!(after.input_callback_gaps, 0);
         assert_eq!(after.output_ring_underruns, 0);
         assert_eq!(after.reliability_profile, ReliabilityProfile::Reliable);
+        assert_eq!(after.route_purpose, Some(AudioRoutePurpose::Use));
     }
 
     #[test]

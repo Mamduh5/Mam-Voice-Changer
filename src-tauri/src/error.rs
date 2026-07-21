@@ -2,8 +2,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AudioError {
-    #[error("Invalid audio route: {0}")]
-    InvalidConfiguration(String),
     #[error("Unable to enumerate {direction} audio devices: {details}")]
     DeviceEnumeration {
         direction: &'static str,

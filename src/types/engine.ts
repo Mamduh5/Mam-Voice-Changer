@@ -3,8 +3,11 @@ import type { ActiveStreamFormat, ReliabilityProfile } from './audio';
 export type EngineState =
   'stopped' | 'starting' | 'running' | 'degraded' | 'recovering' | 'stopping' | 'error';
 
+export type AudioRoutePurpose = 'use' | 'test';
+
 export type EngineStatus = {
   state: EngineState;
+  routePurpose: AudioRoutePurpose | null;
   inputLevel: number;
   outputLevel: number;
   monitorLevel: number;
@@ -47,6 +50,7 @@ export type EngineStatus = {
 
 export const stoppedStatus: EngineStatus = {
   state: 'stopped',
+  routePurpose: null,
   inputLevel: 0,
   outputLevel: 0,
   monitorLevel: 0,

@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::audio::{device::DeviceInfo, reliability::ReliabilityProfile};
 
-pub const APPLICATION_SETTINGS_SCHEMA_VERSION: u32 = 2;
+pub const APPLICATION_SETTINGS_SCHEMA_VERSION: u32 = 3;
 pub const APPLICATION_SETTINGS_FILE_NAME: &str = "application-settings.json";
 const MAX_DEVICE_ID_CHARS: usize = 512;
 const MAX_FRIENDLY_NAME_CHARS: usize = 512;
@@ -33,7 +33,6 @@ pub struct ApplicationSettingsDocument {
     pub last_known_processed_destination_friendly_name: Option<String>,
     pub local_monitor_device_id: Option<String>,
     pub last_known_local_monitor_friendly_name: Option<String>,
-    pub local_monitor_enabled: bool,
     pub reliability_profile: ReliabilityProfile,
     pub last_page: ApplicationPage,
 }
@@ -48,7 +47,6 @@ impl Default for ApplicationSettingsDocument {
             last_known_processed_destination_friendly_name: None,
             local_monitor_device_id: None,
             last_known_local_monitor_friendly_name: None,
-            local_monitor_enabled: false,
             reliability_profile: ReliabilityProfile::Balanced,
             last_page: ApplicationPage::Use,
         }
@@ -63,6 +61,21 @@ struct ApplicationSettingsDocumentV1 {
     selected_output_device_id: Option<String>,
     last_known_input_friendly_name: Option<String>,
     last_known_output_friendly_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplicationSettingsDocumentV2 {
+    schema_version: u32,
+    selected_input_device_id: Option<String>,
+    last_known_input_friendly_name: Option<String>,
+    processed_destination_device_id: Option<String>,
+    last_known_processed_destination_friendly_name: Option<String>,
+    local_monitor_device_id: Option<String>,
+    last_known_local_monitor_friendly_name: Option<String>,
+    local_monitor_enabled: bool,
+    reliability_profile: ReliabilityProfile,
+    last_page: ApplicationPage,
 }
 
 #[derive(Debug, Error)]
@@ -103,7 +116,7 @@ impl ApplicationSettingsStore {
                 path,
                 document: ApplicationSettingsDocument::default(),
                 startup_warning: Some(format!(
-                    "Stored application settings could not be restored: {error} Safe defaults are active; local monitoring remains off."
+                    "Stored application settings could not be restored: {error} Safe defaults are active; Test monitoring will not start automatically."
                 )),
             },
         }
@@ -287,6 +300,10 @@ fn load_document(
             let legacy: ApplicationSettingsDocumentV1 = serde_json::from_value(value)?;
             (migrate_v1(legacy), true)
         }
+        2 => {
+            let legacy: ApplicationSettingsDocumentV2 = serde_json::from_value(value)?;
+            (migrate_v2(legacy), true)
+        }
         version if version == u64::from(APPLICATION_SETTINGS_SCHEMA_VERSION) => {
             (serde_json::from_value(value)?, false)
         }
@@ -311,9 +328,25 @@ fn migrate_v1(document: ApplicationSettingsDocumentV1) -> ApplicationSettingsDoc
         last_known_processed_destination_friendly_name: document.last_known_output_friendly_name,
         local_monitor_device_id: None,
         last_known_local_monitor_friendly_name: None,
-        local_monitor_enabled: false,
         reliability_profile: ReliabilityProfile::Balanced,
         last_page: ApplicationPage::Use,
+    }
+}
+
+fn migrate_v2(document: ApplicationSettingsDocumentV2) -> ApplicationSettingsDocument {
+    debug_assert_eq!(document.schema_version, 2);
+    let _ = document.local_monitor_enabled;
+    ApplicationSettingsDocument {
+        schema_version: APPLICATION_SETTINGS_SCHEMA_VERSION,
+        selected_input_device_id: document.selected_input_device_id,
+        last_known_input_friendly_name: document.last_known_input_friendly_name,
+        processed_destination_device_id: document.processed_destination_device_id,
+        last_known_processed_destination_friendly_name: document
+            .last_known_processed_destination_friendly_name,
+        local_monitor_device_id: document.local_monitor_device_id,
+        last_known_local_monitor_friendly_name: document.last_known_local_monitor_friendly_name,
+        reliability_profile: document.reliability_profile,
+        last_page: document.last_page,
     }
 }
 
@@ -489,11 +522,10 @@ mod tests {
     }
 
     #[test]
-    fn first_launch_is_balanced_on_use_with_monitoring_off() {
+    fn first_launch_is_balanced_on_use() {
         let defaults = ApplicationSettingsDocument::default();
         assert_eq!(defaults.last_page, ApplicationPage::Use);
         assert_eq!(defaults.reliability_profile, ReliabilityProfile::Balanced);
-        assert!(!defaults.local_monitor_enabled);
     }
 
     #[test]
@@ -525,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn v1_migration_preserves_destination_but_never_enables_monitoring() {
+    fn v1_migration_preserves_destination() {
         let path = path("v1");
         cleanup(&path);
         fs::write(
@@ -538,14 +570,36 @@ mod tests {
             store.document().processed_destination_device_id.as_deref(),
             Some("out")
         );
-        assert!(!store.document().local_monitor_enabled);
         assert_eq!(
             store.document().reliability_profile,
             ReliabilityProfile::Balanced
         );
         let persisted: serde_json::Value =
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(persisted["schemaVersion"], 2);
+        assert_eq!(persisted["schemaVersion"], 3);
+        assert!(persisted.get("localMonitorEnabled").is_none());
+        cleanup(&path);
+    }
+
+    #[test]
+    fn v2_migration_discards_persisted_monitor_enablement_but_keeps_device() {
+        let path = path("v2");
+        cleanup(&path);
+        fs::write(
+            &path,
+            r#"{"schemaVersion":2,"selectedInputDeviceId":"mic","lastKnownInputFriendlyName":"Mic","processedDestinationDeviceId":"destination","lastKnownProcessedDestinationFriendlyName":"Destination","localMonitorDeviceId":"headphones","lastKnownLocalMonitorFriendlyName":"Headphones","localMonitorEnabled":true,"reliabilityProfile":"reliable","lastPage":"test"}"#,
+        )
+        .unwrap();
+        let store = ApplicationSettingsStore::load(path.clone());
+        assert_eq!(
+            store.document().local_monitor_device_id.as_deref(),
+            Some("headphones")
+        );
+        assert_eq!(store.document().last_page, ApplicationPage::Test);
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(persisted["schemaVersion"], 3);
+        assert!(persisted.get("localMonitorEnabled").is_none());
         cleanup(&path);
     }
 
@@ -562,7 +616,6 @@ mod tests {
             cleanup(&path);
             fs::write(&path, contents).unwrap();
             let store = ApplicationSettingsStore::load(path.clone());
-            assert!(!store.document().local_monitor_enabled);
             assert!(store.startup_warning().is_some());
             assert_eq!(fs::read_to_string(&path).unwrap(), contents);
             cleanup(&path);
@@ -582,7 +635,6 @@ mod tests {
             last_known_processed_destination_friendly_name: Some("Destination".to_owned()),
             local_monitor_device_id: Some("headphones".to_owned()),
             last_known_local_monitor_friendly_name: Some("Headphones".to_owned()),
-            local_monitor_enabled: true,
             reliability_profile: ReliabilityProfile::Reliable,
             last_page: ApplicationPage::Diagnostics,
         };

@@ -30,6 +30,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             commands::devices::save_application_settings,
             commands::engine::start_engine,
             commands::engine::stop_engine,
+            commands::engine::stop_test_route,
             commands::engine::get_engine_status,
             commands::parameters::get_parameters,
             commands::parameters::set_parameters,

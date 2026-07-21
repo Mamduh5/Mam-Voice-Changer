@@ -31,15 +31,13 @@ const monitor: AudioDevice = {
 const asyncAction = vi.fn(async () => true);
 
 describe('application pages', () => {
-  it('renders Use with separate destination and monitor concepts', () => {
+  it('renders Use with a processed destination and no local-monitor concepts', () => {
     const markup = renderToStaticMarkup(
       <UsePage
         inputs={[input]}
         outputs={[destination, monitor]}
         inputId={input.id}
         destinationId={destination.id}
-        monitorId={monitor.id}
-        monitorEnabled={false}
         hasLikelyVirtualDestination
         disabled={false}
         status={stoppedStatus}
@@ -47,8 +45,6 @@ describe('application pages', () => {
         presetBusy={false}
         onInputChange={vi.fn()}
         onDestinationChange={vi.fn()}
-        onMonitorDeviceChange={vi.fn()}
-        onMonitorEnabledChange={vi.fn()}
         onApplyPreset={asyncAction}
         onStart={vi.fn()}
         onStop={vi.fn()}
@@ -56,18 +52,20 @@ describe('application pages', () => {
     );
 
     expect(markup).toContain('Processed destination');
-    expect(markup).toContain('Hear myself (local monitoring)');
+    expect(markup).toContain('Start using');
+    expect(markup).toContain('Processed output');
+    expect(markup).not.toContain('Hear myself');
+    expect(markup).not.toContain('Local monitoring');
     expect(markup).not.toContain('Local monitor device');
-    expect(markup).not.toContain('checked=""');
+    expect(markup).not.toContain('Headphone output');
   });
 
-  it('renders Test monitoring off until explicitly enabled and locks routing while starting', () => {
+  it('renders Test as direct explicit monitoring and locks routing while starting', () => {
     const baseProps = {
       inputs: [input],
       outputs: [monitor],
       inputId: input.id,
       monitorId: monitor.id,
-      routeIsTest: false,
       disabled: false,
       parameters: defaultAudioParameters,
       catalog: null,
@@ -82,29 +80,42 @@ describe('application pages', () => {
       },
       onInputChange: vi.fn(),
       onMonitorDeviceChange: vi.fn(),
-      onTemporaryMonitoringChange: vi.fn(),
       onParametersChange: vi.fn(),
       onStart: vi.fn(),
       onStop: vi.fn(),
     };
-    const off = renderToStaticMarkup(
-      <TestPage {...baseProps} temporaryMonitoring={false} status={stoppedStatus} />,
-    );
+    const off = renderToStaticMarkup(<TestPage {...baseProps} status={stoppedStatus} />);
     const starting = renderToStaticMarkup(
       <TestPage
         {...baseProps}
-        temporaryMonitoring
-        routeIsTest
-        status={{ ...stoppedStatus, state: 'starting', message: 'Starting' }}
+        status={{
+          ...stoppedStatus,
+          state: 'starting',
+          routePurpose: 'test',
+          message: 'Starting Test monitoring',
+        }}
+      />,
+    );
+    const running = renderToStaticMarkup(
+      <TestPage
+        {...baseProps}
+        status={{
+          ...stoppedStatus,
+          state: 'running',
+          routePurpose: 'test',
+          message: 'Test monitoring is active',
+        }}
       />,
     );
 
     expect(off).toContain('Monitoring off');
     expect(off).toContain('Use headphones');
-    expect(off).toContain('<input type="checkbox"/>Enable temporary test monitoring');
-    expect(starting).toMatch(
-      /<input type="checkbox"[^>]*checked=""[^>]*>Enable temporary test monitoring/,
-    );
+    expect(off).toContain('Test monitor device');
+    expect(off).toContain('Start hearing test');
+    expect(off).not.toContain('Enable temporary test monitoring');
+    expect(off).not.toContain('monitor-toggle prominent');
+    expect(off).not.toContain('temporary');
+    expect(running).toContain('Stop test');
     expect(starting.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(3);
   });
 
@@ -142,8 +153,17 @@ describe('application pages', () => {
   it('renders recovery controls and clears a prior stream error with the next clean status', () => {
     const recovering = renderToStaticMarkup(
       <EngineControls
-        status={{ ...stoppedStatus, state: 'recovering', message: 'Recovering audio route' }}
+        status={{
+          ...stoppedStatus,
+          state: 'recovering',
+          routePurpose: 'use',
+          message: 'Recovering audio route',
+        }}
+        purpose="use"
         canStart={false}
+        startLabel="Start using"
+        stopLabel="Stop using"
+        description="Processed destination only"
         onStart={vi.fn()}
         onStop={vi.fn()}
       />,
@@ -175,7 +195,7 @@ describe('application pages', () => {
       />,
     );
 
-    expect(recovering).toContain('Stop engine');
+    expect(recovering).toContain('Stop using');
     expect(failed).toContain('endpoint disconnected');
     expect(cleared).not.toContain('endpoint disconnected');
     expect(cleared).toContain('Last stream error');

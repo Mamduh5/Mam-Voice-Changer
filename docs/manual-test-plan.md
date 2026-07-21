@@ -11,20 +11,21 @@ Automated checks do not establish audible quality, live endpoint behavior, feedb
 
 ## B. Use page
 
-1. Launch the app and confirm **Hear myself** is off and the engine is stopped.
+1. Launch the app and confirm Use has no local-monitor control and the Use route is stopped.
 2. With only physical outputs present, confirm no processed destination is selected automatically and the routing notice explains the limitation.
 3. Select a real processed playback destination. Use a virtual playback endpoint when routing to another application.
-4. Start and stop the engine. Confirm meters move and engine state changes are clear.
+4. Press **Start using**, then **Stop using**. Confirm meters move and Use-route state changes are clear.
 5. Switch Natural, Warm tone, Bright tone, Old Lady, and a saved preset.
-6. With local monitoring off, confirm no speaker/headphone talkback stream is opened merely for listening.
-7. Deliberately enable persistent local monitoring with headphones, then confirm destination and monitor carry the same processed performance.
+6. Confirm Use never opens a speaker/headphone talkback stream.
+7. Navigate to Settings & Diagnostics while Use is active and confirm the Use route continues.
+8. Navigate into and back out of Test while Use is active without pressing **Start hearing test**; confirm Use continues.
 
 ## C. Test page
 
-1. Put on headphones before enabling monitoring.
-2. Open Test and confirm monitoring remains off until the checkbox is explicitly enabled and Start is pressed.
+1. Put on headphones before starting monitoring.
+2. Open Test and confirm monitoring remains off until **Start hearing test** is pressed, with no extra enable checkbox.
 3. Compare bypass and processed output, then compare presets and DSP controls.
-4. Leave Test while running and confirm temporary monitoring stops.
+4. Press **Stop test**, restart, then leave Test while running and confirm monitoring stops.
 5. Repeat while the engine is starting or recovering and confirm monitoring does not remain active afterward.
 6. Never perform this section through open speakers; stop immediately if feedback starts.
 
@@ -51,8 +52,8 @@ For Low latency, Balanced, and Reliable:
 3. Change the Windows default endpoint; verify the stored identifier remains authoritative and unique friendly-name restoration is conservative.
 4. Exercise sleep/wake.
 5. Confirm exact errors are visible, restart count is bounded, staged recovery does not loop tightly, and Stop works during recovery.
-6. With destination plus monitor active, fail only the monitor and confirm the destination continues in `degraded` state.
-7. Fail the main destination and confirm it enters bounded `recovering`, then `running` or `error`.
+6. Fail the Test monitor and confirm the Test route enters bounded `recovering`, then `running` or `error`.
+7. Fail the Use destination and confirm it enters bounded `recovering`, then `running` or `error`.
 
 ## G. Receiving applications
 
@@ -65,9 +66,9 @@ For Low latency, Balanced, and Reliable:
 
 1. Exercise preset apply/save/rename/duplicate/delete/reset and restart persistence.
 2. Confirm the Old Lady Age Character, Breathiness, and Tremor controls still work.
-3. Confirm mute affects both destinations, bypass remains latency-aligned, and limiter ceiling remains respected.
-4. Relaunch after saving app settings. Confirm page, input, destination, monitor device, and profile restore, but the engine and temporary monitoring do not auto-start.
-5. Exercise migrated v1, malformed, and future-version application settings; monitoring must remain off under every unsafe fallback.
+3. Confirm mute affects both route purposes, bypass remains latency-aligned, and limiter ceiling remains respected.
+4. Relaunch after saving app settings. Confirm page, input, destination, monitor device, and profile restore, but neither route auto-starts.
+5. Exercise migrated v1/v2, malformed, and future-version application settings; Test monitoring must never auto-start.
 
 ## Manual record
 

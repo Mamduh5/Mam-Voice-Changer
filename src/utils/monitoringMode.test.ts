@@ -1,21 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { defaultApplicationSettings } from '../hooks/useAudioDevices';
-import { shouldStopTemporaryTestMonitoring } from './monitoringMode';
+import { isLeavingTest } from './monitoringMode';
 
 describe('temporary monitoring safety', () => {
-  it('defaults local monitoring off and starts on Use', () => {
-    expect(defaultApplicationSettings.localMonitorEnabled).toBe(false);
+  it('does not persist a monitor-enabled setting and starts on Use', () => {
+    expect(defaultApplicationSettings).not.toHaveProperty('localMonitorEnabled');
     expect(defaultApplicationSettings.lastPage).toBe('use');
   });
 
-  it.each(['starting', 'running', 'degraded', 'recovering', 'stopping'] as const)(
-    'stops temporary Test monitoring when leaving during %s',
-    (state) => {
-      expect(shouldStopTemporaryTestMonitoring('test', 'use', 'test', state)).toBe(true);
-    },
-  );
+  it('requests a conditional Test stop whenever Test is left', () => {
+    expect(isLeavingTest('test', 'use')).toBe(true);
+    expect(isLeavingTest('test', 'diagnostics')).toBe(true);
+  });
 
-  it('does not stop a deliberately separate Use route', () => {
-    expect(shouldStopTemporaryTestMonitoring('test', 'use', 'use', 'running')).toBe(false);
+  it('does not request a Test stop for navigation elsewhere', () => {
+    expect(isLeavingTest('use', 'test')).toBe(false);
+    expect(isLeavingTest('diagnostics', 'use')).toBe(false);
   });
 });

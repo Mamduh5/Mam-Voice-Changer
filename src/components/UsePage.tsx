@@ -24,8 +24,6 @@ type Props = {
   outputs: AudioDevice[];
   inputId: string;
   destinationId: string;
-  monitorId: string;
-  monitorEnabled: boolean;
   hasLikelyVirtualDestination: boolean;
   disabled: boolean;
   status: EngineStatus;
@@ -33,8 +31,6 @@ type Props = {
   presetBusy: boolean;
   onInputChange: (id: string) => void;
   onDestinationChange: (id: string) => void;
-  onMonitorDeviceChange: (id: string) => void;
-  onMonitorEnabledChange: (enabled: boolean) => void;
   onApplyPreset: (id: string) => Promise<boolean>;
   onStart: () => void;
   onStop: () => void;
@@ -68,24 +64,11 @@ export function UsePage(props: Props) {
             onChange={props.onDestinationChange}
           />
         </div>
-        <label className="monitor-toggle">
-          <input
-            type="checkbox"
-            checked={props.monitorEnabled}
-            disabled={props.disabled || routeLocked || !props.monitorId}
-            onChange={(event) => props.onMonitorEnabledChange(event.target.checked)}
-          />
-          Hear myself (local monitoring)
-        </label>
-        {props.monitorEnabled && (
-          <DeviceSelector
-            label="Local monitor device"
-            value={props.monitorId}
-            devices={props.outputs}
-            disabled={props.disabled || routeLocked}
-            showOutputClassification
-            onChange={props.onMonitorDeviceChange}
-          />
+        {!props.destinationId && (
+          <p className="route-requirement" role="status">
+            Use requires a processed destination. Install or select a real virtual-audio playback
+            endpoint before starting.
+          </p>
         )}
         <RoutingNotice hasLikelyVirtualDestination={props.hasLikelyVirtualDestination} />
       </section>
@@ -99,17 +82,17 @@ export function UsePage(props: Props) {
         <section className="card">
           <h2>Levels</h2>
           <LevelMeter label="Input" value={props.status.inputLevel} />
-          <LevelMeter
-            label="Processed"
-            value={props.status.outputLevel || props.status.monitorLevel}
-          />
-          <p className="state-line">Engine: {props.status.message}</p>
+          <LevelMeter label="Processed output" value={props.status.outputLevel} />
         </section>
       </div>
 
       <EngineControls
         status={props.status}
+        purpose="use"
         canStart={Boolean(props.inputId && props.destinationId)}
+        startLabel="Start using"
+        stopLabel="Stop using"
+        description="Processed destination only; no local speaker or headphone monitor"
         onStart={props.onStart}
         onStop={props.onStop}
       />

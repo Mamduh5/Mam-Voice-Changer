@@ -14,7 +14,6 @@ export type AudioDeviceList = {
   selectedInputId: string | null;
   processedDestinationId: string | null;
   localMonitorId: string | null;
-  localMonitorEnabled: boolean;
   reliabilityProfile: ReliabilityProfile;
   lastPage: ApplicationPage;
   hasLikelyVirtualDestination: boolean;
@@ -25,7 +24,6 @@ export type ApplicationSettingsUpdate = {
   selectedInputId: string | null;
   processedDestinationId: string | null;
   localMonitorId: string | null;
-  localMonitorEnabled: boolean;
   reliabilityProfile: ReliabilityProfile;
   lastPage: ApplicationPage;
 };

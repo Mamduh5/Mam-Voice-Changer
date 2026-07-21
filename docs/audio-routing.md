@@ -8,14 +8,14 @@ Physical microphone
         v
 one DSP chain (preset, bypass, limiter, mute)
         |
-        +--> processed destination (normal Use route)
-        |
-        +--> optional local monitor (off by default)
+        +--> processed destination (Use route)
+        or
+        +--> selected local monitor (Test route)
 ```
 
-The DSP worker processes each block once and fans the same samples into independent bounded destination and monitor rings. Neither output callback waits for the other. A monitor failure degrades only monitoring when the main destination remains healthy; an input or main-destination failure enters bounded recovery.
+Each tagged start request selects exactly one output purpose. Use requires a processed destination and cannot include a monitor. Test requires a local monitor and cannot include a processed destination. Both variants read the same authoritative DSP parameter snapshot and preset state.
 
-Use never opens a speaker/headphone merely so the user can hear themselves. Test opens a monitor-only route only after the user checks the temporary-monitor option and presses Start. Leaving Test clears that temporary choice and requests Stop.
+Use never opens a speaker/headphone merely so the user can hear themselves. Test opens a monitor-only route when the user presses **Start hearing test**; there is no separate enable checkbox. Leaving Test invokes a backend conditional stop that stops Test monitoring but leaves a Use route untouched.
 
 ## Receiving applications
 
@@ -32,4 +32,4 @@ Endpoint classification in the app is advisory and uses available friendly-name 
 
 ## Safety
 
-Use headphones for Test monitoring. Local monitoring defaults off on first launch and unsafe settings recovery. The engine never starts automatically after launch. Verify every destination before Start; endpoint labels do not guarantee a feedback-safe physical setup.
+Use headphones for Test monitoring. No monitoring-enabled boolean is persisted and the engine never starts automatically after launch. Verify every destination before Start; endpoint labels do not guarantee a feedback-safe physical setup.

@@ -8,15 +8,23 @@ import type { EngineStatus } from '../types/engine';
 import type { AudioParameters } from '../types/parameters';
 import type { PresetCatalog } from '../types/presets';
 
-export type StartEngineRequest = {
-  inputId: string;
-  inputName: string;
-  processedDestinationId: string | null;
-  processedDestinationName: string | null;
-  localMonitorId: string | null;
-  localMonitorName: string | null;
-  reliabilityProfile: ReliabilityProfile;
-};
+export type StartAudioRequest =
+  | {
+      mode: 'use';
+      inputId: string;
+      inputName: string;
+      processedDestinationId: string;
+      processedDestinationName: string;
+      reliabilityProfile: ReliabilityProfile;
+    }
+  | {
+      mode: 'test';
+      inputId: string;
+      inputName: string;
+      monitorId: string;
+      monitorName: string;
+      reliabilityProfile: ReliabilityProfile;
+    };
 
 export const DESKTOP_RUNTIME_UNAVAILABLE = 'Desktop runtime unavailable. Launch with npm run dev.';
 
@@ -33,8 +41,9 @@ export const tauriAudioApi = {
   listAudioDevices: () => invokeDesktop<AudioDeviceList>('list_audio_devices'),
   saveApplicationSettings: (request: ApplicationSettingsUpdate) =>
     invokeDesktop<void>('save_application_settings', { request }),
-  startEngine: (request: StartEngineRequest) => invokeDesktop<void>('start_engine', { request }),
+  startEngine: (request: StartAudioRequest) => invokeDesktop<void>('start_engine', { request }),
   stopEngine: () => invokeDesktop<void>('stop_engine'),
+  stopTestRoute: () => invokeDesktop<void>('stop_test_route'),
   getEngineStatus: () => invokeDesktop<EngineStatus>('get_engine_status'),
   getParameters: () => invokeDesktop<AudioParameters>('get_parameters'),
   setParameters: (parameters: AudioParameters) =>

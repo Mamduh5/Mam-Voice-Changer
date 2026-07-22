@@ -22,6 +22,18 @@ import type {
   VoiceDatasetStatus,
   VoiceProfileSummary,
 } from '../types/voiceDataset';
+import type { ModelBackendSettings, BackendValidationStatus } from '../types/modelBackend';
+import type { TrainingConfiguration, TrainingJob } from '../types/trainingJob';
+import type {
+  CreateTrainingSnapshotRequest,
+  EvaluationPhrase,
+  InferenceConfiguration,
+  ModelEvaluationSummary,
+  OfflineConversionResult,
+  TrainingSnapshot,
+  VoiceModelArtifact,
+  VoiceModelStatus,
+} from '../types/voiceModel';
 
 export type StartAudioRequest =
   | {
@@ -166,4 +178,76 @@ export const tauriAudioApi = {
     invokeDesktop<VoiceDatasetStatus>('repair_voice_profile', { profileId }),
   leaveVoiceDataset: () => invokeDesktop<void>('leave_voice_dataset'),
   clearVoiceDatasetError: () => invokeDesktop<VoiceDatasetStatus>('clear_voice_dataset_error'),
+  readModelBackendConfiguration: () =>
+    invokeDesktop<ModelBackendSettings>('read_model_backend_configuration'),
+  listVoiceModelEvaluationPhrases: () =>
+    invokeDesktop<EvaluationPhrase[]>('list_voice_model_evaluation_phrases'),
+  saveModelBackendConfiguration: (settings: ModelBackendSettings) =>
+    invokeDesktop<ModelBackendSettings>('save_model_backend_configuration', { settings }),
+  validateModelBackend: () => invokeDesktop<BackendValidationStatus>('validate_model_backend'),
+  getVoiceModelStatus: () => invokeDesktop<VoiceModelStatus>('get_voice_model_status'),
+  createTrainingSnapshot: (request: CreateTrainingSnapshotRequest) =>
+    invokeDesktop<TrainingSnapshot>('create_training_snapshot', { request }),
+  deleteTrainingSnapshot: (snapshotId: string) =>
+    invokeDesktop<void>('delete_training_snapshot', { snapshotId }),
+  startVoiceModelTraining: (
+    profileId: string,
+    snapshotId: string,
+    configuration: TrainingConfiguration,
+  ) =>
+    invokeDesktop<TrainingJob>('start_voice_model_training', {
+      profileId,
+      snapshotId,
+      configuration,
+    }),
+  cancelVoiceModelTraining: () => invokeDesktop<TrainingJob>('cancel_voice_model_training'),
+  resumeVoiceModelTraining: (profileId: string, jobId: string) =>
+    invokeDesktop<TrainingJob>('resume_voice_model_training', { profileId, jobId }),
+  deleteTrainingJob: (jobId: string) => invokeDesktop<void>('delete_training_job', { jobId }),
+  renameVoiceModelArtifact: (artifactId: string, displayName: string) =>
+    invokeDesktop<VoiceModelArtifact>('rename_voice_model_artifact', { artifactId, displayName }),
+  approveVoiceModelArtifact: (profileId: string, artifactId: string) =>
+    invokeDesktop<VoiceModelArtifact>('approve_voice_model_artifact', { profileId, artifactId }),
+  rejectVoiceModelArtifact: (artifactId: string, notes: string | null) =>
+    invokeDesktop<VoiceModelArtifact>('reject_voice_model_artifact', { artifactId, notes }),
+  deleteVoiceModelArtifact: (artifactId: string) =>
+    invokeDesktop<void>('delete_voice_model_artifact', { artifactId }),
+  startOfflineVoiceConversion: (
+    profileId: string,
+    artifactId: string,
+    configuration: InferenceConfiguration,
+  ) =>
+    invokeDesktop<void>('start_offline_voice_conversion', {
+      profileId,
+      artifactId,
+      configuration,
+    }),
+  startModelEvaluationConversion: (
+    profileId: string,
+    artifactId: string,
+    configuration: InferenceConfiguration,
+  ) =>
+    invokeDesktop<void>('start_model_evaluation_conversion', {
+      profileId,
+      artifactId,
+      configuration,
+    }),
+  cancelOfflineVoiceConversion: () => invokeDesktop<void>('cancel_offline_voice_conversion'),
+  readOfflineConversionResult: () =>
+    invokeDesktop<OfflineConversionResult | null>('read_offline_conversion_result'),
+  loadOfflineConversionIntoVoiceLab: (resultId: string) =>
+    invokeDesktop<VoiceLabStatus>('load_offline_conversion_into_voice_lab', { resultId }),
+  clearOfflineConversionResult: () => invokeDesktop<void>('clear_offline_conversion_result'),
+  saveModelEvaluationRatings: (
+    profileId: string,
+    artifactId: string,
+    evaluation: ModelEvaluationSummary,
+  ) =>
+    invokeDesktop<VoiceModelArtifact>('save_model_evaluation_ratings', {
+      profileId,
+      artifactId,
+      evaluation,
+    }),
+  clearVoiceModelError: () => invokeDesktop<void>('clear_voice_model_error'),
+  cancelModelWorkForShutdown: () => invokeDesktop<void>('cancel_model_work_for_shutdown'),
 };

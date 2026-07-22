@@ -55,6 +55,10 @@ enum VoiceLabCommand {
     Clear {
         reply: StatusReply,
     },
+    LoadSyntheticProcessedWav {
+        path: PathBuf,
+        reply: StatusReply,
+    },
 }
 
 pub struct VoiceLabController {
@@ -151,6 +155,10 @@ impl VoiceLabController {
         self.request_status(|reply| VoiceLabCommand::Clear { reply })
     }
 
+    pub fn load_synthetic_processed_wav(&self, path: PathBuf) -> Result<VoiceLabStatus, String> {
+        self.request_status(|reply| VoiceLabCommand::LoadSyntheticProcessedWav { path, reply })
+    }
+
     fn request_status(
         &self,
         command: impl FnOnce(StatusReply) -> VoiceLabCommand,
@@ -219,6 +227,10 @@ fn run_session(receiver: Receiver<VoiceLabCommand>, audio_active: Arc<AtomicBool
             }
             VoiceLabCommand::Clear { reply } => {
                 let result = session.clear();
+                reply_status(&mut session, reply, result, &audio_active);
+            }
+            VoiceLabCommand::LoadSyntheticProcessedWav { path, reply } => {
+                let result = session.load_synthetic_processed_wav(&path);
                 reply_status(&mut session, reply, result, &audio_active);
             }
         }

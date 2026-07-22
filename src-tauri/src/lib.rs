@@ -6,8 +6,9 @@ mod error;
 mod state;
 mod voice_dataset;
 mod voice_lab;
+mod voice_model;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -16,17 +17,28 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.state::<state::app_state::AppState>();
+                if state.voice_model().has_active_work() {
+                    api.prevent_close();
+                    let _ = window.emit("voice-model-shutdown-blocked", ());
+                }
+            }
+        })
         .setup(move |app| {
             let app_data_dir = app.path().app_data_dir()?;
             let preset_path = app_data_dir.join(config::presets::PRESET_FILE_NAME);
             let application_settings_path =
                 app_data_dir.join(config::application_settings::APPLICATION_SETTINGS_FILE_NAME);
             let voice_dataset_root = app_data_dir.join("voice-datasets");
+            let voice_model_root = app_data_dir.join("voice-models");
             app.manage(state::app_state::AppState::new(
                 controller,
                 preset_path,
                 application_settings_path,
                 voice_dataset_root,
+                voice_model_root,
             )?);
             Ok(())
         })
@@ -86,6 +98,37 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             commands::voice_dataset::repair_voice_profile,
             commands::voice_dataset::leave_voice_dataset,
             commands::voice_dataset::clear_voice_dataset_error,
+            commands::voice_model::list_model_backends,
+            commands::voice_model::list_voice_model_training_presets,
+            commands::voice_model::list_voice_model_evaluation_phrases,
+            commands::voice_model::read_model_backend_configuration,
+            commands::voice_model::save_model_backend_configuration,
+            commands::voice_model::validate_model_backend,
+            commands::voice_model::get_voice_model_status,
+            commands::voice_model::list_training_snapshots,
+            commands::voice_model::create_training_snapshot,
+            commands::voice_model::delete_training_snapshot,
+            commands::voice_model::list_training_jobs,
+            commands::voice_model::start_voice_model_training,
+            commands::voice_model::cancel_voice_model_training,
+            commands::voice_model::resume_voice_model_training,
+            commands::voice_model::delete_training_job,
+            commands::voice_model::read_training_job_log,
+            commands::voice_model::list_voice_model_artifacts,
+            commands::voice_model::read_voice_model_artifact,
+            commands::voice_model::rename_voice_model_artifact,
+            commands::voice_model::approve_voice_model_artifact,
+            commands::voice_model::reject_voice_model_artifact,
+            commands::voice_model::delete_voice_model_artifact,
+            commands::voice_model::start_offline_voice_conversion,
+            commands::voice_model::start_model_evaluation_conversion,
+            commands::voice_model::cancel_offline_voice_conversion,
+            commands::voice_model::read_offline_conversion_result,
+            commands::voice_model::load_offline_conversion_into_voice_lab,
+            commands::voice_model::clear_offline_conversion_result,
+            commands::voice_model::save_model_evaluation_ratings,
+            commands::voice_model::clear_voice_model_error,
+            commands::voice_model::cancel_model_work_for_shutdown,
         ])
         .run(tauri::generate_context!())?;
     Ok(())

@@ -182,6 +182,109 @@ unsupported future schema; a custom non-ASCII prompt; optional recorded consent 
 separate deletion; failed-take override acknowledgement; import batch bound; export
 cancellation/failure cleanup; and a long collection session with many takes.
 
+## L. Local offline Voice Models Phase 3
+
+Use a consenting test speaker, disposable model environment, non-sensitive source
+speech, headphones, and a dedicated output directory. Record exact Python/backend/
+checkpoint revisions, device, precision, duration, resource readings, logs, and
+whether each result was heard. Never interpret compile-time checks as voice quality.
+
+1. Launch Mam Voice Changer and open **Voice Lab → Models**.
+2. Confirm no profile, inactive consent, unhealthy Dataset, and no accepted-take
+   states prevent snapshot/training actions with precise labels.
+3. Select a healthy consent-active profile with accepted takes.
+4. Configure an invalid Python path and confirm `pythonMissing` rather than a generic
+   failure.
+5. Configure the local worker, Seed-VC checkout, model configuration, checkpoints,
+   output directory, device, and precision through the path/typed controls.
+6. Validate the backend; inspect protocol/backend versions, capabilities, resources,
+   warnings, and exact readiness.
+7. Create an immutable snapshot and inspect `snapshot.json` plus copied audio.
+8. Confirm rejected, pending, excluded, recorded-consent, missing, and hash-mismatched
+   takes are absent/rejected; confirm the live Dataset did not change.
+9. Confirm duration, prompt/quality warnings, deterministic training/validation
+   membership, no overlap, counts, durations, and seed.
+10. Select **Quick experiment**, inspect/edit bounded typed controls, and explicitly
+    start local fine-tuning.
+11. Observe preprocessing/training phases, step/maximum, ETA when available,
+    backend-reported loss/learning rate, resources, warnings, checkpoint, and logs.
+12. Cancel during training. Confirm graceful cancel or process-tree termination,
+    preserved valid checkpoint/logs, removed incomplete output, and no running state.
+13. Resume explicitly from a valid checkpoint where the backend reports support;
+    confirm snapshot/split/configuration/consent are revalidated and no automatic
+    resume occurs.
+14. Complete a controlled run and inspect the generated schema-v1 artifact, relative
+    file paths, content hashes, versions, provenance, and `unevaluated` status.
+15. Restart during/after a controlled run; confirm abandoned work becomes
+    `interrupted` and valid artifacts/logs remain.
+16. Record or import a temporary Voice Lab source phrase; confirm target Dataset
+    takes are not automatically used as the ordinary source.
+17. Run an evaluation conversion and cancel one inference run. Confirm progress,
+    bounded duration, valid synthetic WAV checks, and no source overwrite.
+18. Load the result into Voice Lab and compare original versus synthetic processed
+    playback/waveforms. Confirm the visible synthetic label, profile/model/artifact/
+    source/reference/backend provenance, peak, clipping, and duration.
+19. Exercise the eight project-authored evaluation phrase categories plus an
+    optional user phrase, recording which were actually converted and heard.
+20. Enter 1–5 intelligibility, target similarity, naturalness, stability, and
+    noise/artifact ratings plus notes. Confirm these are described as subjective,
+    not biometric scores.
+21. Confirm approval is blocked without successful conversion/listening confirmation,
+    then explicitly approve. Confirm the label is **Approved for offline Voice Lab**.
+22. Compare at least two artifact versions where available; reject and rename a
+    disposable artifact.
+23. Use the approved artifact for another offline Voice Lab conversion and confirm
+    unevaluated/rejected/disabled/invalid/missing artifacts are not usable.
+24. Export processed synthetic audio. Confirm the default WAV name contains
+    `synthetic`, an adjacent JSON provenance file exists, and neither contains an
+    absolute managed path.
+25. Clear temporary conversion output and Voice Lab; confirm source/model buffers and
+    managed temporary output follow the documented cleanup behavior.
+26. While training and inference are active, request app close. Decline once; then
+    confirm cancellation, bounded stop, and close only after model work is inactive.
+27. Revoke/delete the source profile in a controlled test. Confirm dependent active
+    work stops and managed artifacts become `disabledByConsent` and unavailable.
+28. Delete evaluation output, artifact, failed/cancelled job, checkpoints, and
+    unreferenced snapshot. Confirm referenced-snapshot deletion is blocked.
+29. Confirm source Dataset takes remain after model/job/artifact deletion and exported
+    copies remain outside application management.
+30. Confirm no network request, model download, package install, repository clone, or
+    cloud training occurred.
+31. Confirm Use, Test, external route discovery, virtual endpoint pairing, Discord/
+    VB-CABLE selection, live DSP parameters/order, and application-settings schema v4
+    remain unchanged and expose no neural model option.
+32. Repeat capability/training checks on CPU and CUDA only where those environments
+    really exist; do not infer GPU support from a capability string alone.
+33. Exercise missing checkpoint/backend/config, protocol mismatch, backend update,
+    worker crash, malformed/oversized output, stderr-only output, and unexpected exit.
+34. Exercise low/disk-full conditions where safe, low RAM/VRAM warnings, excessive
+    batch/worker/steps warnings, very small and failed-take-heavy Datasets.
+35. Tamper a snapshot hash, delete an artifact file, and use a copied unsupported
+    future manifest schema. Confirm detection without silent deletion or unsafe load.
+36. Test consent revocation during training and inference; confirm cancellation and
+    no later managed use.
+37. Test manual single/multiple reference selection and automatic selection; confirm
+    automatic references exclude manually overridden failed takes and provenance
+    records take IDs/hashes.
+38. Test long source rejection, empty/non-finite/unsupported generated WAV rejection,
+    conversion cancellation, and two successive model versions.
+39. Inspect process creation: direct executable/argument use, no shell concatenation,
+    filtered environment, bounded logs/messages, managed relative paths, and no Rust
+    checkpoint/pickle deserialization.
+40. Retain logs and record exact passes, failures, skipped cases, and audible quality
+    observations without claiming identity verification or production readiness.
+
+### Phase 3 environment-specific status (2026-07-22)
+
+- No real Seed-VC checkout, pretrained checkpoint set, PyTorch/CUDA environment, GPU,
+  training run, offline neural conversion, or listening comparison was available.
+- No Windows dialog, native close-during-training, disk-full, process-tree kill,
+  consent-revocation-during-worker, or artifact-tamper UI workflow was performed.
+- Device-independent Rust, frontend, and Python worker checks are reported in the
+  implementation completion report and are not manual/audio/model-quality evidence.
+- Therefore every item in section L remains pending manual acceptance in a properly
+  configured local environment.
+
 ## Manual record
 
 ### Previously performed on 2026-07-18
@@ -196,6 +299,12 @@ cancellation/failure cleanup; and a long collection session with many takes.
 - No live microphone, audible comparison, UI interaction, endpoint-disconnection, sleep/wake, or third-party routing test was performed during this implementation run.
 - Automated commands are reported separately in the completion response; they are not evidence of audible improvement.
 
+### Performed for Voice Models Phase 3 on 2026-07-22
+
+- Documentation and automated validation only; no real backend, training, inference,
+  model quality, speaker similarity, GPU, audio, or native workflow was manually
+  accepted.
+
 ### Pending
 
 - All live/audio sections A-I above for this external-routing phase.
@@ -207,3 +316,6 @@ cancellation/failure cleanup; and a long collection session with many takes.
 - All Voice Dataset hardware, audible, dialog, restart, device-removal, export inspection,
   partial-deletion, and long-session cases in section K. Phase 2 automated checks use generated
   audio/metadata only and are not evidence that these manual cases passed.
+- All local Voice Models environment, worker-process, training, recovery, synthetic
+  playback/export, consent-revocation, native-shutdown, deletion, security-fault, and
+  route-isolation cases in section L.

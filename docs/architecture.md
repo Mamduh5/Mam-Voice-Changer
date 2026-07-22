@@ -53,8 +53,41 @@ an explicit tombstone for partial cleanup.
 Quality analysis, WAV decoding/resampling, hashing, trimming, export, and JSON/file
 I/O run outside CPAL callbacks. Dataset preview opens only a selected physical output,
 has a short edge fade, and never reuses the virtual Use route. `VoiceDatasetSource`
-is a read-only iterator over accepted, non-excluded canonical files for a future
-trainer; no trainer or model runtime is present.
+is a read-only iterator over accepted, non-excluded canonical files. Phase 3 uses
+that interface only while constructing an immutable consent-bound snapshot; it
+never trains against the live Dataset manifest.
+
+## Offline voice-model ownership
+
+```text
+React Models components
+  -> typed Tauri model commands
+  -> VoiceModelController metadata/orchestration
+  -> direct Python child process (JSON Lines protocol v1)
+  -> optional user-configured Seed-VC checkout
+
+accepted consenting Dataset -> immutable snapshot copies -> local fine-tuning
+  -> hash-validated artifact -> offline evaluation -> explicit approval
+  -> offline synthetic WAV -> validated managed path -> Voice Lab processed clip
+```
+
+The Rust controller owns configuration, job manifests, cancellation tokens, bounded
+logs, progress, artifact metadata, and temporary result provenance. It owns no
+model tensors or live audio stream. Python/PyTorch and backend code remain in a
+separate child process launched directly without a shell. Requests have fixed typed
+arguments; stdout is strict bounded JSON Lines and stderr is captured separately.
+
+Snapshots, jobs, artifacts, and temporary inference outputs live under the separate
+`voice-models/` application-data root. Manifests use relative paths, schema versions,
+content hashes, same-directory atomic replacement, and consent provenance. Startup
+marks abandoned active jobs interrupted and never resumes automatically. A native
+close guard blocks shutdown while model work is active until the user confirms
+bounded cancellation.
+
+The only Voice Lab insertion is a validated generated WAV loaded as the existing
+processed comparison clip by managed path. No sample arrays or tensors cross IPC.
+The live CPAL engine, DSP order, Use, Test, saved external routes, virtual endpoint
+pairing, and application-settings schema v4 have no model selection or neural path.
 
 ## External-route ownership
 

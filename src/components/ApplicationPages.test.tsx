@@ -367,6 +367,7 @@ describe('application pages', () => {
     expect(markup).toContain('Apply preset to Lab');
     expect(markup).toContain('Save as new preset');
     expect(markup).toContain('Apply to live settings');
+    expect(markup).toContain('Models');
     expect(markup).toContain('Export original WAV');
     expect(markup).toContain('Export processed WAV');
     expect(markup).toContain('Clear temporary audio');

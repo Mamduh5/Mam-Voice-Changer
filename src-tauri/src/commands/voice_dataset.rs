@@ -63,6 +63,16 @@ pub fn delete_voice_profile(
     profile_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<VoiceDatasetStatus, DatasetError> {
+    state
+        .voice_model()
+        .disable_profile(&profile_id)
+        .map_err(|error| {
+            DatasetError::new(
+                crate::voice_dataset::error::DatasetErrorCode::PartialDeletion,
+                error.message,
+            )
+            .profile(&profile_id)
+        })?;
     state.voice_dataset().delete_profile(&profile_id)
 }
 

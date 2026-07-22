@@ -31,6 +31,7 @@ export type VoiceLabStatus = {
     durationMs: number;
   };
   lastError: string | null;
+  processedSynthetic: boolean;
 };
 
 export const emptyVoiceLabStatus: VoiceLabStatus = {
@@ -40,4 +41,5 @@ export const emptyVoiceLabStatus: VoiceLabStatus = {
   capture: { active: false, droppedFrames: 0 },
   preview: { active: false, kind: null, looping: false, positionMs: 0, durationMs: 0 },
   lastError: null,
+  processedSynthetic: false,
 };

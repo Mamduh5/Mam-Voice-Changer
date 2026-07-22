@@ -20,7 +20,7 @@ use super::{
 
 const LAB_STREAM_BUFFER_FRAMES: u32 = 512;
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum ClipVersion {
     Original,
@@ -53,6 +53,7 @@ pub struct VoiceLabStatus {
     pub capture: CaptureStatus,
     pub preview: PreviewStatus,
     pub last_error: Option<String>,
+    pub processed_synthetic: bool,
 }
 
 pub struct VoiceLabSession {
@@ -65,6 +66,7 @@ pub struct VoiceLabSession {
     preview: Option<PreviewHandle>,
     backend: Box<dyn OfflineVoiceProcessor>,
     last_error: Option<String>,
+    processed_synthetic: bool,
 }
 
 impl Default for VoiceLabSession {
@@ -79,6 +81,7 @@ impl Default for VoiceLabSession {
             preview: None,
             backend: Box::<ExistingDspOfflineProcessor>::default(),
             last_error: None,
+            processed_synthetic: false,
         }
     }
 }
@@ -117,6 +120,7 @@ impl VoiceLabSession {
             capture,
             preview,
             last_error: self.last_error.clone(),
+            processed_synthetic: self.processed_synthetic,
         }
     }
 
@@ -160,6 +164,7 @@ impl VoiceLabSession {
         self.processed_summary = Some(rendered.clip.summary());
         self.processed = Some(Arc::new(rendered.clip));
         self.render_metadata = Some(rendered.metadata);
+        self.processed_synthetic = false;
         self.last_error = None;
         Ok(())
     }
@@ -209,6 +214,23 @@ impl VoiceLabSession {
         )
     }
 
+    pub fn load_synthetic_processed_wav(&mut self, path: &Path) -> Result<(), String> {
+        self.stop_audio()?;
+        if self.original.is_none() {
+            return Err(
+                "Record or import an original clip before loading a model result.".to_owned(),
+            );
+        }
+        let mut clip = wav::import(path)?;
+        clip.source_name = "Synthetic model conversion".to_owned();
+        self.processed_summary = Some(clip.summary());
+        self.processed = Some(Arc::new(clip));
+        self.render_metadata = None;
+        self.processed_synthetic = true;
+        self.last_error = None;
+        Ok(())
+    }
+
     pub fn stop_audio(&mut self) -> Result<(), String> {
         self.stop_preview();
         self.stop_capture()
@@ -221,6 +243,7 @@ impl VoiceLabSession {
         self.processed = None;
         self.processed_summary = None;
         self.render_metadata = None;
+        self.processed_synthetic = false;
         self.last_error = None;
         Ok(())
     }
@@ -231,6 +254,7 @@ impl VoiceLabSession {
         self.processed = None;
         self.processed_summary = None;
         self.render_metadata = None;
+        self.processed_synthetic = false;
     }
 
     fn store_capture(&mut self, capture: CaptureHandle) -> Result<(), String> {

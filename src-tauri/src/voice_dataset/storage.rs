@@ -199,6 +199,17 @@ impl DatasetStorage {
         }
     }
 
+    pub fn snapshot_source(
+        &self,
+        profile_id: &str,
+    ) -> DatasetResult<super::source::ManifestDatasetSource> {
+        let manifest = self.read_manifest(profile_id)?;
+        Ok(super::source::ManifestDatasetSource::new(
+            &self.profile_dir(profile_id)?,
+            manifest,
+        ))
+    }
+
     pub fn commit_manifest(&self, manifest: &mut VoiceDatasetManifestV1) -> DatasetResult<()> {
         let pack = built_in_english_pack();
         manifest.rebuild_statistics(pack.prompts.len());

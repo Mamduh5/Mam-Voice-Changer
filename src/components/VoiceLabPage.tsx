@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useVoiceDataset } from '../hooks/useVoiceDataset';
+import { useVoiceModels } from '../hooks/useVoiceModels';
 import type { AudioDevice } from '../types/audio';
 import type { AudioParameters } from '../types/parameters';
 import type { PresetCatalog } from '../types/presets';
@@ -7,6 +8,8 @@ import type { VoiceLabClipSummary, VoiceLabClipVersion, VoiceLabStatus } from '.
 import { DeviceSelector } from './DeviceSelector';
 import { DspControls } from './DspControls';
 import { VoiceDatasetPage } from './voice-dataset/VoiceDatasetPage';
+import { VoiceModelPage } from './voice-model/VoiceModelPage';
+import { SyntheticAudioNotice } from './voice-model/SyntheticAudioNotice';
 
 type Props = {
   inputs: AudioDevice[];
@@ -71,8 +74,9 @@ function selectedDevice(devices: AudioDevice[], id: string) {
 }
 
 export function VoiceLabPage(props: Props) {
-  const [section, setSection] = useState<'compare' | 'dataset'>('compare');
-  const dataset = useVoiceDataset(section === 'dataset' && !props.disabled);
+  const [section, setSection] = useState<'compare' | 'dataset' | 'models'>('compare');
+  const dataset = useVoiceDataset(section !== 'compare' && !props.disabled);
+  const models = useVoiceModels(section === 'models' && !props.disabled);
   const [inputSelection, setInputSelection] = useState('');
   const [outputSelection, setOutputSelection] = useState('');
   const [looping, setLooping] = useState(false);
@@ -96,24 +100,37 @@ export function VoiceLabPage(props: Props) {
   const previewPosition = props.status.preview.durationMs
     ? Math.min(100, (props.status.preview.positionMs / props.status.preview.durationMs) * 100)
     : 0;
+  const switchSection = (next: 'compare' | 'dataset' | 'models') => {
+    if (section === 'dataset') void dataset.stopPreview();
+    if (section === 'compare') void props.onStopAudio();
+    setSection(next);
+  };
+  const sectionNavigation = (
+    <nav className="voice-lab-sections" aria-label="Voice Lab sections">
+      {(
+        [
+          ['compare', 'Compare'],
+          ['dataset', 'Dataset'],
+          ['models', 'Models'],
+        ] as const
+      ).map(([id, label]) => (
+        <button
+          type="button"
+          key={id}
+          className={section === id ? 'active' : ''}
+          aria-current={section === id ? 'page' : undefined}
+          onClick={() => switchSection(id)}
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+  );
 
   if (section === 'dataset') {
     return (
       <div className="page-stack">
-        <nav className="voice-lab-sections" aria-label="Voice Lab sections">
-          <button
-            type="button"
-            onClick={() => {
-              void dataset.stopPreview();
-              setSection('compare');
-            }}
-          >
-            Compare
-          </button>
-          <button type="button" className="active" aria-current="page">
-            Dataset
-          </button>
-        </nav>
+        {sectionNavigation}
         <VoiceDatasetPage
           dataset={dataset}
           inputs={props.inputs}
@@ -127,22 +144,23 @@ export function VoiceLabPage(props: Props) {
     );
   }
 
+  if (section === 'models') {
+    return (
+      <div className="page-stack">
+        {sectionNavigation}
+        <VoiceModelPage
+          dataset={dataset}
+          models={models}
+          hasVoiceLabSource={Boolean(props.status.original)}
+          disabled={props.disabled}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="page-stack voice-lab-page">
-      <nav className="voice-lab-sections" aria-label="Voice Lab sections">
-        <button type="button" className="active" aria-current="page">
-          Compare
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            void props.onStopAudio();
-            setSection('dataset');
-          }}
-        >
-          Dataset
-        </button>
-      </nav>
+      {sectionNavigation}
       <section className="card voice-lab-intro">
         <div>
           <p className="eyebrow">Isolated offline workspace</p>
@@ -228,8 +246,12 @@ export function VoiceLabPage(props: Props) {
 
       <section className="voice-lab-comparison">
         <ClipCard title="Original" clip={props.status.original} />
-        <ClipCard title="Processed" clip={props.status.processed} />
+        <ClipCard
+          title={props.status.processedSynthetic ? 'Processed · Synthetic' : 'Processed'}
+          clip={props.status.processed}
+        />
       </section>
+      {props.status.processedSynthetic && <SyntheticAudioNotice />}
 
       <section className="card voice-lab-transport">
         <div className="section-heading">

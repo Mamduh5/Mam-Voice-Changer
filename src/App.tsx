@@ -9,10 +9,12 @@ import { useAudioParameters } from './hooks/useAudioParameters';
 import { useEngineState } from './hooks/useEngineState';
 import { usePresets } from './hooks/usePresets';
 import { useVoiceLab } from './hooks/useVoiceLab';
+import { useModelShutdownGuard } from './hooks/useModelShutdownGuard';
 import { DESKTOP_RUNTIME_UNAVAILABLE, tauriAudioApi } from './services/tauriAudioApi';
 import { isLeavingTest } from './utils/monitoringMode';
 
 export default function App() {
+  useModelShutdownGuard();
   const [voiceLabOpen, setVoiceLabOpen] = useState(false);
   const desktopRuntimeAvailable = tauriAudioApi.isDesktopRuntimeAvailable();
   const devices = useAudioDevices(desktopRuntimeAvailable);

@@ -3,4 +3,8 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 *.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
 .DS_Store

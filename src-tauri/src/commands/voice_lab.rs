@@ -110,7 +110,21 @@ pub fn export_voice_lab_wav(
     path: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-    state.voice_lab().export_wav(version, PathBuf::from(path))
+    let destination = PathBuf::from(path);
+    let synthetic = version == ClipVersion::Processed
+        && state
+            .voice_lab()
+            .status()
+            .map(|status| status.processed_synthetic)
+            .unwrap_or(false);
+    state.voice_lab().export_wav(version, destination.clone())?;
+    if synthetic {
+        state
+            .voice_model()
+            .export_latest_conversion_provenance(&destination)
+            .map_err(|error| error.message)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

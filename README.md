@@ -39,6 +39,10 @@ independent local monitor is available only on Test and defaults off.
   canonical PCM24 mono 48 kHz conversion, deterministic quality reports,
   manual accept/reject/redo, non-destructive silence trimming, progress,
   local physical-output preview, deletion/recovery, and explicit directory export
+- A separate **Voice Lab → Models** workspace for consent-bound immutable snapshots,
+  optional manually configured Seed-VC child-process training, versioned and
+  hash-validated model artifacts, offline synthetic conversion, manual evaluation,
+  and approval for offline Voice Lab comparison only
 - Browser-safe frontend boundary when Vite is opened outside Tauri
 
 Built-in presets may be applied or duplicated, but they cannot be renamed or
@@ -74,9 +78,10 @@ corresponding application features are absent.
 
 ### Deferred functionality
 
-Resampling unsupported Voice Lab comparison rates, AI/neural voice conversion, model training,
-speaker embeddings, voice cloning, custom virtual audio drivers, cloud processing,
-accounts, telemetry, and non-Windows platforms are not part of the current prototype.
+Realtime neural conversion, neural output in Use/Test/external routes, bundled ML
+backends or checkpoints, automatic ML downloads/installers, custom virtual audio
+drivers, cloud processing, accounts, telemetry, and non-Windows platforms are not
+part of the current prototype. Phase 3's optional neural path is local and offline.
 
 ## Conservative defaults
 
@@ -98,6 +103,11 @@ headphones, and increase levels gradually.
 - Microsoft C++ Build Tools
 - Microsoft Edge WebView2 Runtime
 - [VB-CABLE](https://vb-audio.com/Cable/) when virtual-microphone routing is needed
+
+Offline model work additionally requires a user-prepared Python environment,
+Seed-VC checkout, configuration, and pretrained checkpoints. None are bundled,
+cloned, downloaded, or installed by Mam Voice Changer. See the
+[local model backend setup guide](docs/voice-model-backend-setup.md).
 
 Signalsmith Stretch and Signalsmith Linear are vendored under their MIT licenses
 and compile statically into the application with MSVC. No Signalsmith DLL,
@@ -150,6 +160,9 @@ monitoring levels.
 - [Voice Lab Phase 1 design](docs/voice-lab-phase-1-design.md)
 - [Voice Dataset Phase 2 design](docs/voice-dataset-phase-2-design.md)
 - [Voice Dataset Phase 2 implementation note](docs/voice-dataset-phase-2-implementation-note.md)
+- [Voice Model Phase 3 design](docs/voice-model-phase-3-design.md)
+- [Local model backend setup](docs/voice-model-backend-setup.md)
+- [Model artifact lifecycle](docs/voice-model-artifact-lifecycle.md)
 - [Privacy and consent boundary](docs/privacy.md)
 - [Prototype scope](docs/prototype-scope.md)
 - [Manual test plan](docs/manual-test-plan.md)
@@ -175,4 +188,9 @@ monitoring levels.
   a voice, train a model, or establish that a profile can reproduce a speaker.
 - Dataset files are local plaintext in application-managed storage. Explicit
   exports are outside application management and must be deleted separately.
+- Third-party ML code executes locally but is not thereby trusted or sandboxed.
+  Seed-VC/PyTorch compatibility, GPU support, training quality, voice similarity,
+  and runtime resource fit depend on the user-prepared environment and Dataset.
+- Model output is synthetic. Managed models are disabled when profile consent is
+  revoked; exported models or audio remain the user's separate responsibility.
 

@@ -8,6 +8,7 @@ use crate::{
     },
     voice_dataset::controller::VoiceDatasetController,
     voice_lab::controller::VoiceLabController,
+    voice_model::controller::VoiceModelController,
 };
 
 pub struct AppState {
@@ -16,6 +17,7 @@ pub struct AppState {
     application_settings: Mutex<ApplicationSettingsStore>,
     voice_lab: VoiceLabController,
     voice_dataset: VoiceDatasetController,
+    voice_model: VoiceModelController,
     audio_operation: Mutex<()>,
 }
 
@@ -25,6 +27,7 @@ impl AppState {
         preset_path: PathBuf,
         application_settings_path: PathBuf,
         voice_dataset_root: PathBuf,
+        voice_model_root: PathBuf,
     ) -> Result<Self, PresetError> {
         let preset_store = PresetStore::load(preset_path)?;
         let application_settings = ApplicationSettingsStore::load(application_settings_path);
@@ -38,6 +41,8 @@ impl AppState {
             application_settings: Mutex::new(application_settings),
             voice_lab: VoiceLabController::new().map_err(PresetError::Validation)?,
             voice_dataset: VoiceDatasetController::new(voice_dataset_root)
+                .map_err(|error| PresetError::Validation(error.message))?,
+            voice_model: VoiceModelController::new(voice_model_root)
                 .map_err(|error| PresetError::Validation(error.message))?,
             audio_operation: Mutex::new(()),
         })
@@ -61,6 +66,10 @@ impl AppState {
 
     pub fn voice_dataset(&self) -> &VoiceDatasetController {
         &self.voice_dataset
+    }
+
+    pub fn voice_model(&self) -> &VoiceModelController {
+        &self.voice_model
     }
 
     pub fn audio_operation(&self) -> &Mutex<()> {

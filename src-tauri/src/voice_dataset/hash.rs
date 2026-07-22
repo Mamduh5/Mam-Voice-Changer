@@ -12,11 +12,26 @@ const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
-#[cfg(test)]
 pub fn sha256_bytes(bytes: &[u8]) -> String {
     let mut state = Sha256::new();
     state.update(bytes);
     state.finish()
+}
+
+pub fn sha256_file(path: &std::path::Path) -> std::io::Result<String> {
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut state = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        state.update(&buffer[..read]);
+    }
+    Ok(state.finish())
 }
 
 pub fn sha256_samples(samples: &[f32]) -> String {

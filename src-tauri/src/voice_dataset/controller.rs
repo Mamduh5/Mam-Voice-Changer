@@ -142,6 +142,13 @@ impl VoiceDatasetSession {
     pub fn list_profiles(&self) -> DatasetResult<Vec<VoiceProfileSummary>> {
         self.storage.list_profiles()
     }
+
+    pub fn snapshot_source(
+        &self,
+        profile_id: &str,
+    ) -> DatasetResult<super::source::ManifestDatasetSource> {
+        self.storage.snapshot_source(profile_id)
+    }
     pub fn prompts(&self) -> PromptPack {
         built_in_english_pack()
     }
@@ -934,6 +941,14 @@ impl VoiceDatasetController {
 
     pub fn list_profiles(&self) -> DatasetResult<Vec<VoiceProfileSummary>> {
         self.request(|session| session.list_profiles())
+    }
+
+    pub fn snapshot_source(
+        &self,
+        profile_id: &str,
+    ) -> DatasetResult<super::source::ManifestDatasetSource> {
+        let profile_id = profile_id.to_owned();
+        self.request(move |session| session.snapshot_source(&profile_id))
     }
 
     pub fn prompts(&self) -> DatasetResult<PromptPack> {

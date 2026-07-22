@@ -4,4 +4,4 @@ pub mod controller;
 mod offline;
 mod preview;
 pub mod session;
-mod wav;
+pub(crate) mod wav;

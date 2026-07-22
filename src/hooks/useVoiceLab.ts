@@ -123,24 +123,30 @@ export function useVoiceLab(enabled: boolean, liveParameters: AudioParameters) {
   );
   const stopPreview = useCallback(() => run(tauriAudioApi.stopVoiceLabPreview), [run]);
   const stopAudio = useCallback(() => run(tauriAudioApi.stopVoiceLabAudio), [run]);
-  const exportWav = useCallback(async (version: VoiceLabClipVersion) => {
-    const path = await save({
-      defaultPath: `mam-voice-lab-${version}.wav`,
-      filters: [{ name: 'WAV audio', extensions: ['wav'] }],
-    });
-    if (!path) return false;
-    setBusy(true);
-    try {
-      await tauriAudioApi.exportVoiceLabWav(version, path);
-      if (active.current) setError(null);
-      return true;
-    } catch (cause) {
-      if (active.current) setError(errorMessage(cause));
-      return false;
-    } finally {
-      if (active.current) setBusy(false);
-    }
-  }, []);
+  const exportWav = useCallback(
+    async (version: VoiceLabClipVersion) => {
+      const synthetic = version === 'processed' && status.processedSynthetic;
+      const path = await save({
+        defaultPath: synthetic
+          ? 'mam-voice-lab-synthetic-converted.wav'
+          : `mam-voice-lab-${version}.wav`,
+        filters: [{ name: 'WAV audio', extensions: ['wav'] }],
+      });
+      if (!path) return false;
+      setBusy(true);
+      try {
+        await tauriAudioApi.exportVoiceLabWav(version, path);
+        if (active.current) setError(null);
+        return true;
+      } catch (cause) {
+        if (active.current) setError(errorMessage(cause));
+        return false;
+      } finally {
+        if (active.current) setBusy(false);
+      }
+    },
+    [status.processedSynthetic],
+  );
   const clear = useCallback(async () => {
     const success = await run(tauriAudioApi.clearVoiceLab);
     if (success) setRenderStale(false);

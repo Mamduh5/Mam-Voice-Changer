@@ -132,8 +132,22 @@ pub fn remove_managed_directory(root: &Path, target: &Path) -> VoiceModelResult<
     if !target.exists() {
         return Ok(());
     }
+    let name = target
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| {
+            VoiceModelError::new(
+                VoiceModelErrorCode::PathValidationFailure,
+                "Managed deletion target has no safe opaque name.",
+            )
+        })?;
+    let tombstone = root.join(format!(".delete-{name}.tombstone"));
+    fs::write(&tombstone, name)
+        .map_err(|error| VoiceModelError::storage("Cannot create deletion tombstone", error))?;
     fs::remove_dir_all(target)
-        .map_err(|error| VoiceModelError::storage("Cannot delete managed model data", error))
+        .map_err(|error| VoiceModelError::storage("Cannot delete managed model data", error))?;
+    fs::remove_file(tombstone)
+        .map_err(|error| VoiceModelError::storage("Cannot clear deletion tombstone", error))
 }
 
 fn sibling(path: &Path, suffix: &str) -> PathBuf {

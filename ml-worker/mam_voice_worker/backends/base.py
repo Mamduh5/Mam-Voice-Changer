@@ -7,13 +7,22 @@ from typing import Any
 
 class Backend(ABC):
     @abstractmethod
-    def validate(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def inspect_seed_vc(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
     @abstractmethod
-    def train(self, request_id: str, payload: dict[str, Any], context: Any) -> dict[str, Any]: ...
+    def fine_tune_seed_vc(self, request_id: str, payload: dict[str, Any], context: Any) -> dict[str, Any]: ...
 
     @abstractmethod
-    def infer(self, request_id: str, payload: dict[str, Any], context: Any) -> dict[str, Any]: ...
+    def convert_with_seed_vc(self, request_id: str, payload: dict[str, Any], context: Any) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def preprocess_snapshot(self, request_id: str, payload: dict[str, Any], context: Any) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def inspect_checkpoint(self, request_id: str, payload: dict[str, Any], context: Any) -> dict[str, Any]: ...
+
+    @abstractmethod
+    def qualify(self, request_id: str, payload: dict[str, Any], context: Any) -> dict[str, Any]: ...
 
 
 def require_path(value: Any, label: str, *, directory: bool = False) -> Path:
@@ -28,4 +37,3 @@ def require_path(value: Any, label: str, *, directory: bool = False) -> Path:
 
         raise WorkerError("missingPath", f"{label} is missing.")
     return path.resolve()
-

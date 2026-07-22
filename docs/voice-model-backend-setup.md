@@ -37,12 +37,24 @@ runtime/dependency compatibility cannot be assumed.
    directory, Seed-VC checkout, model configuration, every checkpoint, and an
    output directory.
 7. Select CPU or CUDA and a precision actually supported by that environment, save,
-   then choose **Validate backend**. Validation performs a handshake and capability
-   inspection only; it does not train and does not download anything.
+   then choose **Check worker handshake**. A handshake is not qualification.
+8. Run **Backend Qualification** and review the repository revision/dirty state,
+   relevant packages, configuration/checkpoint SHA-256 values, CPU/CUDA resources,
+   layered smoke checks, warnings, failures, and environment fingerprint.
+9. Save the sanitized report. Expected checkpoint hashes that remain unspecified
+   prevent a reproducible result and require explicit experimental acknowledgement.
 
 Readiness distinguishes missing Python, worker, backend, checkpoint, invalid
 configuration, protocol mismatch, unsupported hardware, and ready states. Do not
 start training until the capability report matches the selected device/precision.
+The training panel additionally requires a completed backend-load qualification and
+an explicit preflight review. Experimental profile, dirty checkout, unknown hashes,
+warnings, tiny Dataset, CPU-only selection, and tight disk estimates require
+acknowledgement; fatal findings keep Start disabled.
+
+The initial profile supports no verified Seed-VC commit and is deliberately marked
+experimental. Its `train.py`/`inference.py` argument contract is fixed and typed but
+remains unqualified until inspected and tested against an exact pinned revision.
 
 ## Runtime behavior
 
@@ -52,6 +64,10 @@ adapter's fixed `train.py` or `inference.py` interface. It sets common dependenc
 offline flags and supplies explicit configuration/checkpoint/output paths. This is
 defense in depth, not a guarantee that arbitrary third-party code cannot access the
 network or machine.
+
+No automatic downloads are permitted. The configured third-party Python code may
+still be capable of network access outside Mam Voice Changer's control. These flags
+and the filtered process environment are not a firewall or sandbox.
 
 CPU fine-tuning may be extremely slow. Reported disk/RAM/VRAM values are estimates,
 not a promise that a run will fit. Begin with **Quick experiment**, keep unrelated

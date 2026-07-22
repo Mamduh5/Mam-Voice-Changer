@@ -1,6 +1,14 @@
 import type { PromptCategory, QualityClassification, TakeQualityReport } from './voiceDataset';
-import type { BackendValidationStatus, ModelDevice, ModelPrecision } from './modelBackend';
-import type { TrainingConfiguration, TrainingJob } from './trainingJob';
+import type {
+  BackendValidationStatus,
+  EnvironmentFingerprint,
+  FileFingerprint,
+  ModelDevice,
+  ModelPrecision,
+  QualificationLevel,
+  QualificationRun,
+} from './modelBackend';
+import type { TrainingConfiguration, TrainingJob, TrainingPreflightReport } from './trainingJob';
 
 export type SplitMembership = 'training' | 'validation';
 export type SnapshotTake = {
@@ -56,7 +64,13 @@ export type ModelApprovalStatus =
   | 'disabledByConsent'
   | 'invalid'
   | 'missingFiles';
-export type ModelArtifactFile = { relativePath: string; contentHash: string; sizeBytes: number };
+export type ModelArtifactFile = {
+  relativePath: string;
+  contentHash: string;
+  sizeBytes: number;
+  role: 'modelWeights' | 'modelConfiguration' | 'auxiliary' | 'unknown';
+  licensingStatus: 'verifiedRedistributable' | 'restricted' | 'unknown';
+};
 export type ManualModelRatings = {
   intelligibility: number;
   targetSimilarity: number;
@@ -85,6 +99,11 @@ export type VoiceModelArtifact = {
   backendId: string;
   backendVersion: string;
   workerProtocolVersion: number;
+  compatibilityProfileId: string;
+  environmentFingerprint: EnvironmentFingerprint | null;
+  checkpointIdentities: FileFingerprint[];
+  backendRevision: string | null;
+  adapterVersion: string;
   snapshotId: string;
   snapshotHash: string;
   consentVersion: string;
@@ -100,6 +119,29 @@ export type VoiceModelArtifact = {
   };
   modelFiles: ModelArtifactFile[];
   modelContentHash: string;
+  expectedInferenceSampleRate: number;
+  supportedInferenceControls: string[];
+  portabilityStatus:
+    'localOnly' | 'portableWithExternalDependencies' | 'portable' | 'incompatible' | 'unknown';
+  qualificationLevel: QualificationLevel;
+  licenseNotices: Array<{
+    role: string;
+    label: string;
+    status: 'verifiedRedistributable' | 'restricted' | 'unknown';
+    notice: string;
+  }>;
+  syntheticUseNoticeVersion: string;
+  health:
+    | 'healthy'
+    | 'unqualified'
+    | 'incompatibleEnvironment'
+    | 'missingFiles'
+    | 'unexpectedFiles'
+    | 'hashMismatch'
+    | 'disabledByConsent'
+    | 'unsupportedBackend'
+    | 'unsupportedSchema';
+  importedPackageId: string | null;
   evaluation: ModelEvaluationSummary | null;
   approvalStatus: ModelApprovalStatus;
   notes: string | null;
@@ -151,6 +193,9 @@ export type VoiceModelStatus = {
   logs: string[];
   snapshots: TrainingSnapshot[];
   artifacts: VoiceModelArtifact[];
+  qualification: QualificationRun | null;
+  qualificationActive: boolean;
+  trainingPreflight: TrainingPreflightReport | null;
 };
 
 export type SnapshotQualitySummary = {
@@ -171,4 +216,7 @@ export const emptyVoiceModelStatus: VoiceModelStatus = {
   logs: [],
   snapshots: [],
   artifacts: [],
+  qualification: null,
+  qualificationActive: false,
+  trainingPreflight: null,
 };

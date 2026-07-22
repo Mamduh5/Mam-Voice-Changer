@@ -7,6 +7,7 @@ use crate::voice_dataset::hash::sha256_file;
 use super::{
     error::{VoiceModelError, VoiceModelErrorCode, VoiceModelResult},
     evaluation::ModelEvaluationSummary,
+    qualification::{CheckpointFingerprint, ModelEnvironmentFingerprintV1, QualificationLevel},
     state::TrainingConfiguration,
     storage::{ensure_relative_path, managed_join},
 };
@@ -25,12 +26,70 @@ pub enum ModelApprovalStatus {
     MissingFiles,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ArtifactFileRole {
+    ModelWeights,
+    ModelConfiguration,
+    Auxiliary,
+    #[default]
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LicensingStatus {
+    VerifiedRedistributable,
+    Restricted,
+    #[default]
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ArtifactHealth {
+    #[default]
+    Healthy,
+    Unqualified,
+    IncompatibleEnvironment,
+    MissingFiles,
+    UnexpectedFiles,
+    HashMismatch,
+    DisabledByConsent,
+    UnsupportedBackend,
+    UnsupportedSchema,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PortabilityStatus {
+    #[default]
+    LocalOnly,
+    PortableWithExternalDependencies,
+    Portable,
+    Incompatible,
+    Unknown,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LicenseNoticeReference {
+    pub role: String,
+    pub label: String,
+    pub status: LicensingStatus,
+    pub notice: String,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ModelArtifactFile {
     pub relative_path: String,
     pub content_hash: String,
     pub size_bytes: u64,
+    #[serde(default)]
+    pub role: ArtifactFileRole,
+    #[serde(default)]
+    pub licensing_status: LicensingStatus,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -54,6 +113,16 @@ pub struct VoiceModelArtifactV1 {
     pub backend_id: String,
     pub backend_version: String,
     pub worker_protocol_version: u32,
+    #[serde(default)]
+    pub compatibility_profile_id: String,
+    #[serde(default)]
+    pub environment_fingerprint: Option<ModelEnvironmentFingerprintV1>,
+    #[serde(default)]
+    pub checkpoint_identities: Vec<CheckpointFingerprint>,
+    #[serde(default)]
+    pub backend_revision: Option<String>,
+    #[serde(default)]
+    pub adapter_version: String,
     pub snapshot_id: String,
     pub snapshot_hash: String,
     pub consent_version: String,
@@ -62,11 +131,35 @@ pub struct VoiceModelArtifactV1 {
     pub training_summary: TrainingSummary,
     pub model_files: Vec<ModelArtifactFile>,
     pub model_content_hash: String,
+    #[serde(default = "default_inference_sample_rate")]
+    pub expected_inference_sample_rate: u32,
+    #[serde(default)]
+    pub supported_inference_controls: Vec<String>,
+    #[serde(default)]
+    pub portability_status: PortabilityStatus,
+    #[serde(default)]
+    pub qualification_level: QualificationLevel,
+    #[serde(default)]
+    pub license_notices: Vec<LicenseNoticeReference>,
+    #[serde(default = "default_synthetic_notice")]
+    pub synthetic_use_notice_version: String,
+    #[serde(default)]
+    pub health: ArtifactHealth,
+    #[serde(default)]
+    pub imported_package_id: Option<String>,
     pub evaluation: Option<ModelEvaluationSummary>,
     pub approval_status: ModelApprovalStatus,
     pub notes: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+fn default_inference_sample_rate() -> u32 {
+    48_000
+}
+
+fn default_synthetic_notice() -> String {
+    "mam-synthetic-use-v1".to_owned()
 }
 
 pub fn verify_artifact(
@@ -169,6 +262,11 @@ mod tests {
                 backend_id: "mock".to_owned(),
                 backend_version: "1".to_owned(),
                 worker_protocol_version: 1,
+                compatibility_profile_id: String::new(),
+                environment_fingerprint: None,
+                checkpoint_identities: Vec::new(),
+                backend_revision: None,
+                adapter_version: String::new(),
                 snapshot_id: "snapshot-1".to_owned(),
                 snapshot_hash: "hash".to_owned(),
                 consent_version: "consent".to_owned(),
@@ -180,6 +278,14 @@ mod tests {
                 training_summary: Default::default(),
                 model_files: Vec::new(),
                 model_content_hash: String::new(),
+                expected_inference_sample_rate: 48_000,
+                supported_inference_controls: Vec::new(),
+                portability_status: super::PortabilityStatus::Unknown,
+                qualification_level: crate::voice_model::qualification::QualificationLevel::None,
+                license_notices: Vec::new(),
+                synthetic_use_notice_version: "mam-synthetic-use-v1".to_owned(),
+                health: super::ArtifactHealth::Unqualified,
+                imported_package_id: None,
                 evaluation: None,
                 approval_status: status,
                 notes: None,

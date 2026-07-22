@@ -17,20 +17,30 @@ use crate::voice_dataset::{
 
 use super::{
     artifact::{
-        require_approved, validate_display_name, verify_artifact, ModelApprovalStatus,
-        VoiceModelArtifactV1,
+        require_approved, validate_display_name, verify_artifact, ArtifactHealth,
+        ModelApprovalStatus, VoiceModelArtifactV1,
     },
     artifact_storage::create_artifact,
     backend::{InferenceRequestContext, TrainingRequestContext, VoiceModelBackend},
     backend_registry,
     backend_validation::{static_readiness, validate_settings},
+    compatibility::{self, BackendCompatibilityProfileV1},
     consent::require_active_consent,
     error::{VoiceModelError, VoiceModelErrorCode, VoiceModelResult},
     evaluation::ModelEvaluationSummary,
+    indexes::rebuild_indexes,
     inference::{
         validate_configuration as validate_inference_configuration, validate_generated_wav,
     },
-    recovery::recover_interrupted_jobs,
+    model_package::{
+        export_package, import_package, ModelPackageExportResult, ModelPackageImportRequest,
+    },
+    qualification::{
+        build_training_preflight, confirm_manual_listening, run_qualification,
+        ManualListeningQualification, QualificationReportV1, QualificationRunV1,
+        TrainingPreflightReport,
+    },
+    recovery::recover_startup,
     snapshot::{
         create_snapshot, verify_snapshot, CreateTrainingSnapshotRequest, TrainingSnapshotV1,
     },
@@ -43,7 +53,9 @@ use super::{
     storage::{atomic_write_json, managed_join, read_json, remove_managed_directory},
     training::{require_transition, validate_configuration},
     worker_process::run_worker_job,
-    worker_protocol::{push_bounded_log, WorkerEvent, WorkerEventKind},
+    worker_protocol::{
+        push_bounded_log, WorkerCommand, WorkerEvent, WorkerEventKind, WorkerRequest,
+    },
 };
 
 const JOB_SCHEMA_VERSION: u32 = 1;
@@ -61,6 +73,10 @@ struct ControllerState {
     selected_artifact_id: Option<String>,
     last_error: Option<VoiceModelError>,
     logs: Vec<String>,
+    qualification: Option<QualificationRunV1>,
+    qualification_active: bool,
+    qualification_cancellation: Option<Arc<AtomicBool>>,
+    training_preflight: Option<TrainingPreflightReport>,
 }
 
 pub struct VoiceModelController {
@@ -75,6 +91,8 @@ impl VoiceModelController {
             .and_then(|_| fs::create_dir_all(root.join("jobs")))
             .and_then(|_| fs::create_dir_all(root.join("profiles")))
             .and_then(|_| fs::create_dir_all(root.join("temporary-inference")))
+            .and_then(|_| fs::create_dir_all(root.join("qualifications")))
+            .and_then(|_| fs::create_dir_all(root.join("imports")))
             .map_err(|error| {
                 VoiceModelError::storage("Cannot create voice-model storage", error)
             })?;
@@ -84,14 +102,30 @@ impl VoiceModelController {
         } else {
             ModelBackendSettingsV1::default()
         };
-        let recovered = recover_interrupted_jobs(&root)?;
+        let recovered = recover_startup(&root)?;
         let mut logs = Vec::new();
-        for job_id in recovered {
+        for job_id in recovered.interrupted_jobs {
             push_bounded_log(
                 &mut logs,
                 &format!("Marked interrupted job {job_id}; it was not resumed automatically."),
             );
         }
+        for qualification_id in recovered.interrupted_qualifications {
+            push_bounded_log(
+                &mut logs,
+                &format!("Marked interrupted qualification {qualification_id}; it was not resumed automatically."),
+            );
+        }
+        if !recovered.indexes.incomplete_paths.is_empty() {
+            push_bounded_log(
+                &mut logs,
+                &format!(
+                    "Recovery index found {} incomplete managed paths; content was preserved for explicit repair.",
+                    recovered.indexes.incomplete_paths.len()
+                ),
+            );
+        }
+        let qualification = latest_qualification(&root)?;
         let backend = static_readiness(&settings);
         Ok(Self {
             root,
@@ -108,6 +142,10 @@ impl VoiceModelController {
                 selected_artifact_id: None,
                 last_error: None,
                 logs,
+                qualification,
+                qualification_active: false,
+                qualification_cancellation: None,
+                training_preflight: None,
             })),
         })
     }
@@ -178,7 +216,202 @@ impl VoiceModelController {
             logs: state.logs.clone(),
             snapshots,
             artifacts,
+            qualification: state.qualification.clone(),
+            qualification_active: state.qualification_active,
+            training_preflight: state.training_preflight.clone(),
         })
+    }
+
+    pub fn compatibility_profiles(&self) -> Vec<BackendCompatibilityProfileV1> {
+        compatibility::built_in_profiles()
+    }
+
+    pub fn repair_indexes(&self) -> VoiceModelResult<super::indexes::RecoveryIndexesV1> {
+        rebuild_indexes(&self.root)
+    }
+
+    pub fn qualify_backend(
+        &self,
+        source: Option<&ManifestDatasetSource>,
+        reference_take_id: Option<&str>,
+    ) -> VoiceModelResult<QualificationRunV1> {
+        let inference_reference_path = match (source, reference_take_id) {
+            (Some(source), Some(reference_take_id)) => {
+                require_active_consent(source, None)?;
+                let requested = vec![reference_take_id.to_owned()];
+                let (paths, _, _) = select_references(source, &requested)?;
+                paths.into_iter().next().map(PathBuf::from)
+            }
+            (None, None) => None,
+            _ => {
+                return Err(VoiceModelError::new(
+                    VoiceModelErrorCode::ReferenceAudioMissing,
+                    "Optional inference smoke testing requires an explicitly selected consent-active reference take.",
+                ))
+            }
+        };
+        let (settings, profile, cancellation) = {
+            let mut state = self.lock()?;
+            if state.qualification_active {
+                return Err(VoiceModelError::new(
+                    VoiceModelErrorCode::QualificationAlreadyActive,
+                    "A backend qualification is already active.",
+                ));
+            }
+            let profile_id = state
+                .settings
+                .seed_vc
+                .as_ref()
+                .map(|configuration| configuration.compatibility_profile_id.as_str())
+                .unwrap_or(compatibility::SEED_VC_EXPERIMENTAL_PROFILE_ID);
+            let profile = compatibility::profile(profile_id).ok_or_else(|| {
+                VoiceModelError::new(
+                    VoiceModelErrorCode::CompatibilityProfileInvalid,
+                    "The selected compatibility profile is unavailable.",
+                )
+            })?;
+            let cancellation = Arc::new(AtomicBool::new(false));
+            state.qualification_active = true;
+            state.qualification_cancellation = Some(Arc::clone(&cancellation));
+            state.last_error = None;
+            (state.settings.clone(), profile, cancellation)
+        };
+        let shared = Arc::clone(&self.state);
+        let result = run_qualification(
+            &self.root,
+            &settings,
+            &profile,
+            inference_reference_path.as_deref(),
+            cancellation,
+            |run| {
+                if let Ok(mut state) = shared.lock() {
+                    state.qualification = Some(run.clone());
+                }
+            },
+        );
+        let mut state = self.lock()?;
+        state.qualification_active = false;
+        state.qualification_cancellation = None;
+        match result {
+            Ok(run) => {
+                state.qualification = Some(run.clone());
+                drop(state);
+                rebuild_indexes(&self.root)?;
+                Ok(run)
+            }
+            Err(error) => {
+                state.last_error = Some(error.clone());
+                Err(error)
+            }
+        }
+    }
+
+    pub fn cancel_qualification(&self) -> VoiceModelResult<()> {
+        let state = self.lock()?;
+        if let Some(cancellation) = &state.qualification_cancellation {
+            cancellation.store(true, Ordering::Release);
+        }
+        Ok(())
+    }
+
+    pub fn qualification_smoke_path(&self) -> VoiceModelResult<PathBuf> {
+        let run = self.lock()?.qualification.clone().ok_or_else(|| {
+            VoiceModelError::new(
+                VoiceModelErrorCode::QualificationMissing,
+                "No qualification report is available.",
+            )
+        })?;
+        let result = run.inference_smoke_result.ok_or_else(|| {
+            VoiceModelError::new(
+                VoiceModelErrorCode::GeneratedWavInvalid,
+                "No qualification inference smoke output is available.",
+            )
+        })?;
+        managed_join(
+            &self.root.join("qualifications").join(run.qualification_id),
+            &result.output_file,
+        )
+    }
+
+    pub fn confirm_qualification_listening(
+        &self,
+        confirmation: ManualListeningQualification,
+    ) -> VoiceModelResult<QualificationRunV1> {
+        let current = self.lock()?.qualification.clone().ok_or_else(|| {
+            VoiceModelError::new(
+                VoiceModelErrorCode::QualificationMissing,
+                "No backend qualification report is available.",
+            )
+        })?;
+        let directory = self
+            .root
+            .join("qualifications")
+            .join(&current.qualification_id);
+        let updated = confirm_manual_listening(&directory, current, confirmation)?;
+        self.lock()?.qualification = Some(updated.clone());
+        Ok(updated)
+    }
+
+    pub fn save_qualification_report(
+        &self,
+        destination: &Path,
+        human_readable: bool,
+    ) -> VoiceModelResult<()> {
+        let run = self.lock()?.qualification.clone().ok_or_else(|| {
+            VoiceModelError::new(
+                VoiceModelErrorCode::QualificationMissing,
+                "No qualification report is available.",
+            )
+        })?;
+        let report = QualificationReportV1 {
+            schema_version: 1,
+            run,
+        };
+        if human_readable {
+            fs::write(destination, super::qualification::report_text(&report)).map_err(|error| {
+                VoiceModelError::storage("Cannot save qualification text report", error)
+            })
+        } else {
+            atomic_write_json(destination, &report)
+        }
+    }
+
+    pub fn training_preflight(
+        &self,
+        source: &ManifestDatasetSource,
+        snapshot_id: &str,
+        configuration: &TrainingConfiguration,
+    ) -> VoiceModelResult<TrainingPreflightReport> {
+        validate_managed_id(snapshot_id, "snapshot")?;
+        let directory = self.root.join("snapshots").join(snapshot_id);
+        let snapshot: TrainingSnapshotV1 = read_json(&directory.join("snapshot.json"))?;
+        verify_snapshot(&snapshot, &directory)?;
+        let state = self.lock()?;
+        let profile_id = state
+            .settings
+            .seed_vc
+            .as_ref()
+            .map(|configured| configured.compatibility_profile_id.as_str())
+            .unwrap_or(compatibility::SEED_VC_EXPERIMENTAL_PROFILE_ID);
+        let profile = compatibility::profile(profile_id).ok_or_else(|| {
+            VoiceModelError::new(
+                VoiceModelErrorCode::CompatibilityProfileInvalid,
+                "The selected compatibility profile is unavailable.",
+            )
+        })?;
+        let consent_active =
+            require_active_consent(source, Some(&snapshot.consent_version)).is_ok();
+        let report = build_training_preflight(
+            &snapshot,
+            super::storage::directory_size(&directory),
+            configuration,
+            &profile,
+            state.qualification.as_ref(),
+            consent_active,
+        );
+        drop(state);
+        self.lock()?.training_preflight = Some(report.clone());
+        Ok(report)
     }
 
     pub fn list_snapshots(&self) -> VoiceModelResult<Vec<TrainingSnapshotV1>> {
@@ -201,7 +434,9 @@ impl VoiceModelController {
         request: CreateTrainingSnapshotRequest,
     ) -> VoiceModelResult<TrainingSnapshotV1> {
         require_active_consent(source, None)?;
-        create_snapshot(&self.root.join("snapshots"), source, &request)
+        let snapshot = create_snapshot(&self.root.join("snapshots"), source, &request)?;
+        rebuild_indexes(&self.root)?;
+        Ok(snapshot)
     }
 
     pub fn delete_snapshot(&self, snapshot_id: &str) -> VoiceModelResult<()> {
@@ -219,7 +454,9 @@ impl VoiceModelController {
         remove_managed_directory(
             &self.root.join("snapshots"),
             &self.root.join("snapshots").join(snapshot_id),
-        )
+        )?;
+        rebuild_indexes(&self.root)?;
+        Ok(())
     }
 
     pub fn list_jobs(&self) -> VoiceModelResult<Vec<TrainingJob>> {
@@ -239,9 +476,27 @@ impl VoiceModelController {
         source: &ManifestDatasetSource,
         snapshot_id: &str,
         configuration: TrainingConfiguration,
+        warnings_acknowledged: bool,
     ) -> VoiceModelResult<TrainingJob> {
         require_active_consent(source, None)?;
         validate_managed_id(snapshot_id, "snapshot")?;
+        let preflight = self.training_preflight(source, snapshot_id, &configuration)?;
+        if !preflight.can_start {
+            return Err(VoiceModelError::new(
+                VoiceModelErrorCode::InvalidTrainingConfiguration,
+                preflight
+                    .fatal_failures
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "Training preflight failed.".to_owned()),
+            ));
+        }
+        if !preflight.acknowledgements_required.is_empty() && !warnings_acknowledged {
+            return Err(VoiceModelError::new(
+                VoiceModelErrorCode::InvalidTrainingConfiguration,
+                "Acknowledge every training preflight warning before Start is enabled.",
+            ));
+        }
         let (settings, validation) = {
             let state = self.lock()?;
             if state
@@ -302,6 +557,38 @@ impl VoiceModelController {
             backend_id: "seed-vc-local".to_owned(),
             backend_version: capabilities.backend_version.clone(),
             worker_protocol_version: WORKER_PROTOCOL_VERSION,
+            compatibility_profile_id: backend_configuration.compatibility_profile_id.clone(),
+            environment_fingerprint: self
+                .lock()?
+                .qualification
+                .as_ref()
+                .and_then(|run| run.environment_fingerprint.clone()),
+            checkpoint_identities: self
+                .lock()?
+                .qualification
+                .as_ref()
+                .and_then(|run| run.environment_fingerprint.as_ref())
+                .map(|fingerprint| fingerprint.checkpoints.clone())
+                .unwrap_or_default(),
+            backend_revision: self
+                .lock()?
+                .qualification
+                .as_ref()
+                .and_then(|run| run.repository.as_ref())
+                .and_then(|repository| repository.commit_sha.clone()),
+            adapter_version: self
+                .lock()?
+                .qualification
+                .as_ref()
+                .map(|run| run.adapter_version.clone())
+                .unwrap_or_default(),
+            qualification_level: self
+                .lock()?
+                .qualification
+                .as_ref()
+                .map_or(super::qualification::QualificationLevel::None, |run| {
+                    run.final_level
+                }),
             snapshot_id: snapshot.snapshot_id.clone(),
             snapshot_hash: snapshot.content_hash.clone(),
             profile_id: snapshot.profile_id.clone(),
@@ -317,12 +604,14 @@ impl VoiceModelController {
             completed_at: None,
             worker_pid: None,
             last_checkpoint: None,
+            last_checkpoint_hash: None,
             log_file: "worker.log".to_owned(),
             error_summary: None,
             cancellation_requested: false,
             warnings,
         };
         atomic_write_json(&job_directory.join("job.json"), &job)?;
+        rebuild_indexes(&self.root)?;
         let request_id = format!("training-{job_id}");
         let request =
             backend_registry::seed_vc().build_training_request(TrainingRequestContext {
@@ -377,6 +666,18 @@ impl VoiceModelController {
                 "No managed checkpoint is available for this interrupted job.",
             )
         })?;
+        let checkpoint_hash = crate::voice_dataset::hash::sha256_file(&checkpoint)
+            .map_err(|error| VoiceModelError::storage("Cannot hash recovery checkpoint", error))?;
+        if job
+            .last_checkpoint_hash
+            .as_ref()
+            .is_some_and(|expected| expected != &checkpoint_hash)
+        {
+            return Err(VoiceModelError::new(
+                VoiceModelErrorCode::CheckpointHashMismatch,
+                "The interrupted-job checkpoint failed its recorded SHA-256 validation.",
+            ));
+        }
         require_active_consent(source, Some(&job.consent_version))?;
         if source.manifest().profile.id != job.profile_id {
             return Err(VoiceModelError::new(
@@ -417,10 +718,59 @@ impl VoiceModelController {
                 })?,
             )
         };
+        let current_environment = self
+            .lock()?
+            .qualification
+            .as_ref()
+            .and_then(|run| run.environment_fingerprint.clone());
+        if let (Some(expected), Some(current)) = (
+            job.environment_fingerprint.as_ref(),
+            current_environment.as_ref(),
+        ) {
+            if super::qualification::compare_environments(expected, current)
+                == super::qualification::EnvironmentMatch::Incompatible
+            {
+                return Err(VoiceModelError::new(
+                    VoiceModelErrorCode::EnvironmentMismatch,
+                    "The current backend environment materially differs from the interrupted job.",
+                ));
+            }
+        }
         if !capabilities.supports_resume {
             return Err(VoiceModelError::new(
                 VoiceModelErrorCode::UnsupportedHardware,
                 "The configured backend does not report checkpoint resume support.",
+            ));
+        }
+        let inspection_request = WorkerRequest::new(
+            format!("inspect-checkpoint-{job_id}"),
+            WorkerCommand::InspectCheckpoint,
+            serde_json::json!({
+                "backendId": job.backend_id,
+                "checkpointPath": checkpoint,
+                "expectedSha256": checkpoint_hash,
+                "compatibilityProfileId": job.compatibility_profile_id,
+                "adapterVersion": job.adapter_version,
+            }),
+        );
+        let inspection = run_worker_job(
+            &backend_configuration,
+            inspection_request,
+            Arc::new(AtomicBool::new(false)),
+            |_| {},
+            |_| {},
+        )?;
+        if inspection.terminal_event.event != WorkerEventKind::Completed
+            || !inspection
+                .terminal_event
+                .payload
+                .get("structurallyUsable")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        {
+            return Err(VoiceModelError::new(
+                VoiceModelErrorCode::CheckpointHashMismatch,
+                "The fixed backend adapter rejected the recovery checkpoint structure.",
             ));
         }
         validate_configuration(&job.configuration, &capabilities)?;
@@ -447,6 +797,7 @@ impl VoiceModelController {
             .strip_prefix(&job_directory)
             .ok()
             .map(|path| path.to_string_lossy().replace('\\', "/"));
+        job.last_checkpoint_hash = Some(checkpoint_hash);
         job.updated_at = timestamp().map_err(dataset_clock_error)?;
         atomic_write_json(&job_directory.join("job.json"), &job)?;
         let request_id = format!("resume-{job_id}");
@@ -522,7 +873,9 @@ impl VoiceModelController {
         remove_managed_directory(
             &self.root.join("jobs"),
             &self.root.join("jobs").join(job_id),
-        )
+        )?;
+        rebuild_indexes(&self.root)?;
+        Ok(())
     }
 
     pub fn read_job_log(&self, job_id: &str) -> VoiceModelResult<Vec<String>> {
@@ -557,6 +910,11 @@ impl VoiceModelController {
                             } else {
                                 ModelApprovalStatus::Invalid
                             };
+                        artifact.health = if error.code == VoiceModelErrorCode::ArtifactMissing {
+                            ArtifactHealth::MissingFiles
+                        } else {
+                            ArtifactHealth::HashMismatch
+                        };
                     }
                     artifacts.push(artifact);
                 }
@@ -619,6 +977,7 @@ impl VoiceModelController {
             ));
         }
         verify_artifact(&artifact, &directory)?;
+        self.require_artifact_environment(&artifact)?;
         artifact
             .evaluation
             .as_ref()
@@ -630,6 +989,7 @@ impl VoiceModelController {
             })?
             .validate_for_approval()?;
         artifact.approval_status = ModelApprovalStatus::ApprovedForOfflineUse;
+        artifact.health = ArtifactHealth::Healthy;
         artifact.updated_at = timestamp().map_err(dataset_clock_error)?;
         atomic_write_json(&directory.join("artifact.json"), &artifact)?;
         Ok(artifact)
@@ -656,7 +1016,39 @@ impl VoiceModelController {
                 "The artifact directory is invalid.",
             )
         })?;
-        remove_managed_directory(profile_artifacts, &directory)
+        remove_managed_directory(profile_artifacts, &directory)?;
+        rebuild_indexes(&self.root)?;
+        Ok(())
+    }
+
+    pub fn export_artifact_package(
+        &self,
+        artifact_id: &str,
+        destination: &Path,
+        licensing_acknowledged: bool,
+    ) -> VoiceModelResult<ModelPackageExportResult> {
+        let (directory, artifact) = self.find_artifact(artifact_id)?;
+        verify_artifact(&artifact, &directory)?;
+        export_package(&directory, &artifact, destination, licensing_acknowledged)
+    }
+
+    pub fn import_artifact_package(
+        &self,
+        source: &ManifestDatasetSource,
+        request: ModelPackageImportRequest,
+    ) -> VoiceModelResult<VoiceModelArtifactV1> {
+        require_active_consent(source, None)?;
+        if source.manifest().profile.id != request.profile_id
+            || source.manifest().consent.consent_version != request.active_consent_version
+        {
+            return Err(VoiceModelError::new(
+                VoiceModelErrorCode::ConsentInactive,
+                "The selected opaque profile ID and active consent version must match the import association.",
+            ));
+        }
+        let artifact = import_package(&self.root, &request)?;
+        rebuild_indexes(&self.root)?;
+        Ok(artifact)
     }
 
     pub fn prepare_voice_lab_source_path(&self) -> VoiceModelResult<(String, PathBuf)> {
@@ -691,6 +1083,7 @@ impl VoiceModelController {
             require_approved(&artifact)?;
         }
         verify_artifact(&artifact, &artifact_directory)?;
+        self.require_artifact_environment(&artifact)?;
         require_active_consent(source, Some(&artifact.consent_version))?;
         if source.manifest().profile.id != artifact.profile_id {
             return Err(VoiceModelError::new(
@@ -876,7 +1269,8 @@ impl VoiceModelController {
 
     pub fn has_active_work(&self) -> bool {
         self.lock().is_ok_and(|state| {
-            state.active_inference
+            state.qualification_active
+                || state.active_inference
                 || state
                     .active_training_job
                     .as_ref()
@@ -885,6 +1279,7 @@ impl VoiceModelController {
     }
 
     pub fn request_shutdown_cancellation(&self) -> VoiceModelResult<()> {
+        self.cancel_qualification()?;
         let should_cancel_training = self
             .lock()?
             .active_training_job
@@ -962,6 +1357,7 @@ impl VoiceModelController {
             if manifest.is_file() {
                 let mut artifact: VoiceModelArtifactV1 = read_json(&manifest)?;
                 artifact.approval_status = ModelApprovalStatus::DisabledByConsent;
+                artifact.health = ArtifactHealth::DisabledByConsent;
                 artifact.updated_at = timestamp().map_err(dataset_clock_error)?;
                 atomic_write_json(&manifest, &artifact)?;
             }
@@ -993,6 +1389,39 @@ impl VoiceModelController {
         ))
     }
 
+    fn require_artifact_environment(
+        &self,
+        artifact: &VoiceModelArtifactV1,
+    ) -> VoiceModelResult<()> {
+        let state = self.lock()?;
+        let qualification = state.qualification.as_ref().ok_or_else(|| {
+            VoiceModelError::new(
+                VoiceModelErrorCode::QualificationMissing,
+                "Qualify the local backend before approving or using this artifact.",
+            )
+        })?;
+        if qualification.compatibility_profile_id != artifact.compatibility_profile_id {
+            return Err(VoiceModelError::new(
+                VoiceModelErrorCode::EnvironmentMismatch,
+                "The artifact requires a different compatibility profile.",
+            ));
+        }
+        if let (Some(expected), Some(current)) = (
+            artifact.environment_fingerprint.as_ref(),
+            qualification.environment_fingerprint.as_ref(),
+        ) {
+            if super::qualification::compare_environments(expected, current)
+                == super::qualification::EnvironmentMatch::Incompatible
+            {
+                return Err(VoiceModelError::new(
+                    VoiceModelErrorCode::EnvironmentMismatch,
+                    "The current environment is incompatible with the artifact fingerprint.",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn lock(&self) -> VoiceModelResult<MutexGuard<'_, ControllerState>> {
         self.state.lock().map_err(|_| {
             VoiceModelError::new(
@@ -1001,6 +1430,19 @@ impl VoiceModelController {
             )
         })
     }
+}
+
+fn latest_qualification(root: &Path) -> VoiceModelResult<Option<QualificationRunV1>> {
+    let mut reports = Vec::new();
+    for directory in read_directories(&root.join("qualifications"))? {
+        let manifest = directory.join("qualification.json");
+        if manifest.is_file() {
+            let report: QualificationReportV1 = read_json(&manifest)?;
+            reports.push(report.run);
+        }
+    }
+    reports.sort_by(|left, right| right.started_at.cmp(&left.started_at));
+    Ok(reports.into_iter().next())
 }
 
 fn handle_training_event(
@@ -1066,6 +1508,11 @@ fn handle_training_event(
                 .get("relativePath")
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned);
+            job.last_checkpoint_hash = job
+                .last_checkpoint
+                .as_deref()
+                .and_then(|relative| managed_join(job_directory, relative).ok())
+                .and_then(|path| crate::voice_dataset::hash::sha256_file(&path).ok());
         }
         WorkerEventKind::Warning => {
             if let Some(message) = event
@@ -1159,6 +1606,7 @@ fn launch_training_thread(launch: TrainingLaunch) -> VoiceModelResult<()> {
                                 );
                                 state.training_cancellation = None;
                             }
+                            let _ = rebuild_indexes(&root);
                         }
                         Err(error) => fail_job(&shared, &job_directory, error),
                     }

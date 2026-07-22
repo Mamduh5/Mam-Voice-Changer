@@ -48,6 +48,19 @@ pub enum VoiceModelErrorCode {
     PathValidationFailure,
     InvalidStateTransition,
     UnexpectedOutput,
+    CompatibilityProfileInvalid,
+    QualificationAlreadyActive,
+    QualificationCancelled,
+    QualificationMissing,
+    EnvironmentFingerprintInvalid,
+    EnvironmentMismatch,
+    CheckpointHashMismatch,
+    ManualQualificationIncomplete,
+    PackageInvalid,
+    PackageLimitExceeded,
+    PackageHashMismatch,
+    PackageSchemaUnsupported,
+    LicensingAcknowledgementRequired,
 }
 
 #[derive(Clone, Debug, Error, Serialize)]

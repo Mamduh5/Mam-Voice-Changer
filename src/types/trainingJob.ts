@@ -1,4 +1,12 @@
-import type { ModelDevice, ModelPrecision } from './modelBackend';
+import type {
+  EnvironmentFingerprint,
+  FileFingerprint,
+  ModelDevice,
+  ModelPrecision,
+  QualificationLevel,
+  QualificationSupportStatus,
+  ResourceRiskReason,
+} from './modelBackend';
 
 export type TrainingPreset = 'quickExperiment' | 'balancedFineTune' | 'extendedFineTune';
 export type ResumeBehavior = 'never' | 'fromLatestCheckpoint';
@@ -44,6 +52,12 @@ export type TrainingJob = {
   backendId: string;
   backendVersion: string;
   workerProtocolVersion: number;
+  compatibilityProfileId: string;
+  environmentFingerprint: EnvironmentFingerprint | null;
+  checkpointIdentities: FileFingerprint[];
+  backendRevision: string | null;
+  adapterVersion: string;
+  qualificationLevel: QualificationLevel;
   snapshotId: string;
   snapshotHash: string;
   profileId: string;
@@ -59,10 +73,38 @@ export type TrainingJob = {
   completedAt: string | null;
   workerPid: number | null;
   lastCheckpoint: string | null;
+  lastCheckpointHash: string | null;
   logFile: string;
   errorSummary: string | null;
   cancellationRequested: boolean;
   warnings: string[];
+};
+
+export type TrainingPreflightReport = {
+  schemaVersion: number;
+  snapshotId: string;
+  snapshotTakeCount: number;
+  trainingDurationMs: number;
+  validationDurationMs: number;
+  snapshotBytes: number;
+  compatibilityProfileStatus: QualificationSupportStatus;
+  environmentFingerprintStatus:
+    'identical' | 'compatible' | 'changedWithWarning' | 'incompatible' | 'unknown';
+  device: ModelDevice;
+  precision: ModelPrecision;
+  batchSize: number;
+  workerCount: number;
+  maximumSteps: number;
+  checkpointInterval: number;
+  estimatedCheckpointCount: number;
+  estimatedDiskMinimumBytes: number;
+  estimatedDiskMaximumBytes: number;
+  resourceWarnings: ResourceRiskReason[];
+  consentActive: boolean;
+  qualificationLevel: QualificationLevel;
+  fatalFailures: string[];
+  acknowledgementsRequired: string[];
+  canStart: boolean;
 };
 
 export const trainingPresets: Record<TrainingPreset, TrainingConfiguration> = {

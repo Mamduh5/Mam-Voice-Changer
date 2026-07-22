@@ -23,6 +23,12 @@ use super::{
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const CANCEL_GRACE: Duration = Duration::from_secs(5);
+const QUALIFICATION_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+const JOB_IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const QUALIFICATION_PROCESS_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const JOB_PROCESS_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
+const MAX_STDERR_LINES: usize = 200;
+const WORKER_ENV_ALLOWLIST: [&str; 5] = ["SystemRoot", "WINDIR", "PATH", "TEMP", "TMP"];
 
 pub struct WorkerRunResult {
     pub terminal_event: WorkerEvent,
@@ -84,9 +90,7 @@ pub fn run_worker_job(
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
                 let bounded: String = line.chars().take(2_000).collect();
-                if stderr_tx.send(bounded).is_err() {
-                    break;
-                }
+                let _ = stderr_tx.try_send(bounded);
             }
         })
         .map_err(|error| VoiceModelError::storage("Cannot monitor worker stderr", error))?;
@@ -105,7 +109,41 @@ pub fn run_worker_job(
 
     let mut cancel_sent = false;
     let mut cancel_started = None;
+    let started_at = Instant::now();
+    let mut last_event_at = Instant::now();
+    let idle_timeout = if matches!(
+        request.command,
+        WorkerCommand::QualifyBackend
+            | WorkerCommand::InspectEnvironment
+            | WorkerCommand::InspectCheckpoint
+    ) {
+        QUALIFICATION_IDLE_TIMEOUT
+    } else {
+        JOB_IDLE_TIMEOUT
+    };
+    let process_timeout = if matches!(
+        request.command,
+        WorkerCommand::QualifyBackend
+            | WorkerCommand::InspectEnvironment
+            | WorkerCommand::InspectCheckpoint
+    ) {
+        QUALIFICATION_PROCESS_TIMEOUT
+    } else {
+        JOB_PROCESS_TIMEOUT
+    };
+    let mut stderr_tail = Vec::new();
     let terminal = loop {
+        stderr_tail.extend(stderr_rx.try_iter());
+        if stderr_tail.len() > MAX_STDERR_LINES {
+            stderr_tail.drain(..stderr_tail.len() - MAX_STDERR_LINES);
+        }
+        if started_at.elapsed() >= process_timeout || last_event_at.elapsed() >= idle_timeout {
+            terminate_worker(&mut child);
+            return Err(VoiceModelError::new(
+                VoiceModelErrorCode::WorkerExitedUnexpectedly,
+                "The model worker exceeded its process or idle timeout.",
+            ));
+        }
         if cancellation.load(Ordering::Acquire) && !cancel_sent {
             let cancel = WorkerRequest::new(
                 request.request_id.clone(),
@@ -127,6 +165,7 @@ pub fn run_worker_job(
         }
         match events_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(Ok(line)) => {
+                last_event_at = Instant::now();
                 let event = decode_event(&line, &request.request_id)?;
                 on_event(&event);
                 if matches!(
@@ -183,7 +222,10 @@ pub fn run_worker_job(
     }
     let _ = stdout_thread.join();
     let _ = stderr_thread.join();
-    let stderr_tail = stderr_rx.try_iter().collect();
+    stderr_tail.extend(stderr_rx.try_iter());
+    if stderr_tail.len() > MAX_STDERR_LINES {
+        stderr_tail.drain(..stderr_tail.len() - MAX_STDERR_LINES);
+    }
     Ok(WorkerRunResult {
         terminal_event: terminal,
         stderr_tail,
@@ -246,7 +288,7 @@ fn spawn_worker(configuration: &SeedVcBackendConfiguration) -> VoiceModelResult<
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env_clear();
-    for name in ["SystemRoot", "WINDIR", "PATH", "TEMP", "TMP"] {
+    for name in WORKER_ENV_ALLOWLIST {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);
         }
@@ -352,7 +394,10 @@ fn terminate_worker(child: &mut Child) {
 
 #[cfg(test)]
 mod tests {
-    use super::read_bounded_line;
+    use super::{
+        read_bounded_line, CANCEL_GRACE, HANDSHAKE_TIMEOUT, MAX_STDERR_LINES,
+        QUALIFICATION_IDLE_TIMEOUT, WORKER_ENV_ALLOWLIST,
+    };
     use crate::voice_model::worker_protocol::MAX_WORKER_MESSAGE_BYTES;
     use std::io::BufReader;
 
@@ -360,5 +405,28 @@ mod tests {
     fn bounded_line_reader_rejects_unterminated_oversized_output() {
         let bytes = vec![b'x'; MAX_WORKER_MESSAGE_BYTES + 2];
         assert!(read_bounded_line(&mut BufReader::new(bytes.as_slice())).is_err());
+    }
+
+    #[test]
+    fn worker_environment_and_timeouts_are_strictly_bounded() {
+        assert_eq!(
+            WORKER_ENV_ALLOWLIST,
+            ["SystemRoot", "WINDIR", "PATH", "TEMP", "TMP"]
+        );
+        for secret in [
+            "HOME",
+            "USERPROFILE",
+            "TOKEN",
+            "AWS_SECRET_ACCESS_KEY",
+            "HF_TOKEN",
+        ] {
+            assert!(!WORKER_ENV_ALLOWLIST.contains(&secret));
+        }
+        assert!(HANDSHAKE_TIMEOUT.as_secs() <= 15);
+        assert!(QUALIFICATION_IDLE_TIMEOUT.as_secs() <= 90);
+        assert!(CANCEL_GRACE.as_secs() <= 5);
+        const {
+            assert!(MAX_STDERR_LINES <= 200);
+        }
     }
 }

@@ -3,6 +3,7 @@ use std::{fs, path::Path};
 use serde_json::json;
 
 use super::{
+    compatibility,
     error::{VoiceModelError, VoiceModelErrorCode, VoiceModelResult},
     state::{
         BackendReadiness, BackendValidationStatus, ModelBackendSettingsV1,
@@ -23,6 +24,12 @@ pub fn validate_settings(
     let Some(configuration) = settings.seed_vc.as_ref() else {
         return Ok(BackendValidationStatus::default());
     };
+    let Some(profile) = compatibility::profile(&configuration.compatibility_profile_id) else {
+        return Ok(status(
+            BackendReadiness::ConfigurationInvalid,
+            "The selected compatibility profile is unavailable.",
+        ));
+    };
     if !Path::new(&configuration.python_executable).is_file() {
         return Ok(status(
             BackendReadiness::PythonMissing,
@@ -39,10 +46,15 @@ pub fn validate_settings(
         ));
     }
     let backend_root = Path::new(&configuration.seed_vc_directory);
-    if !backend_root.join("train.py").is_file() || !backend_root.join("inference.py").is_file() {
+    if profile
+        .expected_files
+        .iter()
+        .filter(|file| file.required && !file.relative_path.is_empty())
+        .any(|file| !backend_root.join(&file.relative_path).is_file())
+    {
         return Ok(status(
             BackendReadiness::BackendMissing,
-            "The configured Seed-VC checkout is missing train.py or inference.py.",
+            "The configured checkout is missing compatibility-profile files.",
         ));
     }
     if !Path::new(&configuration.model_configuration_path).is_file() {
@@ -74,6 +86,8 @@ pub fn validate_settings(
             "requestedDevice": configuration.device,
             "requestedPrecision": configuration.precision,
             "requiredProtocolVersion": WORKER_PROTOCOL_VERSION,
+            "compatibilityProfileId": profile.profile_id,
+            "adapterVersion": profile.worker_adapter_version,
         }),
     )?;
     if report.protocol_version != WORKER_PROTOCOL_VERSION {
@@ -94,7 +108,8 @@ pub fn validate_settings(
     }
     Ok(BackendValidationStatus {
         readiness: BackendReadiness::Ready,
-        message: "The optional local model backend is ready.".to_owned(),
+        message: "The worker handshake is ready; full backend qualification remains separate."
+            .to_owned(),
         capability_report: Some(report),
     })
 }

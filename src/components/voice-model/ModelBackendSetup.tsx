@@ -1,14 +1,21 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { useState } from 'react';
-import type { ModelBackendSettings, SeedVcBackendConfiguration } from '../../types/modelBackend';
+import type {
+  BackendCompatibilityProfile,
+  ModelBackendSettings,
+  SeedVcBackendConfiguration,
+} from '../../types/modelBackend';
 import { backendReadinessLabel } from '../../utils/modelReadiness';
 
 const blank: SeedVcBackendConfiguration = {
+  compatibilityProfileId: 'seed-vc-experimental-v1',
   pythonExecutable: '',
   workerPackageDirectory: '',
   seedVcDirectory: '',
   modelConfigurationPath: '',
+  modelConfigurationExpectedSha256: null,
   pretrainedCheckpointPaths: [],
+  pretrainedCheckpointExpectedSha256: [],
   outputDirectory: '',
   device: 'cpu',
   precision: 'float32',
@@ -21,6 +28,7 @@ export function ModelBackendSetup({
   busy,
   onSave,
   onValidate,
+  profiles,
 }: {
   settings: ModelBackendSettings;
   readiness: Parameters<typeof backendReadinessLabel>[0];
@@ -28,6 +36,7 @@ export function ModelBackendSetup({
   busy: boolean;
   onSave: (settings: ModelBackendSettings) => Promise<boolean>;
   onValidate: () => Promise<unknown>;
+  profiles: BackendCompatibilityProfile[];
 }) {
   const [configuration, setConfiguration] = useState(settings.seedVc ?? blank);
   const update = (changes: Partial<SeedVcBackendConfiguration>) =>
@@ -55,6 +64,19 @@ export function ModelBackendSetup({
         <span data-readiness={readiness}>{backendReadinessLabel(readiness)}</span>
       </div>
       <p>{message}</p>
+      <label>
+        Compatibility profile
+        <select
+          value={configuration.compatibilityProfileId}
+          onChange={(event) => update({ compatibilityProfileId: event.target.value })}
+        >
+          {profiles.map((profile) => (
+            <option key={profile.profileId} value={profile.profileId}>
+              {profile.displayName}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="model-path-grid">
         <PathRow
           label="Python executable"
@@ -86,6 +108,33 @@ export function ModelBackendSetup({
           value={configuration.outputDirectory}
           onChoose={() => void chooseDirectory('outputDirectory')}
         />
+      </div>
+      <div className="model-control-grid">
+        <label>
+          Model configuration expected SHA-256 (optional)
+          <input
+            value={configuration.modelConfigurationExpectedSha256 ?? ''}
+            pattern="[A-Fa-f0-9]{64}"
+            placeholder="Unspecified limits reproducibility"
+            onChange={(event) =>
+              update({ modelConfigurationExpectedSha256: event.target.value || null })
+            }
+          />
+        </label>
+        <label>
+          Checkpoint expected SHA-256 values (one per selected file)
+          <textarea
+            value={configuration.pretrainedCheckpointExpectedSha256.join('\n')}
+            placeholder="One 64-character SHA-256 per checkpoint"
+            onChange={(event) =>
+              update({
+                pretrainedCheckpointExpectedSha256: event.target.value
+                  .split(/\r?\n/)
+                  .map((value) => value.trim()),
+              })
+            }
+          />
+        </label>
       </div>
       <div className="model-control-grid">
         <label>
@@ -124,12 +173,13 @@ export function ModelBackendSetup({
           Save backend configuration
         </button>
         <button type="button" className="start" disabled={busy} onClick={() => void onValidate()}>
-          Validate backend
+          Check worker handshake
         </button>
       </div>
       <small>
         No Python, packages, Seed-VC source, CUDA, or checkpoints are installed or downloaded by the
-        app. Third-party ML code remains untrusted even when it runs locally.
+        app. This handshake is not qualification. Third-party ML code remains untrusted even when it
+        runs locally.
       </small>
     </section>
   );

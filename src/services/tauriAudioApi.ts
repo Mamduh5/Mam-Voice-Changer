@@ -22,8 +22,18 @@ import type {
   VoiceDatasetStatus,
   VoiceProfileSummary,
 } from '../types/voiceDataset';
-import type { ModelBackendSettings, BackendValidationStatus } from '../types/modelBackend';
-import type { TrainingConfiguration, TrainingJob } from '../types/trainingJob';
+import type {
+  BackendCompatibilityProfile,
+  BackendValidationStatus,
+  ManualListeningQualification,
+  ModelBackendSettings,
+  QualificationRun,
+} from '../types/modelBackend';
+import type {
+  TrainingConfiguration,
+  TrainingJob,
+  TrainingPreflightReport,
+} from '../types/trainingJob';
 import type {
   CreateTrainingSnapshotRequest,
   EvaluationPhrase,
@@ -182,6 +192,21 @@ export const tauriAudioApi = {
     invokeDesktop<ModelBackendSettings>('read_model_backend_configuration'),
   listVoiceModelEvaluationPhrases: () =>
     invokeDesktop<EvaluationPhrase[]>('list_voice_model_evaluation_phrases'),
+  listBackendCompatibilityProfiles: () =>
+    invokeDesktop<BackendCompatibilityProfile[]>('list_backend_compatibility_profiles'),
+  repairVoiceModelIndexes: () => invokeDesktop<unknown>('repair_voice_model_indexes'),
+  runBackendQualification: (profileId: string | null, referenceTakeId: string | null) =>
+    invokeDesktop<QualificationRun>('run_backend_qualification', {
+      profileId,
+      referenceTakeId,
+    }),
+  loadQualificationSmokeIntoVoiceLab: () =>
+    invokeDesktop<VoiceLabStatus>('load_qualification_smoke_into_voice_lab'),
+  cancelBackendQualification: () => invokeDesktop<void>('cancel_backend_qualification'),
+  confirmBackendManualListening: (confirmation: ManualListeningQualification) =>
+    invokeDesktop<QualificationRun>('confirm_backend_manual_listening', { confirmation }),
+  saveBackendQualificationReport: (destination: string, humanReadable: boolean) =>
+    invokeDesktop<void>('save_backend_qualification_report', { destination, humanReadable }),
   saveModelBackendConfiguration: (settings: ModelBackendSettings) =>
     invokeDesktop<ModelBackendSettings>('save_model_backend_configuration', { settings }),
   validateModelBackend: () => invokeDesktop<BackendValidationStatus>('validate_model_backend'),
@@ -194,8 +219,20 @@ export const tauriAudioApi = {
     profileId: string,
     snapshotId: string,
     configuration: TrainingConfiguration,
+    warningsAcknowledged: boolean,
   ) =>
     invokeDesktop<TrainingJob>('start_voice_model_training', {
+      profileId,
+      snapshotId,
+      configuration,
+      warningsAcknowledged,
+    }),
+  createTrainingPreflight: (
+    profileId: string,
+    snapshotId: string,
+    configuration: TrainingConfiguration,
+  ) =>
+    invokeDesktop<TrainingPreflightReport>('create_training_preflight', {
       profileId,
       snapshotId,
       configuration,
@@ -212,6 +249,24 @@ export const tauriAudioApi = {
     invokeDesktop<VoiceModelArtifact>('reject_voice_model_artifact', { artifactId, notes }),
   deleteVoiceModelArtifact: (artifactId: string) =>
     invokeDesktop<void>('delete_voice_model_artifact', { artifactId }),
+  exportVoiceModelPackage: (
+    artifactId: string,
+    destination: string,
+    licensingAcknowledged: boolean,
+  ) =>
+    invokeDesktop<{
+      packageId: string;
+      outputFile: string;
+      fileCount: number;
+      totalBytes: number;
+      portabilityStatus: VoiceModelArtifact['portabilityStatus'];
+    }>('export_voice_model_package', { artifactId, destination, licensingAcknowledged }),
+  importVoiceModelPackage: (request: {
+    packagePath: string;
+    profileId: string;
+    activeConsentVersion: string;
+    associationConfirmed: boolean;
+  }) => invokeDesktop<VoiceModelArtifact>('import_voice_model_package', { request }),
   startOfflineVoiceConversion: (
     profileId: string,
     artifactId: string,

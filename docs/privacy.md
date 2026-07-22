@@ -39,3 +39,17 @@ a sandbox and does not make them trusted. The worker receives only the managed
 snapshot/job/artifact/source paths needed for the requested operation, starts fixed
 entrypoints without a shell, filters its environment, and performs no automatic
 network/download/install action. Users should review and isolate that environment.
+
+Phase 4 fingerprints record only relevant Python/package/backend/device identities,
+sanitized repository remote/revision state, and configuration/checkpoint hashes.
+They do not record environment variables, usernames, home paths, complete PATH,
+tokens, credentials, shell history, profile audio, or raw Dataset contents.
+Qualification JSON/text exports use the same sanitized boundary.
+
+Model package export excludes raw/trimmed Dataset takes, recorded consent audio,
+snapshot audio, temporary inference sources, Python environments, third-party
+checkouts, absolute paths, usernames, and secrets. Import is untrusted, bounded,
+non-executing, and unapproved. It requires explicit association with a consent-active
+profile by opaque ID and retains original package provenance without rewriting
+historical consent claims. Consent revocation disables imported managed artifacts;
+exported copies remain outside application management.

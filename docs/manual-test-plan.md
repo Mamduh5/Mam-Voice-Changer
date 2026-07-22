@@ -319,3 +319,123 @@ whether each result was heard. Never interpret compile-time checks as voice qual
 - All local Voice Models environment, worker-process, training, recovery, synthetic
   playback/export, consent-revocation, native-shutdown, deletion, security-fault, and
   route-isolation cases in section L.
+
+## M. Consolidated post-Phase-4 manual acceptance plan (Phases 1-4)
+
+Record date, application commit, Windows build, audio devices, virtual route,
+Python/Seed-VC commit, package versions, device/precision, checkpoint hashes, and
+actual result for every step. Do not convert an automated result into a manual or
+audible pass.
+
+### Phase 1 - live DSP, presets, Use/Test, and Voice Lab
+
+- Launch the installed/debug Tauri application and confirm Use, Test, Voice Lab, and
+  Settings & Diagnostics render.
+- With conservative headphone volume, verify physical input enumeration and explicit
+  Test monitoring; confirm Use never opens local monitoring.
+- Exercise Natural, Warm tone, Bright tone, and Old Lady parameters; verify bypass,
+  mute, limiter, and preset persistence across restart.
+- Record/import bounded Voice Lab audio, render DSP, A/B preview, loop, export, clear,
+  and explicitly apply only when desired. Confirm Voice Lab does not silently mutate
+  live settings.
+
+### Phase 2 - Dataset capture and consent
+
+- Create a profile with explicit consent, record/import canonical takes, inspect
+  quality reports, accept/reject/redo, trim non-destructively, preview, restart, and
+  export only intended accepted audio.
+- Exercise missing/orphaned file repair and controlled consent revocation/deletion.
+  Confirm Dataset work remains independent from Use/Test routing.
+
+### Phase 3 - offline training and evaluation baseline
+
+- Create and inspect an immutable consent-bound snapshot and deterministic split.
+- Exercise typed training configuration, progress, bounded logs, cancellation,
+  interrupted-job display, offline conversion, synthetic labeling, manual ratings,
+  explicit approval, deletion, and native shutdown guard.
+- Confirm model work never appears in Use, Test, external route, DSP callback, or
+  Discord/communication routing controls.
+
+### Phase 4 - pinned backend qualification, recovery, and portability
+
+1. Launch Mam Voice Changer.
+2. Confirm Use, Test, Voice Lab Compare, Dataset, and Models open.
+3. Select the experimental Seed-VC profile.
+4. Configure an invalid Python executable.
+5. Confirm the exact `pythonMissing`/startup failure without unrelated installation.
+6. Configure the real Python environment.
+7. Configure the local Mam Voice Worker.
+8. Configure the pinned Seed-VC checkout.
+9. Confirm sanitized revision, detached-head state, and clean/dirty state.
+10. Configure every required checkpoint.
+11. Hash checkpoints and compare entered expected SHA-256 values.
+12. Inspect the environment fingerprint and sanitized aggregate hash.
+13. Inspect CPU/GPU, RAM/VRAM, disk, selected device, and precision capability.
+14. Run static qualification.
+15. Run the worker handshake and confirm it alone is not displayed as qualified.
+16. Run the framework CPU/CUDA smoke test as configured.
+17. Run the backend import smoke test.
+18. Run the project-generated audio preprocessing smoke test.
+19. Run optional inference smoke test only when local files and explicit
+    consent-active reference selection support it.
+20. Inspect, copy, and save JSON/text qualification reports; confirm private paths,
+    usernames, environment variables, tokens, and Dataset content are absent.
+21. Confirm no network download occurred. Offline flags are not a firewall.
+22. Create a Dataset snapshot.
+23. Inspect training preflight, estimates, fatal failures, and acknowledgements.
+24. Start Quick experiment only after explicit acknowledgement.
+25. Cancel and verify process-tree termination plus stable terminal state.
+26. Inspect/hash the declared checkpoint and explicitly resume where supported.
+27. Complete training.
+28. Restart and verify qualification/job/artifact/index recovery without auto-resume.
+29. Run offline inference.
+30. Listen to source and synthetic output at conservative volume.
+31. Complete each manual listening field without claiming perfect similarity.
+32. Evaluate and explicitly approve the artifact for local offline use.
+33. Export a model package after reviewing licensing warnings.
+34. Inspect package contents and hash inventory.
+35. Confirm raw/trimmed Dataset audio, consent audio, and snapshot audio are absent.
+36. Delete the managed artifact.
+37. Import the package.
+38. Confirm the imported artifact remains unapproved and untrusted.
+39. Explicitly associate it with the consent-active profile by opaque ID.
+40. Revalidate compatibility profile, environment, external dependencies, and hashes.
+41. Evaluate/approve as appropriate, then run offline inference from the import.
+42. Revoke/delete profile consent in a controlled test.
+43. Confirm local and imported dependent models become disabled and leave Voice Lab
+    selection.
+44. Confirm Use, Test, saved external routing, and ordinary DSP still operate
+    independently.
+45. Confirm no realtime neural option or Discord neural-routing control exists.
+
+### Phase 4 fault matrix
+
+- Wrong Seed-VC commit and unsupported/unknown revision.
+- Dirty checkout, detached HEAD, missing Git, and credential-bearing remote URL
+  sanitization.
+- Missing checkpoint, unspecified identity, and checkpoint/configuration hash
+  mismatch.
+- Python/PyTorch/Torchaudio/package mismatch; CPU tensor failure; CUDA initialization,
+  tensor, synchronization, or unstable GPU identity failure.
+- Low disk, low RAM, low/unknown VRAM, unsupported precision, oversized batch,
+  excessive workers/steps, and tiny Dataset.
+- Handshake timeout, protocol mismatch, malformed/oversized JSON, unexpected request
+  ID, worker crash, stderr flood, progress stall, ignored cancellation, and process
+  timeout.
+- Invalid checkpoint event, missing artifact, invalid/empty/non-finite WAV, unexpected
+  output path, and interruption during qualification/snapshot/training/inference.
+- Partial export/import, traversal/absolute path, duplicate entry, unsupported archive
+  flags/compression/schema, too many/large files, missing/unexpected file, and
+  CRC/SHA-256 mismatch.
+- Imported artifact environment mismatch, missing external dependency, unknown
+  licensing acknowledgement, and application shutdown during model work.
+
+### Phase 4 status for this implementation run
+
+- Hardware-independent automated validation: report command results separately.
+- Real Seed-VC checkout/commit qualification: pending.
+- Real PyTorch/CUDA/GPU framework test: pending.
+- Real training, cancellation, checkpoint resume, and inference: pending.
+- Audible/manual listening qualification: pending.
+- Another-machine package portability: pending.
+- Live Use/Test/VB-CABLE/Discord/OBS regression acceptance: pending.

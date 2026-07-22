@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::qualification::{QualificationRunV1, TrainingPreflightReport};
 use super::{artifact::VoiceModelArtifactV1, error::VoiceModelError, snapshot::TrainingSnapshotV1};
 
 pub const MODEL_BACKEND_SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -26,14 +27,24 @@ pub enum ModelPrecision {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SeedVcBackendConfiguration {
+    #[serde(default = "default_compatibility_profile_id")]
+    pub compatibility_profile_id: String,
     pub python_executable: String,
     pub worker_package_directory: String,
     pub seed_vc_directory: String,
     pub model_configuration_path: String,
+    #[serde(default)]
+    pub model_configuration_expected_sha256: Option<String>,
     pub pretrained_checkpoint_paths: Vec<String>,
+    #[serde(default)]
+    pub pretrained_checkpoint_expected_sha256: Vec<String>,
     pub output_directory: String,
     pub device: ModelDevice,
     pub precision: ModelPrecision,
+}
+
+fn default_compatibility_profile_id() -> String {
+    super::compatibility::SEED_VC_EXPERIMENTAL_PROFILE_ID.to_owned()
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -224,6 +235,18 @@ pub struct TrainingJob {
     pub backend_id: String,
     pub backend_version: String,
     pub worker_protocol_version: u32,
+    #[serde(default)]
+    pub compatibility_profile_id: String,
+    #[serde(default)]
+    pub environment_fingerprint: Option<super::qualification::ModelEnvironmentFingerprintV1>,
+    #[serde(default)]
+    pub checkpoint_identities: Vec<super::qualification::CheckpointFingerprint>,
+    #[serde(default)]
+    pub backend_revision: Option<String>,
+    #[serde(default)]
+    pub adapter_version: String,
+    #[serde(default)]
+    pub qualification_level: super::qualification::QualificationLevel,
     pub snapshot_id: String,
     pub snapshot_hash: String,
     pub profile_id: String,
@@ -239,6 +262,8 @@ pub struct TrainingJob {
     pub completed_at: Option<String>,
     pub worker_pid: Option<u32>,
     pub last_checkpoint: Option<String>,
+    #[serde(default)]
+    pub last_checkpoint_hash: Option<String>,
     pub log_file: String,
     pub error_summary: Option<String>,
     pub cancellation_requested: bool,
@@ -305,4 +330,7 @@ pub struct VoiceModelStatus {
     pub logs: Vec<String>,
     pub snapshots: Vec<TrainingSnapshotV1>,
     pub artifacts: Vec<VoiceModelArtifactV1>,
+    pub qualification: Option<QualificationRunV1>,
+    pub qualification_active: bool,
+    pub training_preflight: Option<TrainingPreflightReport>,
 }

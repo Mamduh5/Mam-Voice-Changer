@@ -76,6 +76,8 @@ impl VoiceModelBackend for SeedVcLocalBackend {
             },
             json!({
                 "backendId": self.backend_id(),
+                "compatibilityProfileId": context.backend.compatibility_profile_id,
+                "adapterVersion": super::compatibility::profile(&context.backend.compatibility_profile_id).map(|profile| profile.worker_adapter_version),
                 "seedVcDirectory": context.backend.seed_vc_directory,
                 "modelConfigurationPath": context.backend.model_configuration_path,
                 "pretrainedCheckpointPaths": context.backend.pretrained_checkpoint_paths,
@@ -101,6 +103,8 @@ impl VoiceModelBackend for SeedVcLocalBackend {
             WorkerCommand::RunInference,
             json!({
                 "backendId": self.backend_id(),
+                "compatibilityProfileId": context.backend.compatibility_profile_id,
+                "adapterVersion": super::compatibility::profile(&context.backend.compatibility_profile_id).map(|profile| profile.worker_adapter_version),
                 "seedVcDirectory": context.backend.seed_vc_directory,
                 "modelConfigurationPath": context.backend.model_configuration_path,
                 "artifactDirectory": context.artifact_directory,

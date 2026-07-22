@@ -9,8 +9,9 @@ use crate::voice_dataset::{
 
 use super::{
     artifact::{
-        ModelApprovalStatus, ModelArtifactFile, TrainingSummary, VoiceModelArtifactV1,
-        MODEL_ARTIFACT_SCHEMA_VERSION,
+        ArtifactFileRole, ArtifactHealth, LicenseNoticeReference, LicensingStatus,
+        ModelApprovalStatus, ModelArtifactFile, PortabilityStatus, TrainingSummary,
+        VoiceModelArtifactV1, MODEL_ARTIFACT_SCHEMA_VERSION,
     },
     error::{VoiceModelError, VoiceModelErrorCode, VoiceModelResult},
     snapshot::TrainingSnapshotV1,
@@ -106,6 +107,12 @@ pub fn create_artifact(
             relative_path: destination_relative,
             content_hash,
             size_bytes: metadata.len(),
+            role: if ["yaml", "yml", "json"].contains(&extension.as_str()) {
+                ArtifactFileRole::ModelConfiguration
+            } else {
+                ArtifactFileRole::ModelWeights
+            },
+            licensing_status: LicensingStatus::Unknown,
         });
     }
     let mut combined = String::new();
@@ -122,6 +129,11 @@ pub fn create_artifact(
         backend_id: job.backend_id.clone(),
         backend_version: payload.backend_version,
         worker_protocol_version: WORKER_PROTOCOL_VERSION,
+        compatibility_profile_id: job.compatibility_profile_id.clone(),
+        environment_fingerprint: job.environment_fingerprint.clone(),
+        checkpoint_identities: job.checkpoint_identities.clone(),
+        backend_revision: job.backend_revision.clone(),
+        adapter_version: job.adapter_version.clone(),
         snapshot_id: snapshot.snapshot_id.clone(),
         snapshot_hash: snapshot.content_hash.clone(),
         consent_version: snapshot.consent_version.clone(),
@@ -130,6 +142,24 @@ pub fn create_artifact(
         training_summary: payload.training_summary,
         model_files,
         model_content_hash: sha256_bytes(combined.as_bytes()),
+        expected_inference_sample_rate: 48_000,
+        supported_inference_controls: vec![
+            "diffusionSteps".to_owned(),
+            "f0Conditioning".to_owned(),
+            "pitchAdjustmentSemitones".to_owned(),
+            "lengthAdjustment".to_owned(),
+        ],
+        portability_status: PortabilityStatus::PortableWithExternalDependencies,
+        qualification_level: job.qualification_level,
+        license_notices: vec![LicenseNoticeReference {
+            role: "baseCheckpoint".to_owned(),
+            label: "Configured base checkpoint".to_owned(),
+            status: LicensingStatus::Unknown,
+            notice: "Redistribution permission has not been verified for this file.".to_owned(),
+        }],
+        synthetic_use_notice_version: "mam-synthetic-use-v1".to_owned(),
+        health: ArtifactHealth::Unqualified,
+        imported_package_id: None,
         evaluation: None,
         approval_status: ModelApprovalStatus::Unevaluated,
         notes: None,

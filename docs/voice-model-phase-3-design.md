@@ -1,5 +1,10 @@
 # Voice Model Phase 3 design
 
+> Phase 4 extends this design with compatibility profiles, environment/checkpoint
+> identity, layered qualification, recovery indexes, preflight, and safe package
+> portability. See `voice-model-phase-4-design.md`. Phase 3 adapter entry-point
+> assumptions remain experimental until pinned and qualified.
+
 ## Scope and trust boundary
 
 Phase 3 adds consent-dependent, local, offline model training and conversion. Model output is synthetic speech and must not be represented as an authentic recording of the target speaker. No realtime inference, live-route integration, communication-app routing, automatic downloads, package installation, checkpoint bundling, or cloud service is part of this phase.

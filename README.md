@@ -43,6 +43,13 @@ independent local monitor is available only on Test and defaults off.
   optional manually configured Seed-VC child-process training, versioned and
   hash-validated model artifacts, offline synthetic conversion, manual evaluation,
   and approval for offline Voice Lab comparison only
+- Phase 4 backend qualification with strict experimental compatibility profiles,
+  sanitized read-only Git revision/dirty-state inspection, relevant-package and
+  CPU/CUDA diagnostics, SHA-256 checkpoint/configuration identity, layered smoke
+  checks, persistent sanitized reports, and explicit manual listening
+- Versioned recovery indexes, hash-checked checkpoint resume, material environment
+  change detection, bounded model-package ZIP export/import, portability and
+  licensing status, and consent-dependent unapproved imports
 - Browser-safe frontend boundary when Vite is opened outside Tauri
 
 Built-in presets may be applied or duplicated, but they cannot be renamed or
@@ -82,6 +89,7 @@ Realtime neural conversion, neural output in Use/Test/external routes, bundled M
 backends or checkpoints, automatic ML downloads/installers, custom virtual audio
 drivers, cloud processing, accounts, telemetry, and non-Windows platforms are not
 part of the current prototype. Phase 3's optional neural path is local and offline.
+Phase 4 hardens that path but still does not add realtime neural conversion.
 
 ## Conservative defaults
 
@@ -161,7 +169,11 @@ monitoring levels.
 - [Voice Dataset Phase 2 design](docs/voice-dataset-phase-2-design.md)
 - [Voice Dataset Phase 2 implementation note](docs/voice-dataset-phase-2-implementation-note.md)
 - [Voice Model Phase 3 design](docs/voice-model-phase-3-design.md)
+- [Voice Model Phase 4 design](docs/voice-model-phase-4-design.md)
 - [Local model backend setup](docs/voice-model-backend-setup.md)
+- [Backend qualification guide](docs/backend-qualification-guide.md)
+- [Compatibility-profile guide](docs/voice-model-compatibility-profiles.md)
+- [Model portability guide](docs/voice-model-portability.md)
 - [Model artifact lifecycle](docs/voice-model-artifact-lifecycle.md)
 - [Privacy and consent boundary](docs/privacy.md)
 - [Prototype scope](docs/prototype-scope.md)

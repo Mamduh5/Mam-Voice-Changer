@@ -8,9 +8,9 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .backends import SeedVcBackend
+from .backends import MockQualificationBackend, SeedVcBackend
 from .errors import WorkerError
-from .protocol import Emitter, Request, decode_request, read_bounded_line
+from .protocol import Emitter, Request, WORKER_VERSION, decode_request, read_bounded_line
 
 
 class WorkerContext:
@@ -144,24 +144,32 @@ class WorkerContext:
 
 
 def dispatch(request: Request, context: WorkerContext, backend: SeedVcBackend) -> bool:
+    selected: Any = (
+        MockQualificationBackend()
+        if request.payload.get("backendId") == "mock-qualification"
+        else backend
+    )
     if request.command == "hello":
-        context.emitter.emit(request.request_id, "ready", {"workerVersion": "0.1.0", "protocolVersion": 1})
+        context.emitter.emit(request.request_id, "ready", {"workerVersion": WORKER_VERSION, "protocolVersion": 1})
     elif request.command in ("validateBackend", "inspectCapabilities"):
         try:
-            report = backend.validate(request.payload)
+            report = selected.inspect_seed_vc(request.payload)
             context.emitter.emit(request.request_id, "capabilityReport", report)
             context.emitter.emit(request.request_id, "completed", {"capabilityReport": report})
         except WorkerError as error:
             context.emitter.emit(request.request_id, "failed", {"code": error.code, "message": error.message})
     elif request.command == "preprocessSnapshot":
-        context.emitter.emit(request.request_id, "phaseStarted", {"phase": "preprocessing"})
-        context.emitter.emit(request.request_id, "completed", {"validated": True})
+        context.start_job(request, selected.preprocess_snapshot)
     elif request.command in ("startTraining", "resumeTraining"):
-        context.start_job(request, backend.train)
+        context.start_job(request, selected.fine_tune_seed_vc)
     elif request.command == "runInference":
-        context.start_job(request, backend.infer)
+        context.start_job(request, selected.convert_with_seed_vc)
     elif request.command == "inspectArtifact":
         context.emitter.emit(request.request_id, "completed", {"valid": True})
+    elif request.command in ("qualifyBackend", "inspectEnvironment"):
+        context.start_job(request, selected.qualify)
+    elif request.command == "inspectCheckpoint":
+        context.start_job(request, selected.inspect_checkpoint)
     elif request.command == "cancelJob":
         context.request_cancel()
     elif request.command == "shutdown":

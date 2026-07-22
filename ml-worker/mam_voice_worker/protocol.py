@@ -9,6 +9,7 @@ from typing import Any, BinaryIO
 from .errors import WorkerError
 
 PROTOCOL_VERSION = 1
+WORKER_VERSION = "0.2.0"
 MAX_MESSAGE_BYTES = 256 * 1024
 COMMANDS = {
     "hello",
@@ -21,6 +22,9 @@ COMMANDS = {
     "inspectArtifact",
     "runInference",
     "shutdown",
+    "qualifyBackend",
+    "inspectEnvironment",
+    "inspectCheckpoint",
 }
 
 
@@ -94,4 +98,3 @@ class Emitter:
         with self._lock:
             self._stream.write(encoded + b"\n")
             self._stream.flush()
-

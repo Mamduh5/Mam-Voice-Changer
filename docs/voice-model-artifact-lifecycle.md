@@ -41,6 +41,17 @@ inference output is cleared explicitly; Voice Lab Clear drops the loaded in-memo
 comparison. Synthetic WAV export uses a `synthetic` filename and writes adjacent
 JSON provenance with no absolute machine paths.
 
-Model package export/import is intentionally not implemented in Phase 3. That avoids
-accidentally redistributing Dataset audio, consent recordings, pretrained weights,
-absolute paths, or unsafe artifacts before a dedicated import trust workflow exists.
+Phase 4 adds explicit bounded model-package export/import. Packages contain artifact,
+evaluation, qualification/environment/checkpoint provenance, synthetic-use, hash
+inventory, README, and licensing notices. They exclude Dataset/consent/snapshot
+audio, temporary sources, environments, checkouts, absolute paths, usernames,
+secrets, and pretrained checkpoints by default. Portability is reported as
+`localOnly`, `portableWithExternalDependencies`, `portable`, `incompatible`, or
+`unknown`; ZIP creation alone never proves portability.
+
+Imports reject unsafe paths, duplicates, unsupported archive features, file-count
+and size overflow, unsupported schemas, missing/unexpected files, and CRC/SHA-256
+mismatch. Rust never executes or deserializes model files. The user explicitly
+selects a consent-active profile by opaque ID. Imported artifacts retain original
+package provenance, remain unevaluated/unapproved, and require local backend,
+environment, dependency, hash, evaluation, and consent validation before inference.

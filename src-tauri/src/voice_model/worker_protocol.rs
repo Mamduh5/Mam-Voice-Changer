@@ -23,6 +23,9 @@ pub enum WorkerCommand {
     InspectArtifact,
     RunInference,
     Shutdown,
+    QualifyBackend,
+    InspectEnvironment,
+    InspectCheckpoint,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -59,6 +62,11 @@ pub enum WorkerEventKind {
     Cancelled,
     Failed,
     Log,
+    PackageReport,
+    AcceleratorReport,
+    BackendImportReport,
+    AudioSmokeReport,
+    InferenceSmokeReport,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

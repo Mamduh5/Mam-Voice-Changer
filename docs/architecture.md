@@ -89,6 +89,30 @@ processed comparison clip by managed path. No sample arrays or tensors cross IPC
 The live CPAL engine, DSP order, Use, Test, saved external routes, virtual endpoint
 pairing, and application-settings schema v4 have no model selection or neural path.
 
+Phase 4 adds a separate qualification plane around the Phase 3 worker boundary:
+
+```text
+strict compatibility profile + fixed read-only Git probes + SHA-256 file identity
+  -> versioned environment fingerprint
+  -> static / worker / framework / backend-import / audio / optional inference checks
+  -> persistent sanitized qualification report and explicit depth
+  -> acknowledged training preflight
+  -> artifact provenance + bounded portable package
+```
+
+Qualification runs, snapshots, jobs, artifacts, temporary inference results, and
+imports have rebuildable versioned indexes; item manifests remain authoritative.
+Startup marks abandoned runs interrupted, preserves incomplete/orphaned content for
+explicit repair, and finishes only previously confirmed deletion tombstones.
+Checkpoint resume verifies the recorded SHA-256, asks the fixed adapter for bounded
+structural usability without Rust deserialization, compares material environment
+identity, and never resumes automatically.
+
+Model packages use a bounded project-owned stored-ZIP implementation so normal
+validation adds no dependency download. Import never executes archive content,
+rejects unsafe paths/flags/duplicates/limits/hash mismatches, and atomically installs
+an unapproved artifact under a user-confirmed consent-active opaque profile ID.
+
 ## External-route ownership
 
 `audio/device.rs` exposes raw input/output endpoints plus advisory direction,

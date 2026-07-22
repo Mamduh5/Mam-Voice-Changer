@@ -6,8 +6,10 @@ import type { ManualModelRatings } from '../../types/voiceModel';
 import { ModelArtifactDetails } from './ModelArtifactDetails';
 import { ModelArtifactList } from './ModelArtifactList';
 import { ModelBackendSetup } from './ModelBackendSetup';
+import { BackendQualificationPanel } from './BackendQualificationPanel';
 import { ModelDeletionDialog } from './ModelDeletionDialog';
 import { ModelEvaluationPanel } from './ModelEvaluationPanel';
+import { ModelPortabilityPanel } from './ModelPortabilityPanel';
 import { OfflineConversionPanel } from './OfflineConversionPanel';
 import { SyntheticAudioNotice } from './SyntheticAudioNotice';
 import { TrainingConfigurationPanel } from './TrainingConfigurationPanel';
@@ -34,6 +36,7 @@ export function VoiceModelPage({
   const [trainingConfiguration, setTrainingConfiguration] = useState(
     trainingPresets.quickExperiment,
   );
+  const [preflightWarningsAcknowledged, setPreflightWarningsAcknowledged] = useState(false);
   const profileId = dataset.status.manifest?.profile.id ?? null;
   const profileSnapshots = models.status.snapshots.filter(
     (snapshot) => snapshot.profileId === profileId,
@@ -56,6 +59,13 @@ export function VoiceModelPage({
   );
   const busy = disabled || dataset.busy || models.busy;
   const backendReady = models.status.backend.readiness === 'ready';
+  const backendQualified = Boolean(
+    models.status.qualification &&
+    ['qualified', 'qualifiedWithWarnings'].includes(models.status.qualification.state) &&
+    ['backendLoaded', 'inferenceGenerated', 'manuallyListened', 'trainingCompleted'].includes(
+      models.status.qualification.finalLevel,
+    ),
+  );
   const trainingActive = Boolean(
     models.status.activeTrainingJob &&
     !['cancelled', 'completed', 'failed', 'interrupted'].includes(
@@ -81,7 +91,17 @@ export function VoiceModelPage({
       )
     )
       return Promise.resolve(null);
-    return models.startTraining(profileId, selectedSnapshotId, trainingConfiguration);
+    return models.startTraining(
+      profileId,
+      selectedSnapshotId,
+      trainingConfiguration,
+      preflightWarningsAcknowledged,
+    );
+  };
+  const createPreflight = () => {
+    if (!profileId || !selectedSnapshotId) return Promise.resolve(null);
+    setPreflightWarningsAcknowledged(false);
+    return models.createTrainingPreflight(profileId, selectedSnapshotId, trainingConfiguration);
   };
   const convert = () => {
     if (!profileId || !selectedArtifact) return Promise.resolve(null);
@@ -154,12 +174,48 @@ export function VoiceModelPage({
         busy={busy || trainingActive}
         onSave={models.saveSettings}
         onValidate={models.validateBackend}
+        profiles={models.compatibilityProfiles}
+      />
+      <BackendQualificationPanel
+        profiles={models.compatibilityProfiles}
+        selectedProfileId={
+          models.settings.seedVc?.compatibilityProfileId ?? 'seed-vc-experimental-v1'
+        }
+        qualification={models.status.qualification}
+        referenceTakes={(dataset.status.manifest?.takes ?? [])
+          .filter((take) => take.reviewStatus === 'accepted' && !take.excludeFromTraining)
+          .map((take, index) => ({
+            id: take.id,
+            label: take.promptText || `Accepted take ${index + 1}`,
+          }))}
+        active={models.status.qualificationActive}
+        busy={busy || trainingActive}
+        onRun={(referenceTakeId) => models.runQualification(profileId, referenceTakeId)}
+        onLoadSmoke={models.loadQualificationSmoke}
+        onCancel={models.cancelQualification}
+        onConfirmListening={models.confirmManualListening}
+        onSaveReport={models.saveQualificationReport}
+        onRepairIndexes={models.repairIndexes}
       />
       <TrainingConfigurationPanel
         configuration={trainingConfiguration}
-        disabled={busy || trainingActive || !profileId || !selectedSnapshotId || !backendReady}
-        onChange={setTrainingConfiguration}
+        disabled={
+          busy ||
+          trainingActive ||
+          !profileId ||
+          !selectedSnapshotId ||
+          !backendReady ||
+          !backendQualified
+        }
+        onChange={(next) => {
+          setTrainingConfiguration(next);
+          setPreflightWarningsAcknowledged(false);
+        }}
         onStart={startTraining}
+        preflight={models.status.trainingPreflight}
+        warningsAcknowledged={preflightWarningsAcknowledged}
+        onWarningsAcknowledged={setPreflightWarningsAcknowledged}
+        onPreflight={createPreflight}
       />
       <TrainingJobPanel
         job={models.status.activeTrainingJob}
@@ -200,6 +256,16 @@ export function VoiceModelPage({
             .deleteArtifact(pendingArtifactDeletion)
             .finally(() => setPendingArtifactDeletion(null));
         }}
+      />
+      <ModelPortabilityPanel
+        artifact={selectedArtifact}
+        profileId={consentActive ? profileId : null}
+        consentVersion={
+          consentActive ? (dataset.status.manifest?.consent.consentVersion ?? null) : null
+        }
+        busy={busy}
+        onExport={models.exportArtifact}
+        onImport={models.importArtifact}
       />
       <OfflineConversionPanel
         status={models.status}

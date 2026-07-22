@@ -6,6 +6,7 @@ use crate::{
         application_settings::ApplicationSettingsStore,
         presets::{PresetError, PresetStore},
     },
+    voice_dataset::controller::VoiceDatasetController,
     voice_lab::controller::VoiceLabController,
 };
 
@@ -14,6 +15,7 @@ pub struct AppState {
     preset_store: Mutex<PresetStore>,
     application_settings: Mutex<ApplicationSettingsStore>,
     voice_lab: VoiceLabController,
+    voice_dataset: VoiceDatasetController,
     audio_operation: Mutex<()>,
 }
 
@@ -22,6 +24,7 @@ impl AppState {
         controller: EngineController,
         preset_path: PathBuf,
         application_settings_path: PathBuf,
+        voice_dataset_root: PathBuf,
     ) -> Result<Self, PresetError> {
         let preset_store = PresetStore::load(preset_path)?;
         let application_settings = ApplicationSettingsStore::load(application_settings_path);
@@ -34,6 +37,8 @@ impl AppState {
             preset_store: Mutex::new(preset_store),
             application_settings: Mutex::new(application_settings),
             voice_lab: VoiceLabController::new().map_err(PresetError::Validation)?,
+            voice_dataset: VoiceDatasetController::new(voice_dataset_root)
+                .map_err(|error| PresetError::Validation(error.message))?,
             audio_operation: Mutex::new(()),
         })
     }
@@ -52,6 +57,10 @@ impl AppState {
 
     pub fn voice_lab(&self) -> &VoiceLabController {
         &self.voice_lab
+    }
+
+    pub fn voice_dataset(&self) -> &VoiceDatasetController {
+        &self.voice_dataset
     }
 
     pub fn audio_operation(&self) -> &Mutex<()> {

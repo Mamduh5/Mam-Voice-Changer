@@ -19,6 +19,43 @@ The CPAL callbacks only convert/map samples, access bounded rings, signal the DS
 worker, and update atomics. Device discovery, frontend calls, logging, locks,
 allocation, and DSP algorithms stay out of the callbacks.
 
+## Voice Dataset ownership
+
+Voice Dataset Capture is independent from live routing, DSP, application settings,
+and the temporary Voice Lab comparison session:
+
+```text
+React Dataset components
+  -> useVoiceDataset metadata/status hook
+  -> typed Tauri Dataset commands
+  -> bounded VoiceDatasetController command channel
+  -> dedicated Dataset session thread owning CPAL capture/preview streams
+  -> DatasetStorage owning voice-datasets/ JSON and WAV transactions
+
+physical microphone -> dry mono callback -> bounded ring -> capture worker
+  -> finite f32 canonicalization -> PCM24 mono 48 kHz WAV
+  -> offline quality analysis -> pending manual review
+```
+
+`AppState` holds only the controller sender and an atomic active flag; non-`Send`
+CPAL streams remain on the Dataset session thread. The shared backend audio-operation
+lock serializes starts, and Rust checks live engine, Voice Lab, and Dataset active
+flags in both directions. Frontend disabled controls are not the ownership boundary.
+
+Managed data uses its own schema-v1 profile index, manifest, consent document, raw
+masters, and derived trimmed files under `voice-datasets/`. It is not stored in
+application-settings schema v4. JSON writes use same-directory temporary and backup
+files with flush-before-rename recovery. Opaque generated IDs form every managed
+path; manifest paths are relative and validated. WAV files are complete before a
+manifest references them, while deletion removes references before files and leaves
+an explicit tombstone for partial cleanup.
+
+Quality analysis, WAV decoding/resampling, hashing, trimming, export, and JSON/file
+I/O run outside CPAL callbacks. Dataset preview opens only a selected physical output,
+has a short edge fade, and never reuses the virtual Use route. `VoiceDatasetSource`
+is a read-only iterator over accepted, non-excluded canonical files for a future
+trainer; no trainer or model runtime is present.
+
 ## External-route ownership
 
 `audio/device.rs` exposes raw input/output endpoints plus advisory direction,

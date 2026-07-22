@@ -46,6 +46,11 @@ pub fn start_engine(
     if state.voice_lab().is_audio_active() {
         return Err("Stop Voice Lab recording or preview before starting Use or Test.".to_owned());
     }
+    if state.voice_dataset().is_audio_active() {
+        return Err(
+            "Stop Voice Dataset recording or preview before starting Use or Test.".to_owned(),
+        );
+    }
     let request = match request {
         StartEngineRequest::Use {
             input_id,

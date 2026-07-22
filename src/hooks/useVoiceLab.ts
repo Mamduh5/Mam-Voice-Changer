@@ -122,6 +122,7 @@ export function useVoiceLab(enabled: boolean, liveParameters: AudioParameters) {
     [run],
   );
   const stopPreview = useCallback(() => run(tauriAudioApi.stopVoiceLabPreview), [run]);
+  const stopAudio = useCallback(() => run(tauriAudioApi.stopVoiceLabAudio), [run]);
   const exportWav = useCallback(async (version: VoiceLabClipVersion) => {
     const path = await save({
       defaultPath: `mam-voice-lab-${version}.wav`,
@@ -161,6 +162,7 @@ export function useVoiceLab(enabled: boolean, liveParameters: AudioParameters) {
     render,
     preview,
     stopPreview,
+    stopAudio,
     exportWav,
     clear,
   };

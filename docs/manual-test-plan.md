@@ -127,6 +127,61 @@ For Low latency, Balanced, and Reliable:
 9. Navigate away during recording and preview. Confirm Lab audio stops, the source remains available on return, and Clear drops both original and processed buffers.
 10. Confirm no model download, voice-cloning, training, embedding, neural inference, cloud request, or realtime AI conversion occurs.
 
+## K. Voice Dataset Capture Phase 2
+
+Run with a consenting test speaker and headphones. Record the exact microphone,
+preview output, file formats, profile health, quality values, and any filesystem
+errors. Do not mark audible quality passed without listening.
+
+1. Launch the application.
+2. Open **Voice Lab → Dataset**.
+3. Create a profile.
+4. Confirm consent is required.
+5. Confirm recording cannot begin before consent.
+6. Select the physical microphone.
+7. Record a normal prompted phrase.
+8. Stop and review it.
+9. Listen through headphones.
+10. Inspect waveform and quality measurements.
+11. Accept the take.
+12. Record a deliberately clipped take.
+13. Confirm the clipping warning.
+14. Reject or redo it.
+15. Record a take with long leading silence.
+16. Test automatic trim.
+17. Compare raw and trimmed versions.
+18. Accept the trimmed version.
+19. Import a stereo 44.1 kHz WAV.
+20. Confirm canonical mono 48 kHz PCM24 conversion and pending status.
+21. Import the same WAV again.
+22. Confirm exact-duplicate detection.
+23. Navigate away during recording.
+24. Confirm unfinished audio is discarded.
+25. Return to Dataset.
+26. Confirm finalized takes remain.
+27. Start Test.
+28. Confirm Dataset recording is blocked.
+29. Stop Test.
+30. Start Dataset preview.
+31. Confirm Use and Voice Lab audio are blocked.
+32. Export the accepted dataset.
+33. Inspect manifest, consent, prompt pack, README, and relative audio paths.
+34. Confirm rejected, pending, excluded, and recorded-consent takes are excluded by default.
+35. Restart the application.
+36. Confirm the profile and accepted takes restore.
+37. Delete one take.
+38. Delete the complete profile.
+39. Confirm managed files are removed or an exact partial-deletion error is shown.
+40. Confirm exported copies remain and the UI explains that they require separate deletion.
+
+Additional cases: no microphone; microphone removal during recording; preview-device
+removal; forced ring overflow; a sub-one-second take; excessive background noise;
+a WAV with DC offset; invalid/compressed/empty WAV; corrupt manifest; missing take
+file; interrupted `.tmp`/`.bak` write; partial deletion under an external file lock;
+unsupported future schema; a custom non-ASCII prompt; optional recorded consent and
+separate deletion; failed-take override acknowledgement; import batch bound; export
+cancellation/failure cleanup; and a long collection session with many takes.
+
 ## Manual record
 
 ### Previously performed on 2026-07-18
@@ -149,3 +204,6 @@ For Low latency, Balanced, and Reliable:
 - Discord, OBS, browser, and another receiving-app route when a real virtual pair is available.
 - Voice Lab microphone capture, Windows open/save dialogs, audible A/B alignment and quality,
   looping, explicit export/re-import, live isolation, and memory-clear behavior in section J.
+- All Voice Dataset hardware, audible, dialog, restart, device-removal, export inspection,
+  partial-deletion, and long-session cases in section K. Phase 2 automated checks use generated
+  audio/metadata only and are not evidence that these manual cases passed.

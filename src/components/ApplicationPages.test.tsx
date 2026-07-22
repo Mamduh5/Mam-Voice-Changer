@@ -349,6 +349,7 @@ describe('application pages', () => {
         onRender={action}
         onPreview={action}
         onStopPreview={action}
+        onStopAudio={action}
         onSavePreset={action}
         onApplyLive={action}
         onExport={action}

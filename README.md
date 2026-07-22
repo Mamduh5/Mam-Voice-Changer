@@ -34,6 +34,11 @@ independent local monitor is available only on Test and defaults off.
 - An isolated, memory-bounded Voice Lab for recording or importing up to 15 seconds,
   offline rendering through the existing DSP, latency-aligned A/B preview and loop,
   non-selecting preset development, explicit live apply, and explicit WAV export
+- A separate persistent Voice Dataset workspace under Voice Lab with explicit
+  consent, original project prompts, dry bounded recording, WAV import and
+  canonical PCM24 mono 48 kHz conversion, deterministic quality reports,
+  manual accept/reject/redo, non-destructive silence trimming, progress,
+  local physical-output preview, deletion/recovery, and explicit directory export
 - Browser-safe frontend boundary when Vite is opened outside Tauri
 
 Built-in presets may be applied or duplicated, but they cannot be renamed or
@@ -46,8 +51,10 @@ user preset falls back to `Natural`.
 
 Device-independent Rust tests cover presets, application-settings migration,
 routing fan-out, reliability profiles, the expander, concealment, counters, and
-bounded recovery policy. Frontend tests cover device selection, the three pages,
-monitoring safety, navigation, and diagnostics. These are descriptions of test
+bounded recovery policy. Dataset tests cover consent gates, versioned storage,
+safe paths, hashes, canonical WAV ingestion, quality heuristics, review statistics,
+export filtering, deletion, and health reporting. Frontend tests cover device selection,
+application pages, monitoring safety, navigation, diagnostics, and Dataset states. These are descriptions of test
 coverage, not a claim that the commands below passed in the current checkout.
 
 ### Manual validation completed
@@ -59,7 +66,7 @@ and limitations of that session are recorded in the
 
 ### Manual validation still required
 
-Preset workflows across a real application restart, continuous monitored audio,
+Preset and Dataset workflows across a real application restart, continuous monitored audio,
 virtual-device routing, repeated start/stop and disconnection recovery,
 long-duration stability, and Discord/OBS/TikTok Live Studio compatibility remain pending. A
 planned compatibility milestone is manual validation work, not evidence that the
@@ -67,7 +74,7 @@ corresponding application features are absent.
 
 ### Deferred functionality
 
-Resampling unsupported Voice Lab rates, AI/neural voice conversion, model training,
+Resampling unsupported Voice Lab comparison rates, AI/neural voice conversion, model training,
 speaker embeddings, voice cloning, custom virtual audio drivers, cloud processing,
 accounts, telemetry, and non-Windows platforms are not part of the current prototype.
 
@@ -141,6 +148,9 @@ monitoring levels.
 - [Audio routing](docs/audio-routing.md)
 - [External-routing implementation note](docs/external-routing-implementation-note.md)
 - [Voice Lab Phase 1 design](docs/voice-lab-phase-1-design.md)
+- [Voice Dataset Phase 2 design](docs/voice-dataset-phase-2-design.md)
+- [Voice Dataset Phase 2 implementation note](docs/voice-dataset-phase-2-implementation-note.md)
+- [Privacy and consent boundary](docs/privacy.md)
 - [Prototype scope](docs/prototype-scope.md)
 - [Manual test plan](docs/manual-test-plan.md)
 - [Troubleshooting](docs/troubleshooting.md)
@@ -161,4 +171,8 @@ monitoring levels.
   model. Extreme pitch/formant combinations can still sound synthetic.
 - Compatibility and subjective listening quality have not been established by
   compile-time checks.
+- Dataset quality and SNR values are heuristics. Dataset collection does not clone
+  a voice, train a model, or establish that a profile can reproduce a speaker.
+- Dataset files are local plaintext in application-managed storage. Explicit
+  exports are outside application management and must be deleted separately.
 

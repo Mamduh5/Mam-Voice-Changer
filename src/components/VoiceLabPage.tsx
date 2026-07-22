@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useVoiceDataset } from '../hooks/useVoiceDataset';
 import type { AudioDevice } from '../types/audio';
 import type { AudioParameters } from '../types/parameters';
 import type { PresetCatalog } from '../types/presets';
 import type { VoiceLabClipSummary, VoiceLabClipVersion, VoiceLabStatus } from '../types/voiceLab';
 import { DeviceSelector } from './DeviceSelector';
 import { DspControls } from './DspControls';
+import { VoiceDatasetPage } from './voice-dataset/VoiceDatasetPage';
 
 type Props = {
   inputs: AudioDevice[];
@@ -31,6 +33,7 @@ type Props = {
     looping: boolean,
   ) => Promise<boolean>;
   onStopPreview: () => Promise<boolean>;
+  onStopAudio: () => Promise<boolean>;
   onSavePreset: (name: string, parameters: AudioParameters) => Promise<boolean>;
   onApplyLive: (parameters: AudioParameters) => Promise<boolean>;
   onExport: (version: VoiceLabClipVersion) => Promise<boolean>;
@@ -68,6 +71,8 @@ function selectedDevice(devices: AudioDevice[], id: string) {
 }
 
 export function VoiceLabPage(props: Props) {
+  const [section, setSection] = useState<'compare' | 'dataset'>('compare');
+  const dataset = useVoiceDataset(section === 'dataset' && !props.disabled);
   const [inputSelection, setInputSelection] = useState('');
   const [outputSelection, setOutputSelection] = useState('');
   const [looping, setLooping] = useState(false);
@@ -92,8 +97,52 @@ export function VoiceLabPage(props: Props) {
     ? Math.min(100, (props.status.preview.positionMs / props.status.preview.durationMs) * 100)
     : 0;
 
+  if (section === 'dataset') {
+    return (
+      <div className="page-stack">
+        <nav className="voice-lab-sections" aria-label="Voice Lab sections">
+          <button
+            type="button"
+            onClick={() => {
+              void dataset.stopPreview();
+              setSection('compare');
+            }}
+          >
+            Compare
+          </button>
+          <button type="button" className="active" aria-current="page">
+            Dataset
+          </button>
+        </nav>
+        <VoiceDatasetPage
+          dataset={dataset}
+          inputs={props.inputs}
+          outputs={props.outputs}
+          defaultInputId={props.defaultInputId}
+          defaultOutputId={props.defaultOutputId}
+          disabled={props.disabled}
+          liveActive={props.liveActive}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="page-stack voice-lab-page">
+      <nav className="voice-lab-sections" aria-label="Voice Lab sections">
+        <button type="button" className="active" aria-current="page">
+          Compare
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void props.onStopAudio();
+            setSection('dataset');
+          }}
+        >
+          Dataset
+        </button>
+      </nav>
       <section className="card voice-lab-intro">
         <div>
           <p className="eyebrow">Isolated offline workspace</p>

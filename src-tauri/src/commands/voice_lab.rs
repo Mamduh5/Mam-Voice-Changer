@@ -37,6 +37,11 @@ pub fn start_voice_lab_capture(
         .lock()
         .map_err(|_| "Audio operations are temporarily unavailable.".to_owned())?;
     ensure_live_engine_stopped(&state)?;
+    if state.voice_dataset().is_audio_active() {
+        return Err(
+            "Stop Voice Dataset recording or preview before starting Voice Lab audio.".to_owned(),
+        );
+    }
     state.voice_lab().start_capture(input_id, input_name)
 }
 
@@ -79,6 +84,11 @@ pub fn start_voice_lab_preview(
         .lock()
         .map_err(|_| "Audio operations are temporarily unavailable.".to_owned())?;
     ensure_live_engine_stopped(&state)?;
+    if state.voice_dataset().is_audio_active() {
+        return Err(
+            "Stop Voice Dataset recording or preview before starting Voice Lab audio.".to_owned(),
+        );
+    }
     state
         .voice_lab()
         .start_preview(version, output_id, output_name, looping)

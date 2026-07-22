@@ -11,6 +11,17 @@ import type { EngineStatus } from '../types/engine';
 import type { AudioParameters } from '../types/parameters';
 import type { PresetCatalog } from '../types/presets';
 import type { VoiceLabClipVersion, VoiceLabStatus } from '../types/voiceLab';
+import type {
+  CreateVoiceProfileRequest,
+  DatasetExportOptions,
+  PromptPack,
+  PromptSelection,
+  ReviewTakeRequest,
+  SelectedTakeVersion,
+  UpdateVoiceProfileRequest,
+  VoiceDatasetStatus,
+  VoiceProfileSummary,
+} from '../types/voiceDataset';
 
 export type StartAudioRequest =
   | {
@@ -98,4 +109,61 @@ export const tauriAudioApi = {
   exportVoiceLabWav: (version: VoiceLabClipVersion, path: string) =>
     invokeDesktop<void>('export_voice_lab_wav', { version, path }),
   clearVoiceLab: () => invokeDesktop<VoiceLabStatus>('clear_voice_lab'),
+  listVoiceProfiles: () => invokeDesktop<VoiceProfileSummary[]>('list_voice_profiles'),
+  createVoiceProfile: (request: CreateVoiceProfileRequest) =>
+    invokeDesktop<VoiceDatasetStatus>('create_voice_profile', { request }),
+  readVoiceProfile: (profileId: string) =>
+    invokeDesktop<VoiceDatasetStatus>('read_voice_profile', { profileId }),
+  updateVoiceProfile: (profileId: string, request: UpdateVoiceProfileRequest) =>
+    invokeDesktop<VoiceDatasetStatus>('update_voice_profile', { profileId, request }),
+  deleteVoiceProfile: (profileId: string) =>
+    invokeDesktop<VoiceDatasetStatus>('delete_voice_profile', { profileId }),
+  getVoiceDatasetStatus: () => invokeDesktop<VoiceDatasetStatus>('get_voice_dataset_status'),
+  listDatasetPrompts: () => invokeDesktop<PromptPack>('list_dataset_prompts'),
+  selectDatasetPrompt: (selection: PromptSelection) =>
+    invokeDesktop<VoiceDatasetStatus>('select_dataset_prompt', { selection }),
+  startDatasetRecording: (inputId: string, inputName: string, recordedConsent = false) =>
+    invokeDesktop<VoiceDatasetStatus>('start_dataset_recording', {
+      inputId,
+      inputName,
+      recordedConsent,
+    }),
+  stopDatasetRecording: () => invokeDesktop<VoiceDatasetStatus>('stop_dataset_recording'),
+  discardCurrentDatasetTake: () =>
+    invokeDesktop<VoiceDatasetStatus>('discard_current_dataset_take'),
+  importDatasetWavs: (paths: string[], selection: PromptSelection) =>
+    invokeDesktop<VoiceDatasetStatus>('import_dataset_wavs', { paths, selection }),
+  reviewDatasetTake: (profileId: string, takeId: string, request: ReviewTakeRequest) =>
+    invokeDesktop<VoiceDatasetStatus>('review_dataset_take', { profileId, takeId, request }),
+  setDatasetTrim: (takeId: string, startFrame: number, endFrame: number) =>
+    invokeDesktop<VoiceDatasetStatus>('set_dataset_trim', { takeId, startFrame, endFrame }),
+  autoTrimDatasetTake: (takeId: string) =>
+    invokeDesktop<VoiceDatasetStatus>('auto_trim_dataset_take', { takeId }),
+  applyDatasetTrim: () => invokeDesktop<VoiceDatasetStatus>('apply_dataset_trim'),
+  resetDatasetTrim: (takeId: string) =>
+    invokeDesktop<VoiceDatasetStatus>('reset_dataset_trim', { takeId }),
+  previewDatasetTake: (
+    takeId: string,
+    version: SelectedTakeVersion,
+    outputId: string,
+    outputName: string,
+    seekMs = 0,
+  ) =>
+    invokeDesktop<VoiceDatasetStatus>('preview_dataset_take', {
+      takeId,
+      version,
+      outputId,
+      outputName,
+      seekMs,
+    }),
+  pauseDatasetPreview: () => invokeDesktop<VoiceDatasetStatus>('pause_dataset_preview'),
+  stopDatasetPreview: () => invokeDesktop<VoiceDatasetStatus>('stop_dataset_preview'),
+  deleteDatasetTake: (takeId: string) =>
+    invokeDesktop<VoiceDatasetStatus>('delete_dataset_take', { takeId }),
+  exportVoiceDataset: (destination: string, options: DatasetExportOptions) =>
+    invokeDesktop<string>('export_voice_dataset', { destination, options }),
+  repairVoiceProfile: (profileId: string) =>
+    invokeDesktop<VoiceDatasetStatus>('repair_voice_profile', { profileId }),
+  leaveVoiceDataset: () => invokeDesktop<void>('leave_voice_dataset'),
+  clearVoiceDatasetError: () => invokeDesktop<VoiceDatasetStatus>('clear_voice_dataset_error'),
 };

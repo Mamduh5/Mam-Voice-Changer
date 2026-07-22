@@ -793,6 +793,227 @@ select {
   color: #f1c69d;
 }
 
+.voice-lab-sections {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid #3a2c4b;
+  border-radius: 12px;
+  background: #15101e;
+}
+
+.voice-lab-sections button,
+.dataset-filters button {
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 8px;
+  color: #aaa0b8;
+  background: transparent;
+  cursor: pointer;
+}
+
+.voice-lab-sections button.active,
+.dataset-filters button.active {
+  color: #fff;
+  background: #563080;
+}
+
+.dataset-safety,
+.dataset-empty {
+  padding: 16px;
+  border: 1px solid #386b4c;
+  border-radius: 14px;
+  color: #b8e3ca;
+  background: #193024;
+  line-height: 1.5;
+}
+
+.dataset-empty {
+  border-color: #4a3861;
+  color: #d8c5f4;
+  background: #21182c;
+}
+
+.dataset-empty h3 {
+  margin: 0;
+}
+
+.dataset-consent,
+.dataset-profile-list,
+.dataset-profile-editor,
+.dataset-progress,
+.dataset-recorder,
+.dataset-takes,
+.dataset-review,
+.dataset-transfer {
+  display: grid;
+  gap: 16px;
+}
+
+.dataset-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dataset-wide {
+  grid-column: 1 / -1;
+}
+
+.dataset-form-grid input,
+.dataset-form-grid textarea,
+.dataset-custom-prompt input,
+.dataset-review textarea,
+.dataset-trim-controls input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #403052;
+  border-radius: 10px;
+  color: #f4f1ff;
+  background: #20172c;
+}
+
+textarea {
+  min-height: 72px;
+  resize: vertical;
+  font: inherit;
+}
+
+.dataset-consent-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  line-height: 1.45;
+}
+
+.dataset-consent-check input {
+  width: 17px;
+  height: 17px;
+  accent-color: #9c5cf3;
+}
+
+.dataset-profile-buttons,
+.dataset-take-buttons {
+  display: grid;
+  gap: 8px;
+}
+
+.dataset-profile-buttons button,
+.dataset-take-buttons button {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid #3a2c4b;
+  border-radius: 10px;
+  color: #eee7f8;
+  background: #20172c;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dataset-profile-buttons button.active,
+.dataset-take-buttons button.active {
+  border-color: #a86cf5;
+  background: #2d1d42;
+}
+
+.dataset-metrics,
+.dataset-quality-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dataset-metrics > div,
+.dataset-quality-metrics > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #20172c;
+}
+
+.dataset-metrics strong {
+  font-size: 20px;
+}
+
+.dataset-goal,
+.dataset-recording-meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #2a2036;
+}
+
+.dataset-goal span,
+.dataset-recording-meter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #7650ed, #ef5fa3);
+}
+
+.dataset-prompt-display {
+  padding: 18px;
+  border: 1px solid #4a3861;
+  border-radius: 14px;
+  background: #0f0b16;
+}
+
+.dataset-prompt-display blockquote,
+.dataset-review blockquote {
+  margin: 14px 0;
+  color: #f4f1ff;
+  font-size: 22px;
+  line-height: 1.45;
+}
+
+.dataset-custom-prompt,
+.dataset-trim-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.dataset-recording-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.dataset-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dataset-quality {
+  padding: 16px;
+  border: 1px solid #386b4c;
+  border-radius: 12px;
+  background: #193024;
+}
+
+.dataset-quality.warning {
+  border-color: #815734;
+  background: #312114;
+}
+
+.dataset-quality.fail {
+  border-color: #78324f;
+  background: #3b1424;
+}
+
+.dataset-quality ul {
+  padding-left: 22px;
+  line-height: 1.5;
+}
+
+.dataset-quality code {
+  color: #d8c5f4;
+}
+
 footer {
   padding: 24px;
   color: #756b84;
@@ -818,6 +1039,14 @@ footer {
   .voice-lab-device-grid,
   .voice-lab-preset-grid,
   .voice-lab-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .dataset-form-grid,
+  .dataset-metrics,
+  .dataset-quality-metrics,
+  .dataset-custom-prompt,
+  .dataset-trim-controls {
     grid-template-columns: 1fr;
   }
 

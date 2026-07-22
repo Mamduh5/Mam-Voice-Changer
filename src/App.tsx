@@ -208,6 +208,7 @@ export default function App() {
           onRender={voiceLab.render}
           onPreview={voiceLab.preview}
           onStopPreview={voiceLab.stopPreview}
+          onStopAudio={voiceLab.stopAudio}
           onSavePreset={presets.saveVoiceLab}
           onApplyLive={audioParameters.applySnapshot}
           onExport={voiceLab.exportWav}

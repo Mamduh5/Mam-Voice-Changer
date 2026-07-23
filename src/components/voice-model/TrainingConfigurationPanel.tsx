@@ -94,7 +94,7 @@ export function TrainingConfigurationPanel({
         </label>
       </div>
       <p>More steps do not guarantee better voice quality or target similarity.</p>
-      <div className="voice-lab-actions">
+      <div className="workspace-primary-actions" aria-label="Training actions">
         <button type="button" disabled={disabled} onClick={() => void onPreflight()}>
           Review training preflight
         </button>

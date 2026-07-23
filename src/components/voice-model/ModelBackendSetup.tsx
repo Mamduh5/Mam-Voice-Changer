@@ -164,7 +164,7 @@ export function ModelBackendSetup({
           </select>
         </label>
       </div>
-      <div className="voice-lab-actions">
+      <div className="workspace-primary-actions" aria-label="Backend validation actions">
         <button
           type="button"
           disabled={busy}

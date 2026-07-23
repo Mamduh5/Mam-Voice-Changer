@@ -157,54 +157,56 @@ export function TakeReview({
       <TakeQualityPanel
         report={version === 'trimmed' && take.trim ? take.trim.derivedQuality : take.quality}
       />
-      <div className="dataset-trim-controls">
-        <strong>Non-destructive silence trimming</strong>
-        <label>
-          Start frame
-          <input
-            type="number"
-            min="0"
-            max={take.frameCount - 1}
-            value={trimStart}
-            onChange={(event) => setTrimStart(Number(event.target.value))}
-          />
-        </label>
-        <label>
-          End frame
-          <input
-            type="number"
-            min="1"
-            max={take.frameCount}
-            value={trimEnd}
-            onChange={(event) => setTrimEnd(Number(event.target.value))}
-          />
-        </label>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={async () => {
-            if (await onAutoTrim(take.id)) void onApplyTrim();
-          }}
-        >
-          Auto-detect trim
-        </button>
-        <button
-          type="button"
-          disabled={busy || trimStart >= trimEnd}
-          onClick={async () => {
-            if (await onSetTrim(take.id, trimStart, trimEnd)) void onApplyTrim();
-          }}
-        >
-          Apply trimmed version
-        </button>
-        <button
-          type="button"
-          disabled={busy || !take.derivedFile}
-          onClick={() => void onResetTrim(take.id)}
-        >
-          Reset trimming
-        </button>
-      </div>
+      <details className="advanced-section">
+        <summary>Advanced trimming values</summary>
+        <div className="dataset-trim-controls">
+          <label>
+            Start frame
+            <input
+              type="number"
+              min="0"
+              max={take.frameCount - 1}
+              value={trimStart}
+              onChange={(event) => setTrimStart(Number(event.target.value))}
+            />
+          </label>
+          <label>
+            End frame
+            <input
+              type="number"
+              min="1"
+              max={take.frameCount}
+              value={trimEnd}
+              onChange={(event) => setTrimEnd(Number(event.target.value))}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              if (await onAutoTrim(take.id)) void onApplyTrim();
+            }}
+          >
+            Auto-detect trim
+          </button>
+          <button
+            type="button"
+            disabled={busy || trimStart >= trimEnd}
+            onClick={async () => {
+              if (await onSetTrim(take.id, trimStart, trimEnd)) void onApplyTrim();
+            }}
+          >
+            Apply trimmed version
+          </button>
+          <button
+            type="button"
+            disabled={busy || !take.derivedFile}
+            onClick={() => void onResetTrim(take.id)}
+          >
+            Reset trimming
+          </button>
+        </div>
+      </details>
       <label className="dataset-consent-check">
         <input
           type="checkbox"
@@ -221,7 +223,7 @@ export function TakeReview({
           onChange={(event) => setNotes(event.target.value)}
         />
       </label>
-      <div className="voice-lab-actions">
+      <div className="workspace-primary-actions" aria-label="Take review actions">
         <button type="button" className="start" disabled={busy} onClick={() => review('accepted')}>
           Accept take
         </button>

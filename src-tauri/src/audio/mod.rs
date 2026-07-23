@@ -5,6 +5,7 @@ pub mod dropout_concealment;
 pub mod external_route;
 pub mod input_stream;
 pub mod metrics;
+pub mod offline_resampler;
 pub mod output_stream;
 pub mod reliability;
 pub mod ring_buffer;

@@ -1,11 +1,15 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use serde::Serialize;
 
 pub const MAX_CLIP_SECONDS: usize = 15;
 pub const SUPPORTED_SAMPLE_RATES: [u32; 2] = [44_100, 48_000];
 const WAVEFORM_BUCKETS: usize = 96;
+static CLIP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug)]
 pub struct AudioClip {
+    pub id: String,
     pub source_name: String,
     pub sample_rate: u32,
     pub channels: usize,
@@ -50,6 +54,10 @@ impl AudioClip {
             return Err("The clip contains invalid audio samples.".to_owned());
         }
         Ok(Self {
+            id: format!(
+                "lab-clip-{:016x}",
+                CLIP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ),
             source_name: source_name.into(),
             sample_rate,
             channels,

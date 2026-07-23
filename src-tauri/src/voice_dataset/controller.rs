@@ -21,7 +21,7 @@ use super::{
     error::{DatasetError, DatasetErrorCode, DatasetResult},
     hash::sha256_samples,
     import::{
-        self, read_canonical_wav, resample_linear, write_canonical_wav, CANONICAL_SAMPLE_RATE,
+        self, read_canonical_wav, resample_to_canonical, write_canonical_wav, CANONICAL_SAMPLE_RATE,
     },
     manifest::VoiceDatasetManifestV1,
     preview::DatasetPreviewHandle,
@@ -820,7 +820,7 @@ impl VoiceDatasetSession {
         let canonical = if sample_rate == CANONICAL_SAMPLE_RATE {
             samples
         } else {
-            resample_linear(&samples, sample_rate, CANONICAL_SAMPLE_RATE)
+            resample_to_canonical(&samples, sample_rate, DATASET_MAX_TAKE_SECONDS)?
         };
         let mut quality = analyze_take(&canonical, CANONICAL_SAMPLE_RATE, metrics);
         if limit_reached {

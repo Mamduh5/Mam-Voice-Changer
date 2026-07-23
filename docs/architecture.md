@@ -260,3 +260,46 @@ clamp covers numerical and live-ceiling edge cases while the limiter is enabled.
 This is a digital peak boundary only. It does not guarantee safe acoustic volume
 or prevent feedback elsewhere in the physical monitoring path.
 
+## Phase 4.1 preview, profile, and workspace boundaries
+
+Voice Lab preview owns a single prepared-buffer cache keyed by source clip ID,
+selected output device ID, negotiated rate, channels, and sample format. Playback
+negotiation inspects supported configurations on the explicitly selected device,
+preferring 48 kHz, its default rate, then another valid rate. Preparation invokes
+the shared offline linear converter before stream construction. CPAL callbacks
+never allocate, block, or resample.
+
+```text
+Rust-owned original or processed clip
+  -> selected-device capability negotiation
+  -> bounded offline preview preparation
+  -> prepared mono buffer at the output rate
+  -> output channel/sample-format mapping in the CPAL callback
+```
+
+The source clips are immutable during preparation. Original/processed switching
+maps the playback cursor by elapsed seconds, and looping restarts at frame zero of
+the prepared buffer. Clip replacement, processing, output-device/rate changes,
+source changes, and session clear invalidate or miss the cache.
+
+The offline converter is also the canonical Dataset import/capture conversion
+seam. It is intentionally not reachable from `AudioController`, Use, Test, or the
+external virtual route.
+
+Frontend profile ownership is centralized in `useVoiceProfiles`. It validates a
+persisted opaque ID against the current healthy profile list, clears deletion, and
+provides consent, health, storage, Dataset, and model-dependency summaries.
+Dataset and Models receive that same service and selected ID:
+
+```text
+Profiles workspace -> shared selected profile
+                         |-> Dataset collection
+                         `-> Models snapshots/training/artifacts
+```
+
+Voice Lab renders one of Compare, Profiles, Dataset, or Models beneath a persistent
+secondary tab list. Workspaces use responsive master-detail grids, one primary
+page scroll, sticky desktop sidebars/actions, a compact narrow action region, and
+collapsed advanced diagnostics. This navigation does not alter live routing,
+training lifecycle, persistence schemas, or artifact protocols.
+

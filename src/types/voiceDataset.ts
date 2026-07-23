@@ -1,12 +1,13 @@
-export const VOICE_DATASET_CONSENT_VERSION = 'voice-dataset-consent-v1';
+import type { VoiceProfileMetadata } from './voiceProfile';
 
-export type ProfileHealth =
-  | 'healthy'
-  | 'needsRepair'
-  | 'missingFiles'
-  | 'orphanedFiles'
-  | 'unsupportedSchema'
-  | 'corruptManifest';
+export { VOICE_DATASET_CONSENT_VERSION } from './voiceProfile';
+export type {
+  CreateVoiceProfileRequest,
+  ProfileHealth,
+  UpdateVoiceProfileRequest,
+  VoiceProfileMetadata,
+  VoiceProfileSummary,
+} from './voiceProfile';
 export type PromptCategory =
   | 'neutralStatement'
   | 'question'
@@ -23,37 +24,6 @@ export type TakeSource = 'recorded' | 'imported' | 'recordedConsent';
 export type TakeReviewStatus = 'pending' | 'accepted' | 'rejected' | 'needsRedo' | 'deleting';
 export type SelectedTakeVersion = 'raw' | 'trimmed';
 export type QualityClassification = 'pass' | 'warning' | 'fail';
-
-export type VoiceProfileMetadata = {
-  id: string;
-  displayName: string;
-  description: string | null;
-  primaryLanguage: string;
-  localeTag: string | null;
-  collectionGoalMinutes: number | null;
-  createdAt: string;
-  updatedAt: string;
-};
-export type VoiceProfileSummary = {
-  profile: VoiceProfileMetadata;
-  health: ProfileHealth;
-  managedStorageBytes: number;
-};
-export type CreateVoiceProfileRequest = {
-  displayName: string;
-  description: string | null;
-  primaryLanguage: string;
-  localeTag: string | null;
-  collectionGoalMinutes: number | null;
-  consentConfirmed: boolean;
-  confirmedByUser: boolean;
-  consentVersion: string;
-  consentNotes: string | null;
-};
-export type UpdateVoiceProfileRequest = Omit<
-  CreateVoiceProfileRequest,
-  'consentConfirmed' | 'confirmedByUser' | 'consentVersion' | 'consentNotes'
->;
 
 export type VoicePrompt = {
   id: string;

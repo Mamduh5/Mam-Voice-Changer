@@ -130,7 +130,7 @@ export function PromptRecorder({
           </span>
         )}
       </div>
-      <div className="voice-lab-actions">
+      <div className="workspace-primary-actions" aria-label="Dataset recording actions">
         {!status.recording.active ? (
           <button
             type="button"

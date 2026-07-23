@@ -14,7 +14,11 @@ use super::{
     capture::CaptureHandle,
     clip::{AudioClip, ClipSummary},
     offline::{ExistingDspOfflineProcessor, OfflineVoiceProcessor, RenderMetadata},
-    preview::PreviewHandle,
+    output_config::{negotiate_preview_output, sample_format_label},
+    preview::{
+        convert_frame_position, PreparedPreview, PreparedPreviewCache, PreviewCacheKey,
+        PreviewHandle,
+    },
     wav,
 };
 
@@ -42,6 +46,11 @@ pub struct PreviewStatus {
     pub looping: bool,
     pub position_ms: u64,
     pub duration_ms: u64,
+    pub clip_sample_rate: Option<u32>,
+    pub output_sample_rate: Option<u32>,
+    pub resampling_active: bool,
+    pub output_channels: Option<u16>,
+    pub output_sample_format: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -64,6 +73,8 @@ pub struct VoiceLabSession {
     render_metadata: Option<RenderMetadata>,
     capture: Option<CaptureHandle>,
     preview: Option<PreviewHandle>,
+    last_preview_status: Option<PreviewStatus>,
+    preview_cache: PreparedPreviewCache,
     backend: Box<dyn OfflineVoiceProcessor>,
     last_error: Option<String>,
     processed_synthetic: bool,
@@ -79,6 +90,8 @@ impl Default for VoiceLabSession {
             render_metadata: None,
             capture: None,
             preview: None,
+            last_preview_status: None,
+            preview_cache: PreparedPreviewCache::default(),
             backend: Box::<ExistingDspOfflineProcessor>::default(),
             last_error: None,
             processed_synthetic: false,
@@ -97,21 +110,22 @@ impl VoiceLabSession {
                 .as_ref()
                 .map_or(0, CaptureHandle::dropped_frames),
         };
-        let preview = self.preview.as_ref().map_or(
-            PreviewStatus {
-                active: false,
-                kind: None,
-                looping: false,
-                position_ms: 0,
-                duration_ms: 0,
+        let preview = self.preview.as_ref().map_or_else(
+            || {
+                self.last_preview_status.clone().unwrap_or(PreviewStatus {
+                    active: false,
+                    kind: None,
+                    looping: false,
+                    position_ms: 0,
+                    duration_ms: 0,
+                    clip_sample_rate: None,
+                    output_sample_rate: None,
+                    resampling_active: false,
+                    output_channels: None,
+                    output_sample_format: None,
+                })
             },
-            |preview| PreviewStatus {
-                active: true,
-                kind: Some(preview.kind.clone()),
-                looping: preview.looping,
-                position_ms: preview.position_ms(),
-                duration_ms: preview.duration_ms(),
-            },
+            |preview| preview_status(preview, true),
         );
         VoiceLabStatus {
             original: self.original_summary.clone(),
@@ -163,6 +177,8 @@ impl VoiceLabSession {
         let rendered = self.backend.render(original, parameters)?;
         self.processed_summary = Some(rendered.clip.summary());
         self.processed = Some(Arc::new(rendered.clip));
+        self.preview_cache.invalidate();
+        self.last_preview_status = None;
         self.render_metadata = Some(rendered.metadata);
         self.processed_synthetic = false;
         self.last_error = None;
@@ -176,6 +192,10 @@ impl VoiceLabSession {
         output_name: &str,
         looping: bool,
     ) -> Result<(), String> {
+        let previous_position = self
+            .preview
+            .as_ref()
+            .map(|preview| (preview.position_frame(), preview.output_sample_rate));
         self.stop_preview();
         let (kind, clip) = match version {
             ClipVersion::Original => ("original", self.original.as_ref()),
@@ -184,23 +204,55 @@ impl VoiceLabSession {
         let clip =
             Arc::clone(clip.ok_or_else(|| format!("No {kind} clip is available to preview."))?);
         let device = find_device_with_fallback(DeviceDirection::Output, output_id, output_name)
-            .map_err(|error| error.to_string())?;
-        let spec =
-            stream_config::output_spec_at_rate(&device, clip.sample_rate, LAB_STREAM_BUFFER_FRAMES)
-                .map_err(|error| error.to_string())?;
-        self.preview = Some(PreviewHandle::start(
+            .map_err(|error| format!("Voice Lab output device unavailable: {error}"))?;
+        let negotiated = negotiate_preview_output(&device, LAB_STREAM_BUFFER_FRAMES)?;
+        let key = PreviewCacheKey {
+            source_clip_id: clip.id.clone(),
+            output_device_id: output_id.to_owned(),
+            output_sample_rate: negotiated.spec.config.sample_rate.0,
+            output_channels: negotiated.spec.config.channels,
+            output_sample_format: sample_format_label(negotiated.spec.sample_format).to_owned(),
+        };
+        let prepared = if let Some(prepared) = self.preview_cache.get(&key) {
+            prepared
+        } else {
+            let prepared = PreparedPreview::prepare(&clip, negotiated.spec.config.sample_rate.0)
+                .map_err(|error| {
+                    if error.contains("resampling failed") {
+                        error
+                    } else {
+                        format!("Voice Lab preview preparation failed: {error}")
+                    }
+                })?;
+            self.preview_cache.store(key, prepared)
+        };
+        let initial_frame = previous_position.map_or(0, |(source_frame, source_rate)| {
+            convert_frame_position(
+                source_frame,
+                source_rate,
+                prepared.output_sample_rate,
+                prepared.frame_count,
+            )
+        });
+        let preview = PreviewHandle::start(
             &device,
-            &spec,
-            clip,
+            &negotiated.spec,
+            prepared,
             kind.to_owned(),
             looping,
-        )?);
+            initial_frame,
+            negotiated.sample_format_label,
+        )?;
+        self.last_preview_status = Some(preview_status(&preview, false));
+        self.preview = Some(preview);
         self.last_error = None;
         Ok(())
     }
 
     pub fn stop_preview(&mut self) {
-        self.preview = None;
+        if let Some(preview) = self.preview.take() {
+            self.last_preview_status = Some(preview_status(&preview, false));
+        }
     }
 
     pub fn export_wav(&self, version: ClipVersion, path: &Path) -> Result<(), String> {
@@ -225,6 +277,8 @@ impl VoiceLabSession {
         clip.source_name = "Synthetic model conversion".to_owned();
         self.processed_summary = Some(clip.summary());
         self.processed = Some(Arc::new(clip));
+        self.preview_cache.invalidate();
+        self.last_preview_status = None;
         self.render_metadata = None;
         self.processed_synthetic = true;
         self.last_error = None;
@@ -244,6 +298,8 @@ impl VoiceLabSession {
         self.processed_summary = None;
         self.render_metadata = None;
         self.processed_synthetic = false;
+        self.preview_cache.invalidate();
+        self.last_preview_status = None;
         self.last_error = None;
         Ok(())
     }
@@ -251,6 +307,8 @@ impl VoiceLabSession {
     fn set_original(&mut self, clip: AudioClip) {
         self.original_summary = Some(clip.summary());
         self.original = Some(Arc::new(clip));
+        self.preview_cache.invalidate();
+        self.last_preview_status = None;
         self.processed = None;
         self.processed_summary = None;
         self.render_metadata = None;
@@ -297,8 +355,23 @@ impl VoiceLabSession {
             }
         });
         if should_finish {
-            self.preview = None;
+            self.stop_preview();
         }
+    }
+}
+
+fn preview_status(preview: &PreviewHandle, active: bool) -> PreviewStatus {
+    PreviewStatus {
+        active,
+        kind: Some(preview.kind.clone()),
+        looping: preview.looping,
+        position_ms: preview.position_ms(),
+        duration_ms: preview.duration_ms(),
+        clip_sample_rate: Some(preview.source_sample_rate),
+        output_sample_rate: Some(preview.output_sample_rate),
+        resampling_active: preview.source_sample_rate != preview.output_sample_rate,
+        output_channels: Some(preview.output_channels),
+        output_sample_format: Some(preview.output_sample_format.clone()),
     }
 }
 
@@ -324,5 +397,13 @@ mod tests {
         assert!(status.processed.is_none());
         assert!(!status.capture.active);
         assert!(!status.preview.active);
+    }
+
+    #[test]
+    fn stopping_preview_is_idempotent_without_audio_hardware() {
+        let mut session = VoiceLabSession::default();
+        session.stop_preview();
+        session.stop_preview();
+        assert!(!session.status().preview.active);
     }
 }

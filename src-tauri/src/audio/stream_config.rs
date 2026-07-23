@@ -192,7 +192,7 @@ fn supported_configs(
         .collect())
 }
 
-fn stream_spec(
+pub(crate) fn stream_spec(
     range: &SupportedStreamConfigRange,
     sample_rate: u32,
     target_buffer_frames: u32,

@@ -2,6 +2,8 @@ use std::path::Path;
 
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 
+use crate::audio::offline_resampler::resample_linear_offline;
+
 use super::{
     error::{DatasetError, DatasetErrorCode, DatasetResult},
     profile::VoiceProfileMetadata,
@@ -81,7 +83,7 @@ pub fn import_wav(path: &Path) -> DatasetResult<ImportedAudio> {
     let samples = if spec.sample_rate == CANONICAL_SAMPLE_RATE {
         mono
     } else {
-        resample_linear(&mono, spec.sample_rate, CANONICAL_SAMPLE_RATE)
+        resample_to_canonical(&mono, spec.sample_rate, MAX_IMPORTED_SECONDS as usize)?
     };
     if samples.is_empty() {
         return Err(DatasetError::new(
@@ -198,21 +200,24 @@ pub fn to_mono(interleaved: &[f32], channels: usize) -> Vec<f32> {
         .collect()
 }
 
-pub fn resample_linear(samples: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {
-    if source_rate == target_rate {
-        return samples.to_vec();
-    }
-    let output_len =
-        ((samples.len() as u64 * u64::from(target_rate)) / u64::from(source_rate)) as usize;
-    (0..output_len)
-        .map(|index| {
-            let source_position = index as f64 * f64::from(source_rate) / f64::from(target_rate);
-            let left = source_position.floor() as usize;
-            let right = (left + 1).min(samples.len().saturating_sub(1));
-            let fraction = (source_position - left as f64) as f32;
-            samples[left] * (1.0 - fraction) + samples[right] * fraction
-        })
-        .collect()
+pub fn resample_to_canonical(
+    samples: &[f32],
+    source_rate: u32,
+    maximum_seconds: usize,
+) -> DatasetResult<Vec<f32>> {
+    resample_linear_offline(
+        samples,
+        usize::from(CANONICAL_CHANNELS),
+        source_rate,
+        CANONICAL_SAMPLE_RATE,
+        CANONICAL_SAMPLE_RATE as usize * maximum_seconds,
+    )
+    .map_err(|error| {
+        DatasetError::new(
+            DatasetErrorCode::UnsupportedWav,
+            format!("Offline Dataset sample-rate conversion failed: {error}."),
+        )
+    })
 }
 
 #[allow(dead_code)]
@@ -228,7 +233,7 @@ mod tests {
 
     use hound::{SampleFormat, WavSpec, WavWriter};
 
-    use super::{import_wav, resample_linear, to_mono, CANONICAL_SAMPLE_RATE};
+    use super::{import_wav, resample_to_canonical, to_mono, CANONICAL_SAMPLE_RATE};
 
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     fn path(label: &str) -> PathBuf {
@@ -242,7 +247,10 @@ mod tests {
     #[test]
     fn stereo_to_mono_and_resampling_are_offline_and_deterministic() {
         assert_eq!(to_mono(&[1.0, -1.0, 0.5, 0.5], 2), vec![0.0, 0.5]);
-        assert_eq!(resample_linear(&[0.0, 1.0], 2, 4).len(), 4);
+        assert_eq!(
+            resample_to_canonical(&[0.0, 1.0], 24_000, 1).unwrap().len(),
+            4
+        );
     }
 
     #[test]

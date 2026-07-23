@@ -120,6 +120,7 @@ const manifest: VoiceDatasetManifest = {
 };
 
 type Dataset = ComponentProps<typeof VoiceDatasetPage>['dataset'];
+type Profiles = ComponentProps<typeof VoiceDatasetPage>['profiles'];
 function dataset(
   status: VoiceDatasetStatus = {
     ...emptyVoiceDatasetStatus,
@@ -131,7 +132,6 @@ function dataset(
   },
 ): Dataset {
   return {
-    profiles: [{ profile: manifest.profile, health: 'healthy', managedStorageBytes: 1234 }],
     prompts: {
       id: 'mam-english-core',
       version: 1,
@@ -149,10 +149,6 @@ function dataset(
     status,
     busy: false,
     error: null,
-    createProfile: action,
-    selectProfile: action,
-    updateProfile: action,
-    deleteProfile: action,
     selectPrompt: action,
     record: action,
     stopRecording: action,
@@ -168,26 +164,52 @@ function dataset(
     stopPreview: action,
     deleteTake: action,
     exportDataset: action,
-    repairProfile: action,
   };
 }
 
+function profiles(selectedManifest: VoiceDatasetManifest | null = manifest): Profiles {
+  const summary = selectedManifest
+    ? { profile: selectedManifest.profile, health: 'healthy' as const, managedStorageBytes: 1234 }
+    : null;
+  return {
+    profiles: summary ? [summary] : [],
+    selectedProfileId: selectedManifest?.profile.id ?? null,
+    selectedSummary: summary,
+    status: selectedManifest
+      ? {
+          ...emptyVoiceDatasetStatus,
+          currentProfileId: selectedManifest.profile.id,
+          manifest: selectedManifest,
+        }
+      : emptyVoiceDatasetStatus,
+    manifest: selectedManifest,
+    consentActive: Boolean(selectedManifest),
+    datasetSummary: selectedManifest?.statistics ?? null,
+    modelSummary: { snapshots: 0, artifacts: 0, activeTraining: false },
+    busy: false,
+    error: null,
+    selectProfile: action,
+  } as unknown as Profiles;
+}
+
 describe('Voice Dataset workspace', () => {
-  it('renders consent, recording, review, quality, progress, import, export, and deletion controls without cloning claims', () => {
+  it('renders shared profile, recording, review, summary-first quality, and Dataset controls without embedded profile management', () => {
     const markup = renderToStaticMarkup(
       <VoiceDatasetPage
         dataset={dataset()}
+        profiles={profiles()}
         inputs={[input]}
         outputs={[output]}
         defaultInputId={input.id}
         defaultOutputId={output.id}
         disabled={false}
         liveActive={false}
+        onOpenProfiles={vi.fn()}
       />,
     );
     for (const label of [
       'Voice Dataset Capture',
-      'Consent confirmed',
+      'Consent active',
       'Collection progress',
       'Recording microphone',
       'Record phrase',
@@ -203,48 +225,52 @@ describe('Voice Dataset workspace', () => {
       'Import recordings',
       'Export dataset',
       'Delete take',
-      'Delete profile and all recordings',
-      'managed',
+      'Open Profiles',
+      'Change profile',
+      'View technical measurements',
+      'Advanced trimming values',
     ])
       expect(markup).toContain(label);
     expect(markup).toContain('does not clone a voice');
     expect(markup).not.toContain('Train model');
     expect(markup).not.toContain('clone ready');
     expect(markup).not.toContain('samples:[');
+    expect(markup).not.toContain('Create voice profile');
+    expect(markup).not.toContain('Save profile');
+    expect(markup).not.toContain('Delete profile');
   });
 
-  it('renders the empty profile and consent-required state', () => {
-    const empty = {
-      ...dataset(emptyVoiceDatasetStatus),
-      profiles: [],
-      status: emptyVoiceDatasetStatus,
-    };
+  it('renders the empty shared-profile state with only an Open Profiles action', () => {
     const markup = renderToStaticMarkup(
       <VoiceDatasetPage
-        dataset={empty}
+        dataset={dataset(emptyVoiceDatasetStatus)}
+        profiles={profiles(null)}
         inputs={[]}
         outputs={[]}
         defaultInputId=""
         defaultOutputId=""
         disabled={false}
         liveActive={false}
+        onOpenProfiles={vi.fn()}
       />,
     );
-    expect(markup).toContain('No local voice profiles');
-    expect(markup).toContain('Consent required');
-    expect(markup).toContain('Create voice profile');
+    expect(markup).toContain('Select or create a voice profile before collecting recordings.');
+    expect(markup).toContain('Open Profiles');
+    expect(markup).not.toContain('Create voice profile');
   });
 
   it('shows backend ownership blocking without requiring audio hardware', () => {
     const markup = renderToStaticMarkup(
       <VoiceDatasetPage
         dataset={dataset()}
+        profiles={profiles()}
         inputs={[input]}
         outputs={[output]}
         defaultInputId={input.id}
         defaultOutputId={output.id}
         disabled={false}
         liveActive
+        onOpenProfiles={vi.fn()}
       />,
     );
     expect(markup).toContain('Audio device busy');

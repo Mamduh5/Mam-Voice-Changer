@@ -101,51 +101,54 @@ export function BackendQualificationPanel({
           <li key={step}>{step}</li>
         ))}
       </ol>
-      <div className="support-matrix" role="region" aria-label="Backend support matrix">
-        <table>
-          <thead>
-            <tr>
-              <th>Profile</th>
-              <th>Revision</th>
-              <th>Adapter</th>
-              <th>Python</th>
-              <th>Devices / precision</th>
-              <th>Declared support</th>
-              <th>This machine</th>
-            </tr>
-          </thead>
-          <tbody>
-            {profiles.map((item) => (
-              <tr key={item.profileId}>
-                <td>{item.displayName}</td>
-                <td>
-                  {item.supportedCommitShas.length
-                    ? item.supportedCommitShas.join(', ')
-                    : 'Unpinned'}
-                </td>
-                <td>{item.workerAdapterVersion}</td>
-                <td>
-                  {item.pythonRequirement.minimumInclusive}â€“
-                  {item.pythonRequirement.maximumExclusive}
-                </td>
-                <td>
-                  {item.supportedDevices.join(', ')} / {item.supportedPrecisions.join(', ')}
-                </td>
-                <td>
-                  Training {item.capabilities.training ? 'yes' : 'no'} Â· resume{' '}
-                  {item.capabilities.resume ? 'yes' : 'no'} Â· offline inference{' '}
-                  {item.capabilities.offlineInference ? 'yes' : 'no'}
-                </td>
-                <td>
-                  {qualification?.compatibilityProfileId === item.profileId
-                    ? `${qualification.state} / ${qualification.finalLevel}`
-                    : 'Not qualified'}
-                </td>
+      <details className="advanced-section">
+        <summary>View compatibility matrix</summary>
+        <div className="support-matrix" role="region" aria-label="Backend support matrix">
+          <table>
+            <thead>
+              <tr>
+                <th>Profile</th>
+                <th>Revision</th>
+                <th>Adapter</th>
+                <th>Python</th>
+                <th>Devices / precision</th>
+                <th>Declared support</th>
+                <th>This machine</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {profiles.map((item) => (
+                <tr key={item.profileId}>
+                  <td>{item.displayName}</td>
+                  <td>
+                    {item.supportedCommitShas.length
+                      ? item.supportedCommitShas.join(', ')
+                      : 'Unpinned'}
+                  </td>
+                  <td>{item.workerAdapterVersion}</td>
+                  <td>
+                    {item.pythonRequirement.minimumInclusive}â€“
+                    {item.pythonRequirement.maximumExclusive}
+                  </td>
+                  <td>
+                    {item.supportedDevices.join(', ')} / {item.supportedPrecisions.join(', ')}
+                  </td>
+                  <td>
+                    Training {item.capabilities.training ? 'yes' : 'no'} Â· resume{' '}
+                    {item.capabilities.resume ? 'yes' : 'no'} Â· offline inference{' '}
+                    {item.capabilities.offlineInference ? 'yes' : 'no'}
+                  </td>
+                  <td>
+                    {qualification?.compatibilityProfileId === item.profileId
+                      ? `${qualification.state} / ${qualification.finalLevel}`
+                      : 'Not qualified'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
       {profile?.supportStatus === 'experimental' && (
         <div className="dataset-safety" role="status">
           Experimental profile: no verified Seed-VC commit is pinned. A profile definition is not
@@ -171,7 +174,7 @@ export function BackendQualificationPanel({
         Only an accepted, included take from the active consent profile can be selected. The source
         fixture is project-generated; the output is always labeled synthetic.
       </small>
-      <div className="voice-lab-actions">
+      <div className="workspace-primary-actions" aria-label="Backend qualification actions">
         <button
           type="button"
           className="start"
@@ -212,49 +215,54 @@ export function BackendQualificationPanel({
               {qualification.environmentFingerprint?.accelerator.selectedDevice ?? 'unknown'}
             </span>
           </div>
-          <div className="qualification-checks">
-            {qualification.completedChecks.map((check) => (
-              <div key={`${check.layer}-${check.code}`} data-check-status={check.status}>
-                <strong>{check.label}</strong>
-                <span>
-                  {check.layer} Â· {check.status}
-                </span>
-                <p>{check.message}</p>
+          <details className="advanced-section">
+            <summary>View full qualification details</summary>
+            <div className="qualification-checks">
+              {qualification.completedChecks.map((check) => (
+                <div key={`${check.layer}-${check.code}`} data-check-status={check.status}>
+                  <strong>{check.label}</strong>
+                  <span>
+                    {check.layer} Â· {check.status}
+                  </span>
+                  <p>{check.message}</p>
+                </div>
+              ))}
+            </div>
+            {qualification.environmentFingerprint && (
+              <div>
+                <h3>Relevant Python packages</h3>
+                <ul>
+                  {qualification.environmentFingerprint.packages.map((item) => (
+                    <li key={item.package}>
+                      {item.package}: {item.version ?? 'missing'}
+                    </li>
+                  ))}
+                </ul>
+                <h3>Checkpoint identity</h3>
+                <ul>
+                  {qualification.environmentFingerprint.checkpoints.map((item) => (
+                    <li key={`${item.role}-${item.displayPath}`}>
+                      {item.role}: {item.validationState} Â· SHA-256{' '}
+                      {item.contentHash ?? 'unavailable'}
+                    </li>
+                  ))}
+                </ul>
               </div>
-            ))}
-          </div>
-          {qualification.environmentFingerprint && (
-            <div>
-              <h3>Relevant Python packages</h3>
-              <ul>
-                {qualification.environmentFingerprint.packages.map((item) => (
-                  <li key={item.package}>
-                    {item.package}: {item.version ?? 'missing'}
-                  </li>
-                ))}
-              </ul>
-              <h3>Checkpoint identity</h3>
-              <ul>
-                {qualification.environmentFingerprint.checkpoints.map((item) => (
-                  <li key={`${item.role}-${item.displayPath}`}>
-                    {item.role}: {item.validationState} Â· SHA-256{' '}
-                    {item.contentHash ?? 'unavailable'}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {qualification.resources && (
-            <div className="model-metrics">
-              <span>Resource risk: {qualification.resources.riskLevel ?? 'unknown'}</span>
-              <span>Logical CPUs: {qualification.resources.logicalCpuCount ?? 'unknown'}</span>
-              <span>Free disk: {formatBytes(qualification.resources.freeDiskBytes)}</span>
-              <span>
-                Available RAM: {formatBytes(qualification.resources.availableMemoryBytes)}
-              </span>
-              <span>Available VRAM: {formatBytes(qualification.resources.availableVramBytes)}</span>
-            </div>
-          )}
+            )}
+            {qualification.resources && (
+              <div className="model-metrics">
+                <span>Resource risk: {qualification.resources.riskLevel ?? 'unknown'}</span>
+                <span>Logical CPUs: {qualification.resources.logicalCpuCount ?? 'unknown'}</span>
+                <span>Free disk: {formatBytes(qualification.resources.freeDiskBytes)}</span>
+                <span>
+                  Available RAM: {formatBytes(qualification.resources.availableMemoryBytes)}
+                </span>
+                <span>
+                  Available VRAM: {formatBytes(qualification.resources.availableVramBytes)}
+                </span>
+              </div>
+            )}
+          </details>
           {qualification.inferenceSmokeResult && (
             <div className="dataset-safety" role="status">
               Synthetic inference smoke WAV: {qualification.inferenceSmokeResult.durationMs} ms,

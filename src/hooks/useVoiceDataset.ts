@@ -3,15 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { tauriAudioApi } from '../services/tauriAudioApi';
 import {
   emptyVoiceDatasetStatus,
-  type CreateVoiceProfileRequest,
   type DatasetExportOptions,
   type PromptPack,
   type PromptSelection,
   type ReviewTakeRequest,
   type SelectedTakeVersion,
-  type UpdateVoiceProfileRequest,
   type VoiceDatasetStatus,
-  type VoiceProfileSummary,
 } from '../types/voiceDataset';
 
 function errorMessage(cause: unknown) {
@@ -19,18 +16,16 @@ function errorMessage(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function useVoiceDataset(enabled: boolean) {
-  const [profiles, setProfiles] = useState<VoiceProfileSummary[]>([]);
+export function useVoiceDataset(
+  enabled: boolean,
+  selectedProfileId: string | null,
+  onStatusChange?: (status: VoiceDatasetStatus) => void,
+) {
   const [prompts, setPrompts] = useState<PromptPack | null>(null);
   const [status, setStatus] = useState<VoiceDatasetStatus>(emptyVoiceDatasetStatus);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const active = useRef(false);
-
-  const refreshProfiles = useCallback(async () => {
-    const next = await tauriAudioApi.listVoiceProfiles();
-    if (active.current) setProfiles(next);
-  }, []);
 
   useEffect(() => {
     active.current = enabled;
@@ -42,18 +37,24 @@ export function useVoiceDataset(enabled: boolean) {
       if (refreshing) return;
       refreshing = true;
       try {
-        const nextStatus = await tauriAudioApi.getVoiceDatasetStatus();
+        let nextStatus = selectedProfileId
+          ? await tauriAudioApi.getVoiceDatasetStatus()
+          : emptyVoiceDatasetStatus;
+        if (
+          selectedProfileId &&
+          (nextStatus.currentProfileId !== selectedProfileId ||
+            nextStatus.manifest?.profile.id !== selectedProfileId)
+        ) {
+          nextStatus = await tauriAudioApi.readVoiceProfile(selectedProfileId);
+        }
         if (!cancelled) {
           setStatus(nextStatus);
           setError(nextStatus.lastError?.message ?? null);
+          onStatusChange?.(nextStatus);
         }
         if (firstRefresh) {
-          const [nextProfiles, nextPrompts] = await Promise.all([
-            tauriAudioApi.listVoiceProfiles(),
-            tauriAudioApi.listDatasetPrompts(),
-          ]);
+          const nextPrompts = await tauriAudioApi.listDatasetPrompts();
           if (!cancelled) {
-            setProfiles(nextProfiles);
             setPrompts(nextPrompts);
           }
           firstRefresh = false;
@@ -72,17 +73,17 @@ export function useVoiceDataset(enabled: boolean) {
       window.clearInterval(timer);
       void tauriAudioApi.leaveVoiceDataset().catch(() => undefined);
     };
-  }, [enabled]);
+  }, [enabled, onStatusChange, selectedProfileId]);
 
   const run = useCallback(
-    async (operation: () => Promise<VoiceDatasetStatus>, updateProfiles = false) => {
+    async (operation: () => Promise<VoiceDatasetStatus>) => {
       setBusy(true);
       try {
         const next = await operation();
         if (active.current) {
           setStatus(next);
           setError(next.lastError?.message ?? null);
-          if (updateProfiles) await refreshProfiles();
+          onStatusChange?.(next);
         }
         return true;
       } catch (cause) {
@@ -92,26 +93,7 @@ export function useVoiceDataset(enabled: boolean) {
         if (active.current) setBusy(false);
       }
     },
-    [refreshProfiles],
-  );
-
-  const createProfile = useCallback(
-    (request: CreateVoiceProfileRequest) =>
-      run(() => tauriAudioApi.createVoiceProfile(request), true),
-    [run],
-  );
-  const selectProfile = useCallback(
-    (profileId: string) => run(() => tauriAudioApi.readVoiceProfile(profileId)),
-    [run],
-  );
-  const updateProfile = useCallback(
-    (profileId: string, request: UpdateVoiceProfileRequest) =>
-      run(() => tauriAudioApi.updateVoiceProfile(profileId, request), true),
-    [run],
-  );
-  const deleteProfile = useCallback(
-    (profileId: string) => run(() => tauriAudioApi.deleteVoiceProfile(profileId), true),
-    [run],
+    [onStatusChange],
   );
   const selectPrompt = useCallback(
     (selection: PromptSelection) => run(() => tauriAudioApi.selectDatasetPrompt(selection)),
@@ -122,7 +104,7 @@ export function useVoiceDataset(enabled: boolean) {
       run(() => tauriAudioApi.startDatasetRecording(inputId, inputName, recordedConsent)),
     [run],
   );
-  const stopRecording = useCallback(() => run(tauriAudioApi.stopDatasetRecording, true), [run]);
+  const stopRecording = useCallback(() => run(tauriAudioApi.stopDatasetRecording), [run]);
   const discardRecording = useCallback(() => run(tauriAudioApi.discardCurrentDatasetTake), [run]);
   const importWavs = useCallback(
     async (selection: PromptSelection) => {
@@ -133,13 +115,13 @@ export function useVoiceDataset(enabled: boolean) {
       });
       const paths = typeof selected === 'string' ? [selected] : selected;
       if (!paths?.length) return false;
-      return run(() => tauriAudioApi.importDatasetWavs(paths, selection), true);
+      return run(() => tauriAudioApi.importDatasetWavs(paths, selection));
     },
     [run],
   );
   const reviewTake = useCallback(
     (profileId: string, takeId: string, request: ReviewTakeRequest) =>
-      run(() => tauriAudioApi.reviewDatasetTake(profileId, takeId, request), true),
+      run(() => tauriAudioApi.reviewDatasetTake(profileId, takeId, request)),
     [run],
   );
   const autoTrim = useCallback(
@@ -151,9 +133,9 @@ export function useVoiceDataset(enabled: boolean) {
       run(() => tauriAudioApi.setDatasetTrim(takeId, startFrame, endFrame)),
     [run],
   );
-  const applyTrim = useCallback(() => run(tauriAudioApi.applyDatasetTrim, true), [run]);
+  const applyTrim = useCallback(() => run(tauriAudioApi.applyDatasetTrim), [run]);
   const resetTrim = useCallback(
-    (takeId: string) => run(() => tauriAudioApi.resetDatasetTrim(takeId), true),
+    (takeId: string) => run(() => tauriAudioApi.resetDatasetTrim(takeId)),
     [run],
   );
   const preview = useCallback(
@@ -169,7 +151,7 @@ export function useVoiceDataset(enabled: boolean) {
   const pausePreview = useCallback(() => run(tauriAudioApi.pauseDatasetPreview), [run]);
   const stopPreview = useCallback(() => run(tauriAudioApi.stopDatasetPreview), [run]);
   const deleteTake = useCallback(
-    (takeId: string) => run(() => tauriAudioApi.deleteDatasetTake(takeId), true),
+    (takeId: string) => run(() => tauriAudioApi.deleteDatasetTake(takeId)),
     [run],
   );
   const exportDataset = useCallback(async (options: DatasetExportOptions) => {
@@ -187,21 +169,11 @@ export function useVoiceDataset(enabled: boolean) {
       if (active.current) setBusy(false);
     }
   }, []);
-  const repairProfile = useCallback(
-    (profileId: string) => run(() => tauriAudioApi.repairVoiceProfile(profileId), true),
-    [run],
-  );
-
   return {
-    profiles,
     prompts,
     status,
     busy,
     error,
-    createProfile,
-    selectProfile,
-    updateProfile,
-    deleteProfile,
     selectPrompt,
     record,
     stopRecording,
@@ -217,6 +189,5 @@ export function useVoiceDataset(enabled: boolean) {
     stopPreview,
     deleteTake,
     exportDataset,
-    repairProfile,
   };
 }

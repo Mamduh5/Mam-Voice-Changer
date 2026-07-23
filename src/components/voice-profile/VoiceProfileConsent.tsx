@@ -2,15 +2,16 @@ import { useState } from 'react';
 import {
   VOICE_DATASET_CONSENT_VERSION,
   type CreateVoiceProfileRequest,
-} from '../../types/voiceDataset';
+} from '../../types/voiceProfile';
 
-export function ConsentPanel({
+export function VoiceProfileConsent({
   busy,
   onCreate,
 }: {
   busy: boolean;
   onCreate: (request: CreateVoiceProfileRequest) => Promise<boolean>;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [description, setDescription] = useState('');
   const [language, setLanguage] = useState('English');
@@ -18,22 +19,32 @@ export function ConsentPanel({
   const [goal, setGoal] = useState('10');
   const [consent, setConsent] = useState(false);
 
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        className="start profile-create-trigger"
+        onClick={() => setExpanded(true)}
+      >
+        Create profile
+      </button>
+    );
+  }
   return (
-    <section className="card dataset-consent">
+    <section className="card profile-create-panel" aria-labelledby="create-profile-heading">
       <div className="section-heading">
-        <h2>Create a consenting speaker profile</h2>
-        <span>Consent required</span>
+        <h2 id="create-profile-heading">Create profile</h2>
+        <button type="button" disabled={busy} onClick={() => setExpanded(false)}>
+          Cancel
+        </button>
       </div>
       <p>
-        The target speaker must consent to visible, deliberate recording and private local use.
-        Collection does not create a cloned voice. Data stays in managed local storage until you
-        explicitly export it, and deleting the profile revokes consent inside this application.
-        Future generated speech must never be represented as an authentic recording of the speaker.
-        Consent metadata is a product safeguard, not legal verification.
+        The target speaker must consent to deliberate recording and private local use. Profile
+        metadata is a product safeguard, not legal verification.
       </p>
       <div className="dataset-form-grid">
         <label>
-          Profile display name
+          Display name
           <input
             value={displayName}
             maxLength={80}
@@ -49,7 +60,7 @@ export function ConsentPanel({
           />
         </label>
         <label>
-          Locale tag (optional)
+          Locale
           <input
             value={localeTag}
             maxLength={32}
@@ -57,7 +68,7 @@ export function ConsentPanel({
           />
         </label>
         <label>
-          Collection goal in minutes (informational)
+          Collection goal (minutes)
           <input
             type="number"
             min="1"
@@ -67,7 +78,7 @@ export function ConsentPanel({
           />
         </label>
         <label className="dataset-wide">
-          Description (optional)
+          Description
           <textarea
             value={description}
             maxLength={500}
@@ -88,8 +99,8 @@ export function ConsentPanel({
         type="button"
         className="start"
         disabled={busy || !consent || !displayName.trim() || !language.trim()}
-        onClick={() =>
-          void onCreate({
+        onClick={async () => {
+          const created = await onCreate({
             displayName,
             description: description.trim() || null,
             primaryLanguage: language,
@@ -99,10 +110,16 @@ export function ConsentPanel({
             confirmedByUser: consent,
             consentVersion: VOICE_DATASET_CONSENT_VERSION,
             consentNotes: null,
-          })
-        }
+          });
+          if (created) {
+            setDisplayName('');
+            setDescription('');
+            setConsent(false);
+            setExpanded(false);
+          }
+        }}
       >
-        Create voice profile
+        Create consenting profile
       </button>
     </section>
   );

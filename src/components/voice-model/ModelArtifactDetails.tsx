@@ -27,13 +27,16 @@ export function ModelArtifactDetails({
         Model display name
         <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} />
       </label>
-      <div className="model-metrics">
-        <span>Artifact {artifact.artifactId}</span>
-        <span>Snapshot {artifact.snapshotId}</span>
-        <span>{artifact.modelFiles.length} hash-validated model files</span>
-        <span>Consent {artifact.consentVersion}</span>
-      </div>
-      <div className="voice-lab-actions">
+      <details className="advanced-section">
+        <summary>Artifact hashes and provenance</summary>
+        <div className="model-metrics">
+          <span>Artifact {artifact.artifactId}</span>
+          <span>Snapshot {artifact.snapshotId}</span>
+          <span>{artifact.modelFiles.length} hash-validated model files</span>
+          <span>Consent {artifact.consentVersion}</span>
+        </div>
+      </details>
+      <div className="workspace-primary-actions" aria-label="Model artifact actions">
         <button
           type="button"
           disabled={busy}

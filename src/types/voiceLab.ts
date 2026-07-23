@@ -29,6 +29,11 @@ export type VoiceLabStatus = {
     looping: boolean;
     positionMs: number;
     durationMs: number;
+    clipSampleRate: number | null;
+    outputSampleRate: number | null;
+    resamplingActive: boolean;
+    outputChannels: number | null;
+    outputSampleFormat: string | null;
   };
   lastError: string | null;
   processedSynthetic: boolean;
@@ -39,7 +44,18 @@ export const emptyVoiceLabStatus: VoiceLabStatus = {
   processed: null,
   renderMetadata: null,
   capture: { active: false, droppedFrames: 0 },
-  preview: { active: false, kind: null, looping: false, positionMs: 0, durationMs: 0 },
+  preview: {
+    active: false,
+    kind: null,
+    looping: false,
+    positionMs: 0,
+    durationMs: 0,
+    clipSampleRate: null,
+    outputSampleRate: null,
+    resamplingActive: false,
+    outputChannels: null,
+    outputSampleFormat: null,
+  },
   lastError: null,
   processedSynthetic: false,
 };

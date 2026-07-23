@@ -285,7 +285,7 @@ describe('application pages', () => {
       />,
     );
 
-    expect(navigation).toContain('Settings &amp; Diagnostics');
+    expect(navigation).toContain('Settings');
     expect(navigation).toContain('Use');
     expect(navigation).toContain('Test');
     expect(navigation).toContain('Voice Lab');
@@ -319,11 +319,23 @@ describe('application pages', () => {
           original: {
             sourceName: 'dry.wav',
             durationMs: 1_000,
-            sampleRate: 48_000,
+            sampleRate: 44_100,
             channels: 1,
-            frames: 48_000,
+            frames: 44_100,
             peak: 0.5,
             waveform: [0.1, 0.5, 0.2],
+          },
+          preview: {
+            active: true,
+            kind: 'original',
+            looping: false,
+            positionMs: 500,
+            durationMs: 1_000,
+            clipSampleRate: 44_100,
+            outputSampleRate: 48_000,
+            resamplingActive: true,
+            outputChannels: 2,
+            outputSampleFormat: 'f32',
           },
         }}
         catalog={{
@@ -368,9 +380,25 @@ describe('application pages', () => {
     expect(markup).toContain('Save as new preset');
     expect(markup).toContain('Apply to live settings');
     expect(markup).toContain('Models');
+    expect(markup).toContain('Profiles');
+    expect(markup).toContain('role="tablist"');
+    expect(markup).toContain('workspace-primary-actions');
+    expect(markup).toContain('compare-master-detail');
+    expect(markup).toContain('Advanced DSP controls');
+    expect(markup).not.toContain('Voice Dataset Capture');
+    expect(markup).not.toContain('Voice Models');
+    const ids = [...markup.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(markup.match(/aria-selected="true"/g)).toHaveLength(1);
     expect(markup).toContain('Export original WAV');
     expect(markup).toContain('Export processed WAV');
     expect(markup).toContain('Clear temporary audio');
+    expect(markup).toContain('Clip rate:');
+    expect(markup).toContain('44100 Hz');
+    expect(markup).toContain('Output rate:');
+    expect(markup).toContain('48000 Hz');
+    expect(markup).toContain('Resampling active:');
+    expect(markup).toContain('Yes');
     expect(markup).toContain('not neural voice cloning');
     expect(markup).not.toContain('Train model');
     expect(markup).not.toContain('Realtime AI');

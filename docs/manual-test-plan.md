@@ -439,3 +439,45 @@ audible pass.
 - Audible/manual listening qualification: pending.
 - Another-machine package portability: pending.
 - Live Use/Test/VB-CABLE/Discord/OBS regression acceptance: pending.
+
+## Phase 4.1 preview, Profiles, and responsive UI acceptance
+
+Status for this implementation run: **pending manual execution**. Automated tests
+do not establish audible playback on the reported Realtek endpoint, native focus
+behavior, or physical window layout.
+
+### Preview error fix
+
+- Launch the app and open **Voice Lab → Compare**.
+- Select `Speaker/HP (Realtek High Definition Audio)`.
+- Record or import a 44.1 kHz clip.
+- Play Original and confirm it is audible.
+- Render a processed clip, play Processed, and confirm it is audible.
+- Confirm diagnostics show clip rate 44100, output rate 48000 (or another rate
+  actually supported by the selected device), and resampling active Yes.
+- Switch Original/Processed near the middle and confirm approximate time is
+  preserved.
+- Exercise loop, pause, seek, stop, and leaving the page.
+
+### Profiles and shared selection
+
+- Open **Voice Lab → Profiles** and create a disposable profile.
+- Confirm consent is required, then edit name, language, locale, description, and
+  collection goal.
+- Open Dataset and confirm the same profile is selected and there is no embedded
+  profile creation/editor form.
+- Open Models and confirm the same profile is selected and there is no embedded
+  profile creation/editor form.
+- Delete the disposable profile in Profiles and confirm Dataset and Models clear
+  the selection without stale data.
+
+### Layout and keyboard
+
+- Test at 1440×900, 1280×720, 1024×768, and 800×600.
+- Confirm primary actions remain reachable without scrolling to the page bottom,
+  there is no horizontal page overflow, and advanced details start collapsed.
+- Navigate workspace tabs, profile lists, collapsible sections, dialogs, and
+  primary actions by keyboard; confirm visible focus, dialog focus containment,
+  Escape close, and focus restoration.
+- Confirm Compare, Profiles, Dataset, and Models are not rendered simultaneously.
+- Confirm Use, Test, VB-CABLE pairing, and external routing behave as before.

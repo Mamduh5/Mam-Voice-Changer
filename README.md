@@ -181,9 +181,35 @@ monitoring levels.
 - [Troubleshooting](docs/troubleshooting.md)
 - [Technical stack, current structure, and roadmap](docs/Mam-Voice-Changer-Tech-Stack-and-Structure.md)
 
+## Phase 4.1: compatible previews and shared Profiles
+
+Voice Lab is organized as `Compare`, `Profiles`, `Dataset`, and `Models`
+sub-workspaces. Only the active sub-workspace is rendered. Profiles owns profile
+creation, consent, metadata, health, repair, export, and deletion; Dataset and
+Models consume the same opaque selected-profile ID and expose an **Open Profiles**
+action instead of duplicating profile management.
+
+Compare preview playback is independent of the active DSP rate. It inspects only
+the selected physical output, prefers 48 kHz, then its default rate, then another
+supported rate, and prepares a finite offline preview buffer before starting the
+CPAL stream:
+
+`Voice Lab clip rate → offline linear preview resampling → selected output-device rate → physical preview output`
+
+The original and processed clips remain unchanged. The output callback performs
+only cursor, fade, loop, and channel/sample-format mapping work. Use, Test,
+external routing, Dataset canonical audio, model files, and DSP order do not use
+this preview converter.
+
+The four Voice Lab workspaces use summary-first master-detail layouts, sticky
+primary actions, and collapsed technical details. Wide windows use sticky
+sidebars; narrow windows use a single column and horizontally scrollable workspace
+tabs.
+
 ## Known limitations
 
-- Input and output must expose a common sample rate.
+- Live Use/Test input and output must expose a common sample rate. Voice Lab
+  preview independently negotiates and prepares audio for the selected output.
 - CPAL 0.15 device IDs are deterministic friendly-name fingerprints, not WASAPI
   endpoint GUIDs; duplicate friendly names therefore remain ambiguous.
 - Virtual-device classification and automatic pairing use advisory endpoint names.
@@ -205,4 +231,8 @@ monitoring levels.
   and runtime resource fit depend on the user-prepared environment and Dataset.
 - Model output is synthetic. Managed models are disabled when profile consent is
   revoked; exported models or audio remain the user's separate responsibility.
+- The offline linear converter is deterministic and suitable for preview and
+  canonicalization, but is not claimed to be a mastering-quality resampler.
+- Realtek playback, audible A/B alignment, and responsive-window usability still
+  require the manual acceptance sequence in `docs/manual-test-plan.md`.
 

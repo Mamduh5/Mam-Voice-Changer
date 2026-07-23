@@ -95,7 +95,7 @@ export function ModelEvaluationPanel({
         />
         I listened to the synthetic conversion and completed the manual evaluation.
       </label>
-      <div className="voice-lab-actions">
+      <div className="workspace-primary-actions" aria-label="Model evaluation actions">
         <button
           type="button"
           disabled={busy || !status.latestConversion || !ratings.listeningConfirmed}

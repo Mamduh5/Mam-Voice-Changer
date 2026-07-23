@@ -49,12 +49,15 @@ export function TrainingJobPanel({
               {warning}
             </p>
           ))}
-          <div className="model-log" aria-label="Bounded worker logs">
-            {logs.slice(-25).map((line, index) => (
-              <code key={`${index}-${line}`}>{line}</code>
-            ))}
-          </div>
-          <div className="voice-lab-actions">
+          <details className="advanced-section">
+            <summary>View full worker logs</summary>
+            <div className="model-log" aria-label="Bounded worker logs">
+              {logs.slice(-25).map((line, index) => (
+                <code key={`${index}-${line}`}>{line}</code>
+              ))}
+            </div>
+          </details>
+          <div className="workspace-primary-actions" aria-label="Training job actions">
             {training.active && (
               <button
                 type="button"

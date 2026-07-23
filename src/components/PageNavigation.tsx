@@ -6,7 +6,7 @@ const pages: Array<{ id: NavigationPage; label: string }> = [
   { id: 'use', label: 'Use' },
   { id: 'test', label: 'Test' },
   { id: 'voiceLab', label: 'Voice Lab' },
-  { id: 'diagnostics', label: 'Settings & Diagnostics' },
+  { id: 'diagnostics', label: 'Settings' },
 ];
 
 export function PageNavigation({

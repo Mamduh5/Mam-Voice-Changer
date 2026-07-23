@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useVoiceDataset } from '../hooks/useVoiceDataset';
 import { useVoiceModels } from '../hooks/useVoiceModels';
+import { useVoiceProfiles } from '../hooks/useVoiceProfiles';
 import type { AudioDevice } from '../types/audio';
 import type { AudioParameters } from '../types/parameters';
 import type { PresetCatalog } from '../types/presets';
@@ -9,6 +10,7 @@ import { DeviceSelector } from './DeviceSelector';
 import { DspControls } from './DspControls';
 import { VoiceDatasetPage } from './voice-dataset/VoiceDatasetPage';
 import { VoiceModelPage } from './voice-model/VoiceModelPage';
+import { VoiceProfilesPage } from './voice-profile/VoiceProfilesPage';
 import { SyntheticAudioNotice } from './voice-model/SyntheticAudioNotice';
 
 type Props = {
@@ -60,10 +62,13 @@ function ClipCard({ title, clip }: { title: string; clip: VoiceLabClipSummary | 
         ))}
       </div>
       {clip && (
-        <small>
-          {clip.sourceName} · {clip.sampleRate.toLocaleString()} Hz ·{' '}
-          {clip.channels === 1 ? 'mono' : 'stereo'}
-        </small>
+        <details className="advanced-section clip-metadata">
+          <summary>Clip technical metadata</summary>
+          <small>
+            {clip.sourceName} · {clip.sampleRate.toLocaleString()} Hz ·{' '}
+            {clip.channels === 1 ? 'mono' : 'stereo'}
+          </small>
+        </details>
       )}
     </article>
   );
@@ -74,9 +79,17 @@ function selectedDevice(devices: AudioDevice[], id: string) {
 }
 
 export function VoiceLabPage(props: Props) {
-  const [section, setSection] = useState<'compare' | 'dataset' | 'models'>('compare');
-  const dataset = useVoiceDataset(section !== 'compare' && !props.disabled);
-  const models = useVoiceModels(section === 'models' && !props.disabled);
+  type VoiceLabSection = 'compare' | 'profiles' | 'dataset' | 'models';
+  const [section, setSection] = useState<VoiceLabSection>('compare');
+  const models = useVoiceModels(
+    (section === 'profiles' || section === 'models') && !props.disabled,
+  );
+  const profiles = useVoiceProfiles(!props.disabled, models.status);
+  const dataset = useVoiceDataset(
+    (section === 'dataset' || section === 'models') && !props.disabled,
+    profiles.selectedProfileId,
+    profiles.acceptStatus,
+  );
   const [inputSelection, setInputSelection] = useState('');
   const [outputSelection, setOutputSelection] = useState('');
   const [looping, setLooping] = useState(false);
@@ -100,25 +113,50 @@ export function VoiceLabPage(props: Props) {
   const previewPosition = props.status.preview.durationMs
     ? Math.min(100, (props.status.preview.positionMs / props.status.preview.durationMs) * 100)
     : 0;
-  const switchSection = (next: 'compare' | 'dataset' | 'models') => {
+  const sections = [
+    ['compare', 'Compare'],
+    ['profiles', 'Profiles'],
+    ['dataset', 'Dataset'],
+    ['models', 'Models'],
+  ] as const;
+  const switchSection = (next: VoiceLabSection) => {
     if (section === 'dataset') void dataset.stopPreview();
     if (section === 'compare') void props.onStopAudio();
     setSection(next);
   };
   const sectionNavigation = (
-    <nav className="voice-lab-sections" aria-label="Voice Lab sections">
-      {(
-        [
-          ['compare', 'Compare'],
-          ['dataset', 'Dataset'],
-          ['models', 'Models'],
-        ] as const
-      ).map(([id, label]) => (
+    <nav
+      className="voice-lab-sections"
+      aria-label="Voice Lab sections"
+      role="tablist"
+      onKeyDown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const current = sections.findIndex(([id]) => id === section);
+        const nextIndex =
+          event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? sections.length - 1
+              : (current + (event.key === 'ArrowRight' ? 1 : -1) + sections.length) %
+                sections.length;
+        switchSection(sections[nextIndex][0]);
+        event.currentTarget
+          .querySelectorAll<HTMLButtonElement>('[role="tab"]')
+          .item(nextIndex)
+          .focus();
+      }}
+    >
+      {sections.map(([id, label]) => (
         <button
           type="button"
+          role="tab"
+          id={`voice-lab-tab-${id}`}
+          aria-controls={`voice-lab-panel-${id}`}
+          aria-selected={section === id}
+          tabIndex={section === id ? 0 : -1}
           key={id}
           className={section === id ? 'active' : ''}
-          aria-current={section === id ? 'page' : undefined}
           onClick={() => switchSection(id)}
         >
           {label}
@@ -127,19 +165,34 @@ export function VoiceLabPage(props: Props) {
     </nav>
   );
 
+  if (section === 'profiles') {
+    return (
+      <div className="page-stack">
+        {sectionNavigation}
+        <div id="voice-lab-panel-profiles" role="tabpanel" aria-labelledby="voice-lab-tab-profiles">
+          <VoiceProfilesPage profiles={profiles} />
+        </div>
+      </div>
+    );
+  }
+
   if (section === 'dataset') {
     return (
       <div className="page-stack">
         {sectionNavigation}
-        <VoiceDatasetPage
-          dataset={dataset}
-          inputs={props.inputs}
-          outputs={props.outputs}
-          defaultInputId={props.defaultInputId}
-          defaultOutputId={props.defaultOutputId}
-          disabled={props.disabled}
-          liveActive={props.liveActive}
-        />
+        <div id="voice-lab-panel-dataset" role="tabpanel" aria-labelledby="voice-lab-tab-dataset">
+          <VoiceDatasetPage
+            dataset={dataset}
+            profiles={profiles}
+            inputs={props.inputs}
+            outputs={props.outputs}
+            defaultInputId={props.defaultInputId}
+            defaultOutputId={props.defaultOutputId}
+            disabled={props.disabled}
+            liveActive={props.liveActive}
+            onOpenProfiles={() => switchSection('profiles')}
+          />
+        </div>
       </div>
     );
   }
@@ -148,18 +201,27 @@ export function VoiceLabPage(props: Props) {
     return (
       <div className="page-stack">
         {sectionNavigation}
-        <VoiceModelPage
-          dataset={dataset}
-          models={models}
-          hasVoiceLabSource={Boolean(props.status.original)}
-          disabled={props.disabled}
-        />
+        <div id="voice-lab-panel-models" role="tabpanel" aria-labelledby="voice-lab-tab-models">
+          <VoiceModelPage
+            dataset={dataset}
+            profiles={profiles}
+            models={models}
+            hasVoiceLabSource={Boolean(props.status.original)}
+            disabled={props.disabled}
+            onOpenProfiles={() => switchSection('profiles')}
+          />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="page-stack voice-lab-page">
+    <div
+      className="page-stack voice-lab-page"
+      id="voice-lab-panel-compare"
+      role="tabpanel"
+      aria-labelledby="voice-lab-tab-compare"
+    >
       {sectionNavigation}
       <section className="card voice-lab-intro">
         <div>
@@ -180,223 +242,242 @@ export function VoiceLabPage(props: Props) {
         </div>
       )}
 
-      <section className="card voice-lab-source">
-        <div className="section-heading">
-          <h2>1. Dry source</h2>
-          <span>{props.status.capture.active ? 'Recording…' : 'Ready'}</span>
-        </div>
-        <div className="voice-lab-device-grid">
-          <DeviceSelector
-            label="Recording microphone"
-            value={inputId}
-            devices={props.inputs}
-            disabled={props.disabled || props.busy || props.status.capture.active}
-            onChange={setInputSelection}
-          />
-          <DeviceSelector
-            label="Preview output"
-            value={outputId}
-            devices={props.outputs}
-            disabled={props.disabled || props.busy || props.status.preview.active}
-            onChange={setOutputSelection}
-          />
-        </div>
-        <div className="voice-lab-actions">
-          {!props.status.capture.active ? (
+      <div className="compare-master-detail">
+        <section className="card voice-lab-source">
+          <div className="section-heading">
+            <h2>1. Dry source</h2>
+            <span>{props.status.capture.active ? 'Recording…' : 'Ready'}</span>
+          </div>
+          <div className="voice-lab-device-grid">
+            <DeviceSelector
+              label="Recording microphone"
+              value={inputId}
+              devices={props.inputs}
+              disabled={props.disabled || props.busy || props.status.capture.active}
+              onChange={setInputSelection}
+            />
+            <DeviceSelector
+              label="Preview output"
+              value={outputId}
+              devices={props.outputs}
+              disabled={props.disabled || props.busy || props.status.preview.active}
+              onChange={setOutputSelection}
+            />
+          </div>
+          <div className="voice-lab-actions">
             <button
               type="button"
-              className="start"
-              disabled={audioUnavailable || !input}
-              onClick={() => input && void props.onRecord(input.id, input.name)}
+              disabled={props.disabled || props.busy || props.status.capture.active}
+              onClick={() => void props.onImport()}
             >
-              Record dry sample
+              Import WAV
             </button>
-          ) : (
-            <button type="button" className="stop" onClick={() => void props.onStopRecording()}>
-              Stop recording
-            </button>
+          </div>
+          {props.status.capture.droppedFrames > 0 && (
+            <small className="warning">
+              Capture dropped {props.status.capture.droppedFrames} frames. Record again for a clean
+              source.
+            </small>
           )}
-          <button
-            type="button"
-            disabled={props.disabled || props.busy || props.status.capture.active}
-            onClick={() => void props.onImport()}
-          >
-            Import WAV
-          </button>
-          <button
-            type="button"
-            className="danger-outline"
-            disabled={
-              props.disabled ||
-              props.busy ||
-              (!props.status.original && !props.status.capture.active)
-            }
-            onClick={() => void props.onClear()}
-          >
-            Clear temporary audio
-          </button>
-        </div>
-        {props.status.capture.droppedFrames > 0 && (
-          <small className="warning">
-            Capture dropped {props.status.capture.droppedFrames} frames. Record again for a clean
-            source.
-          </small>
-        )}
-      </section>
+        </section>
 
-      <section className="voice-lab-comparison">
-        <ClipCard title="Original" clip={props.status.original} />
-        <ClipCard
-          title={props.status.processedSynthetic ? 'Processed · Synthetic' : 'Processed'}
-          clip={props.status.processed}
-        />
-      </section>
-      {props.status.processedSynthetic && <SyntheticAudioNotice />}
+        <section className="voice-lab-comparison">
+          <ClipCard title="Original" clip={props.status.original} />
+          <ClipCard
+            title={props.status.processedSynthetic ? 'Processed · Synthetic' : 'Processed'}
+            clip={props.status.processed}
+          />
+        </section>
+        {props.status.processedSynthetic && <SyntheticAudioNotice />}
 
-      <section className="card voice-lab-transport">
-        <div className="section-heading">
-          <h2>2. Compare</h2>
-          {props.status.preview.active && <span>Playing {props.status.preview.kind}</span>}
-        </div>
-        <div className="voice-lab-actions">
-          <button
-            type="button"
-            disabled={audioUnavailable || !output || !props.status.original}
-            onClick={() =>
-              output && void props.onPreview('original', output.id, output.name, looping)
-            }
-          >
-            Play original
-          </button>
-          <button
-            type="button"
-            disabled={audioUnavailable || !output || !props.status.processed || props.renderStale}
-            onClick={() =>
-              output && void props.onPreview('processed', output.id, output.name, looping)
-            }
-          >
-            Play processed
-          </button>
-          <button
-            type="button"
-            disabled={!props.status.preview.active}
-            onClick={() => void props.onStopPreview()}
-          >
-            Stop preview
-          </button>
-          <label className="limiter-toggle">
-            <input
-              type="checkbox"
-              checked={looping}
-              disabled={props.status.preview.active}
-              onChange={(event) => setLooping(event.target.checked)}
-            />
-            Loop replay
-          </label>
-        </div>
-        <div className="voice-lab-progress" aria-label="Preview position">
-          <span style={{ width: `${previewPosition}%` }} />
-        </div>
-      </section>
+        <section className="card voice-lab-transport">
+          <div className="section-heading">
+            <h2>2. Compare</h2>
+            {props.status.preview.active && <span>Playing {props.status.preview.kind}</span>}
+          </div>
+          <div className="voice-lab-actions">
+            <label className="limiter-toggle">
+              <input
+                type="checkbox"
+                checked={looping}
+                disabled={props.status.preview.active}
+                onChange={(event) => setLooping(event.target.checked)}
+              />
+              Loop replay
+            </label>
+          </div>
+          <div className="voice-lab-progress" aria-label="Preview position">
+            <span style={{ width: `${previewPosition}%` }} />
+          </div>
+          {(props.status.preview.clipSampleRate || props.status.preview.outputSampleRate) && (
+            <div className="preview-diagnostics" role="status">
+              <span>Clip rate: {props.status.preview.clipSampleRate ?? 'Unknown'} Hz</span>
+              <span>Output rate: {props.status.preview.outputSampleRate ?? 'Unknown'} Hz</span>
+              <span>Resampling active: {props.status.preview.resamplingActive ? 'Yes' : 'No'}</span>
+              <span>Output channels: {props.status.preview.outputChannels ?? 'Unknown'}</span>
+              <span>Output format: {props.status.preview.outputSampleFormat ?? 'Unknown'}</span>
+            </div>
+          )}
+        </section>
 
-      <section className="card voice-lab-presets">
-        <div className="section-heading">
-          <h2>3. Lab preset</h2>
-          <span>Local until explicitly applied</span>
-        </div>
-        <div className="voice-lab-preset-grid">
-          <label>
-            Existing preset
-            <select
-              value={effectivePresetId}
-              disabled={props.disabled || props.busy || !props.catalog}
-              onChange={(event) => setPresetId(event.target.value)}
+        <section className="card voice-lab-presets">
+          <div className="section-heading">
+            <h2>3. Lab preset</h2>
+            <span>Local until explicitly applied</span>
+          </div>
+          <div className="voice-lab-preset-grid">
+            <label>
+              Existing preset
+              <select
+                value={effectivePresetId}
+                disabled={props.disabled || props.busy || !props.catalog}
+                onChange={(event) => setPresetId(event.target.value)}
+              >
+                {(props.catalog?.presets ?? []).map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={props.disabled || props.busy || !selectedPreset}
+              onClick={() => selectedPreset && props.onApplyPreset(selectedPreset.parameters)}
             >
-              {(props.catalog?.presets ?? []).map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            disabled={props.disabled || props.busy || !selectedPreset}
-            onClick={() => selectedPreset && props.onApplyPreset(selectedPreset.parameters)}
-          >
-            Apply preset to Lab
-          </button>
-          <label>
-            New preset name
-            <input
-              type="text"
-              maxLength={64}
-              value={presetName}
+              Apply preset to Lab
+            </button>
+            <label>
+              New preset name
+              <input
+                type="text"
+                maxLength={64}
+                value={presetName}
+                disabled={props.disabled || props.busy}
+                onChange={(event) => setPresetName(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={props.disabled || props.busy || !presetName.trim()}
+              onClick={async () => {
+                if (await props.onSavePreset(presetName, props.parameters)) setPresetName('');
+              }}
+            >
+              Save as new preset
+            </button>
+          </div>
+        </section>
+
+        <details className="card advanced-section compare-advanced">
+          <summary>Advanced DSP controls</summary>
+          <DspControls
+            parameters={props.parameters}
+            disabled={props.disabled || props.busy}
+            onChange={props.onParametersChange}
+          />
+        </details>
+
+        <section className="card voice-lab-finish">
+          <div className="section-heading">
+            <h2>4. Render and publish</h2>
+            {props.renderStale && <span className="warning">Processed clip is stale</span>}
+          </div>
+          <div className="voice-lab-actions">
+            <button
+              type="button"
               disabled={props.disabled || props.busy}
-              onChange={(event) => setPresetName(event.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            disabled={props.disabled || props.busy || !presetName.trim()}
-            onClick={async () => {
-              if (await props.onSavePreset(presetName, props.parameters)) setPresetName('');
-            }}
-          >
-            Save as new preset
-          </button>
-        </div>
-      </section>
-
-      <DspControls
-        parameters={props.parameters}
-        disabled={props.disabled || props.busy}
-        onChange={props.onParametersChange}
-      />
-
-      <section className="card voice-lab-finish">
-        <div className="section-heading">
-          <h2>4. Render and publish</h2>
-          {props.renderStale && <span className="warning">Processed clip is stale</span>}
-        </div>
-        <div className="voice-lab-actions">
+              onClick={() => void props.onApplyLive(props.parameters)}
+            >
+              Apply to live settings
+            </button>
+            <button
+              type="button"
+              disabled={props.disabled || props.busy || !props.status.original}
+              onClick={() => void props.onExport('original')}
+            >
+              Export original WAV
+            </button>
+            <button
+              type="button"
+              disabled={
+                props.disabled || props.busy || !props.status.processed || props.renderStale
+              }
+              onClick={() => void props.onExport('processed')}
+            >
+              Export processed WAV
+            </button>
+          </div>
+          {props.status.renderMetadata && (
+            <details className="advanced-section">
+              <summary>Render diagnostics</summary>
+              <small>
+                Offline DSP: {props.status.renderMetadata.blockFrames}-frame blocks ·{' '}
+                {props.status.renderMetadata.latencyFrames} latency frames aligned
+              </small>
+            </details>
+          )}
+        </section>
+      </div>
+      <div className="workspace-primary-actions" aria-label="Voice Lab primary actions">
+        {!props.status.capture.active ? (
           <button
             type="button"
             className="start"
-            disabled={audioUnavailable || !props.status.original}
-            onClick={() => void props.onRender()}
+            disabled={audioUnavailable || !input}
+            onClick={() => input && void props.onRecord(input.id, input.name)}
           >
-            Render processed
+            Record dry sample
           </button>
-          <button
-            type="button"
-            disabled={props.disabled || props.busy}
-            onClick={() => void props.onApplyLive(props.parameters)}
-          >
-            Apply to live settings
+        ) : (
+          <button type="button" className="stop" onClick={() => void props.onStopRecording()}>
+            Stop recording
           </button>
-          <button
-            type="button"
-            disabled={props.disabled || props.busy || !props.status.original}
-            onClick={() => void props.onExport('original')}
-          >
-            Export original WAV
-          </button>
-          <button
-            type="button"
-            disabled={props.disabled || props.busy || !props.status.processed || props.renderStale}
-            onClick={() => void props.onExport('processed')}
-          >
-            Export processed WAV
-          </button>
-        </div>
-        {props.status.renderMetadata && (
-          <small>
-            Offline DSP: {props.status.renderMetadata.blockFrames}-frame blocks ·{' '}
-            {props.status.renderMetadata.latencyFrames} latency frames aligned
-          </small>
         )}
-      </section>
+        <button
+          type="button"
+          className="start"
+          disabled={audioUnavailable || !props.status.original}
+          onClick={() => void props.onRender()}
+        >
+          Render processed
+        </button>
+        <button
+          type="button"
+          disabled={audioUnavailable || !output || !props.status.original}
+          onClick={() =>
+            output && void props.onPreview('original', output.id, output.name, looping)
+          }
+        >
+          Play original
+        </button>
+        <button
+          type="button"
+          disabled={audioUnavailable || !output || !props.status.processed || props.renderStale}
+          onClick={() =>
+            output && void props.onPreview('processed', output.id, output.name, looping)
+          }
+        >
+          Play processed
+        </button>
+        <button
+          type="button"
+          disabled={!props.status.preview.active}
+          onClick={() => void props.onStopPreview()}
+        >
+          Stop preview
+        </button>
+        <button
+          type="button"
+          className="danger-outline"
+          disabled={
+            props.disabled || props.busy || (!props.status.original && !props.status.capture.active)
+          }
+          onClick={() => void props.onClear()}
+        >
+          Clear temporary audio
+        </button>
+      </div>
     </div>
   );
 }

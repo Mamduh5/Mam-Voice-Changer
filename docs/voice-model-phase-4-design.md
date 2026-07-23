@@ -229,3 +229,19 @@ perfect similarity.
 Phase 4 does not add a neural option to Use, Test, VB-CABLE/external routing,
 Discord/communication applications, the realtime DSP worker, or CPAL callbacks.
 Model training and conversion remain explicit offline actions in Voice Lab Models.
+
+## Phase 4.1 profile and workspace addendum
+
+Models no longer owns profile selection queries or profile management controls. It
+consumes the same validated opaque selected-profile ID, consent state, health,
+Dataset summary, and manifest exposed by `useVoiceProfiles` to Dataset and the
+Profiles workspace. A deleted or unhealthy profile cannot remain active; Models
+renders a clear empty/blocked state and an **Open Profiles** action.
+
+Snapshot contents, qualification state, worker protocol, training jobs, artifact
+packages, inference, evaluation, and portability remain unchanged. The page now
+uses a sticky summary/navigation sidebar and a selected-detail main area. Full
+environment fingerprints, package/checkpoint/resource details, worker logs,
+artifact hashes, and provenance are collapsed by default, while errors, consent,
+and normal workflow actions remain visible. Navigating away does not cancel a
+training job.

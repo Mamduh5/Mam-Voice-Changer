@@ -39,3 +39,20 @@ server-render metadata-only states without hardware. These establish determinist
 logic and compatibility with existing tests, not microphone capture, audible
 quality, device removal, long-session collection, physical preview, dialog behavior,
 or Windows filesystem-lock behavior. Those remain in the manual plan.
+
+## Phase 4.1 profile and layout addendum
+
+Dataset no longer creates, edits, repairs, or deletes profiles. It consumes the
+opaque selected-profile ID from `useVoiceProfiles`, shows a compact consent/health
+summary, and links to the Profiles workspace. With no selection it instructs the
+user to select or create a profile and does not embed a creation form.
+
+Recording, import, review, trimming, take state, progress, and export remain
+Dataset-owned. Its desktop layout uses a sticky profile/progress/take sidebar and
+a current-prompt/review main area; technical quality and advanced trim values are
+collapsed by default. Leaving Dataset still stops unfinished capture/preview
+while finalized takes remain persisted.
+
+Dataset canonical storage remains mono 48 kHz WAV with the same manifests. Its
+existing offline linear conversion now shares one bounded, replaceable audio-rate
+module with Voice Lab preview preparation; no live route uses that module.

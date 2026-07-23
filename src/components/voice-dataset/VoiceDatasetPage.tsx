@@ -1,39 +1,46 @@
 import { useMemo, useState } from 'react';
 import type { useVoiceDataset } from '../../hooks/useVoiceDataset';
+import type { useVoiceProfiles } from '../../hooks/useVoiceProfiles';
 import type { AudioDevice } from '../../types/audio';
 import type { DatasetTake } from '../../types/voiceDataset';
 import type { DatasetTakeFilter } from '../../utils/datasetNavigation';
-import { ConsentPanel } from './ConsentPanel';
+import { VoiceProfileWorkspaceHeader } from '../voice-profile/VoiceProfileWorkspaceHeader';
 import { DatasetImportExportPanel } from './DatasetImportExportPanel';
 import { DatasetProgress } from './DatasetProgress';
 import { DatasetTakeList } from './DatasetTakeList';
 import { PromptRecorder } from './PromptRecorder';
 import { TakeReview } from './TakeReview';
-import { VoiceProfileEditor } from './VoiceProfileEditor';
-import { VoiceProfileList } from './VoiceProfileList';
 
 type DatasetHook = ReturnType<typeof useVoiceDataset>;
+type ProfilesHook = ReturnType<typeof useVoiceProfiles>;
 
 export function VoiceDatasetPage({
   dataset,
+  profiles,
   inputs,
   outputs,
   defaultInputId,
   defaultOutputId,
   disabled,
   liveActive,
+  onOpenProfiles,
 }: {
   dataset: DatasetHook;
+  profiles: ProfilesHook;
   inputs: AudioDevice[];
   outputs: AudioDevice[];
   defaultInputId: string;
   defaultOutputId: string;
   disabled: boolean;
   liveActive: boolean;
+  onOpenProfiles: () => void;
 }) {
   const [filter, setFilter] = useState<DatasetTakeFilter>('all');
   const [selectedTakeId, setSelectedTakeId] = useState<string | null>(null);
-  const manifest = dataset.status.manifest;
+  const manifest =
+    dataset.status.manifest?.profile.id === profiles.selectedProfileId
+      ? dataset.status.manifest
+      : null;
   const selectedTake = useMemo<DatasetTake | null>(() => {
     const takes = manifest?.takes ?? [];
     return (
@@ -48,7 +55,11 @@ export function VoiceDatasetPage({
     customPromptText:
       dataset.status.currentPromptCategory === 'custom' ? dataset.status.currentPromptText : null,
   };
-  const blocked = disabled || liveActive;
+  const blocked =
+    disabled ||
+    liveActive ||
+    !profiles.consentActive ||
+    profiles.selectedSummary?.health !== 'healthy';
 
   return (
     <div className="page-stack voice-dataset-page">
@@ -63,6 +74,11 @@ export function VoiceDatasetPage({
         </div>
         <span className="bounded-label">20 seconds per prompted take · PCM24 mono 48 kHz</span>
       </section>
+      <VoiceProfileWorkspaceHeader
+        profiles={profiles}
+        workspace="Dataset"
+        onOpenProfiles={onOpenProfiles}
+      />
       <div className="dataset-safety" role="status">
         The speaker must consent. Recording is never automatic or hidden. This phase does not clone
         a voice, train a model, run inference, upload audio, or make a voice “ready.”
@@ -72,78 +88,70 @@ export function VoiceDatasetPage({
           <strong>Voice Dataset:</strong> {dataset.error}
         </div>
       )}
-      {!dataset.profiles.length && !manifest && (
+      {!manifest && (
         <div className="dataset-empty">
-          <h3>No local voice profiles</h3>
-          <p>Create a profile only after the target speaker explicitly consents.</p>
+          <h3>Select or create a voice profile before collecting recordings.</h3>
+          <p>Open Profiles to create, repair, or change the shared profile.</p>
+          <button type="button" onClick={onOpenProfiles}>
+            Open Profiles
+          </button>
         </div>
       )}
-      <VoiceProfileList
-        profiles={dataset.profiles}
-        currentId={dataset.status.currentProfileId}
-        busy={dataset.busy}
-        onSelect={dataset.selectProfile}
-      />
-      {!manifest && <ConsentPanel busy={dataset.busy} onCreate={dataset.createProfile} />}
       {manifest && (
-        <>
-          <VoiceProfileEditor
-            key={manifest.profile.id}
-            manifest={manifest}
-            busy={dataset.busy}
-            onUpdate={dataset.updateProfile}
-            onDelete={dataset.deleteProfile}
-            onRepair={dataset.repairProfile}
-          />
-          <DatasetProgress manifest={manifest} />
-          {dataset.prompts && (
-            <PromptRecorder
-              inputs={inputs}
-              defaultInputId={defaultInputId}
-              prompts={dataset.prompts}
-              status={dataset.status}
-              busy={dataset.busy}
-              blocked={blocked}
-              onSelectPrompt={dataset.selectPrompt}
-              onRecord={dataset.record}
-              onStop={dataset.stopRecording}
-              onDiscard={dataset.discardRecording}
+        <div className="dataset-master-detail">
+          <aside className="workspace-sidebar">
+            <DatasetProgress manifest={manifest} />
+            <DatasetTakeList
+              takes={manifest.takes}
+              filter={filter}
+              selectedId={selectedTake?.id ?? null}
+              onFilter={setFilter}
+              onSelect={setSelectedTakeId}
             />
-          )}
-          <DatasetImportExportPanel
-            busy={dataset.busy}
-            selection={promptSelection}
-            onImport={dataset.importWavs}
-            onExport={dataset.exportDataset}
-          />
-          <DatasetTakeList
-            takes={manifest.takes}
-            filter={filter}
-            selectedId={selectedTake?.id ?? null}
-            onFilter={setFilter}
-            onSelect={setSelectedTakeId}
-          />
-          {selectedTake && (
-            <TakeReview
-              key={selectedTake.id}
-              take={selectedTake}
-              profileId={manifest.profile.id}
-              outputs={outputs}
-              defaultOutputId={defaultOutputId}
-              status={dataset.status}
+          </aside>
+          <div className="workspace-main">
+            {dataset.prompts && (
+              <PromptRecorder
+                inputs={inputs}
+                defaultInputId={defaultInputId}
+                prompts={dataset.prompts}
+                status={dataset.status}
+                busy={dataset.busy}
+                blocked={blocked}
+                onSelectPrompt={dataset.selectPrompt}
+                onRecord={dataset.record}
+                onStop={dataset.stopRecording}
+                onDiscard={dataset.discardRecording}
+              />
+            )}
+            {selectedTake && (
+              <TakeReview
+                key={selectedTake.id}
+                take={selectedTake}
+                profileId={manifest.profile.id}
+                outputs={outputs}
+                defaultOutputId={defaultOutputId}
+                status={dataset.status}
+                busy={dataset.busy}
+                onReview={dataset.reviewTake}
+                onAutoTrim={dataset.autoTrim}
+                onSetTrim={dataset.setTrim}
+                onApplyTrim={dataset.applyTrim}
+                onResetTrim={dataset.resetTrim}
+                onPreview={dataset.preview}
+                onPause={dataset.pausePreview}
+                onStop={dataset.stopPreview}
+                onDelete={dataset.deleteTake}
+              />
+            )}
+            <DatasetImportExportPanel
               busy={dataset.busy}
-              onReview={dataset.reviewTake}
-              onAutoTrim={dataset.autoTrim}
-              onSetTrim={dataset.setTrim}
-              onApplyTrim={dataset.applyTrim}
-              onResetTrim={dataset.resetTrim}
-              onPreview={dataset.preview}
-              onPause={dataset.pausePreview}
-              onStop={dataset.stopPreview}
-              onDelete={dataset.deleteTake}
+              selection={promptSelection}
+              onImport={dataset.importWavs}
+              onExport={dataset.exportDataset}
             />
-          )}
-        </>
+          </div>
+        </div>
       )}
     </div>
   );

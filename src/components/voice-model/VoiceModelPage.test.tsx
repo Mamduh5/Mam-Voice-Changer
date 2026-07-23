@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { useVoiceDataset } from '../../hooks/useVoiceDataset';
 import type { useVoiceModels } from '../../hooks/useVoiceModels';
+import type { useVoiceProfiles } from '../../hooks/useVoiceProfiles';
 import { emptyVoiceDatasetStatus, type VoiceDatasetManifest } from '../../types/voiceDataset';
 import { emptyVoiceModelStatus, type VoiceModelArtifact } from '../../types/voiceModel';
 import type { QualificationRun } from '../../types/modelBackend';
@@ -270,7 +271,6 @@ const qualification: QualificationRun = {
 const action = vi.fn(async () => null);
 function dataset(selectedManifest: VoiceDatasetManifest | null = manifest) {
   return {
-    profiles: [{ profile: manifest.profile, health: 'healthy' as const, managedStorageBytes: 100 }],
     prompts: null,
     status: {
       ...emptyVoiceDatasetStatus,
@@ -279,10 +279,6 @@ function dataset(selectedManifest: VoiceDatasetManifest | null = manifest) {
     },
     busy: false,
     error: null,
-    createProfile: action,
-    selectProfile: vi.fn(async () => true),
-    updateProfile: action,
-    deleteProfile: action,
     selectPrompt: action,
     record: action,
     stopRecording: action,
@@ -298,8 +294,32 @@ function dataset(selectedManifest: VoiceDatasetManifest | null = manifest) {
     stopPreview: action,
     deleteTake: action,
     exportDataset: action,
-    repairProfile: action,
   } as unknown as ReturnType<typeof useVoiceDataset>;
+}
+
+function profiles(selectedManifest: VoiceDatasetManifest | null = manifest) {
+  const summary = selectedManifest
+    ? { profile: selectedManifest.profile, health: 'healthy' as const, managedStorageBytes: 100 }
+    : null;
+  return {
+    profiles: summary ? [summary] : [],
+    selectedProfileId: selectedManifest?.profile.id ?? null,
+    selectedSummary: summary,
+    status: selectedManifest
+      ? {
+          ...emptyVoiceDatasetStatus,
+          currentProfileId: selectedManifest.profile.id,
+          manifest: selectedManifest,
+        }
+      : emptyVoiceDatasetStatus,
+    manifest: selectedManifest,
+    consentActive: Boolean(selectedManifest),
+    datasetSummary: selectedManifest?.statistics ?? null,
+    modelSummary: { snapshots: 1, artifacts: 1, activeTraining: false },
+    busy: false,
+    error: null,
+    selectProfile: vi.fn(async () => true),
+  } as unknown as ReturnType<typeof useVoiceProfiles>;
 }
 
 function models(overrides: Partial<ReturnType<typeof useVoiceModels>['status']> = {}) {
@@ -431,9 +451,11 @@ describe('Voice Models workspace', () => {
     const markup = renderToStaticMarkup(
       <VoiceModelPage
         dataset={dataset()}
+        profiles={profiles()}
         models={models({ activeTrainingJob: trainingJob, logs: ['backend log'] })}
         hasVoiceLabSource
         disabled={false}
+        onOpenProfiles={vi.fn()}
       />,
     );
     for (const label of [
@@ -465,15 +487,24 @@ describe('Voice Models workspace', () => {
     expect(markup).not.toContain('arbitrary command');
     expect(markup).not.toContain('Route model to Discord');
     expect(markup).not.toContain('samples:[');
+    expect(markup).toContain('Shared voice profile');
+    expect(markup).toContain('Open Profiles');
+    expect(markup).toContain('View compatibility matrix');
+    expect(markup).toContain('View full worker logs');
+    expect(markup).not.toContain('Create profile');
+    expect(markup).not.toContain('Save profile');
+    expect(markup).not.toContain('Delete profile');
   });
 
   it('shows no-profile and consent-disabled states precisely', () => {
     const emptyMarkup = renderToStaticMarkup(
       <VoiceModelPage
         dataset={dataset(null)}
+        profiles={profiles(null)}
         models={models()}
         hasVoiceLabSource={false}
         disabled={false}
+        onOpenProfiles={vi.fn()}
       />,
     );
     expect(emptyMarkup).toContain('Select a Dataset profile');
@@ -483,9 +514,11 @@ describe('Voice Models workspace', () => {
     const disabledMarkup = renderToStaticMarkup(
       <VoiceModelPage
         dataset={dataset()}
+        profiles={profiles()}
         models={models({ artifacts: [disabledArtifact] })}
         hasVoiceLabSource
         disabled={false}
+        onOpenProfiles={vi.fn()}
       />,
     );
     expect(disabledMarkup).toContain('Disabled by consent');
@@ -498,9 +531,11 @@ describe('Voice Models workspace', () => {
     const markup = renderToStaticMarkup(
       <VoiceModelPage
         dataset={dataset()}
+        profiles={profiles()}
         models={models({ qualification })}
         hasVoiceLabSource
         disabled={false}
+        onOpenProfiles={vi.fn()}
       />,
     );
     for (const label of [
@@ -530,9 +565,11 @@ describe('Voice Models workspace', () => {
     const markup = renderToStaticMarkup(
       <VoiceModelPage
         dataset={dataset()}
+        profiles={profiles()}
         models={models({ artifacts: [imported], qualification })}
         hasVoiceLabSource
         disabled={false}
+        onOpenProfiles={vi.fn()}
       />,
     );
     expect(markup).toContain('Model unevaluated');
@@ -555,13 +592,36 @@ describe('Voice Models workspace', () => {
     const markup = renderToStaticMarkup(
       <VoiceModelPage
         dataset={dataset()}
+        profiles={profiles()}
         models={models({ qualification: generated })}
         hasVoiceLabSource
         disabled={false}
+        onOpenProfiles={vi.fn()}
       />,
     );
     expect(markup).toContain('Load synthetic smoke into Voice Lab');
     expect(markup).toContain('clipping not detected');
     expect(markup).not.toContain('Route model to Discord');
+  });
+
+  it('filters snapshots and artifacts when the one shared profile changes', () => {
+    const otherManifest = {
+      ...manifest,
+      profile: { ...manifest.profile, id: 'profile-2', displayName: 'Second speaker' },
+    };
+    const markup = renderToStaticMarkup(
+      <VoiceModelPage
+        dataset={dataset(otherManifest)}
+        profiles={profiles(otherManifest)}
+        models={models()}
+        hasVoiceLabSource
+        disabled={false}
+        onOpenProfiles={vi.fn()}
+      />,
+    );
+    expect(markup).toContain('Second speaker');
+    expect(markup).toContain('No immutable training snapshot yet.');
+    expect(markup).toContain('No model artifact exists for this profile.');
+    expect(markup).not.toContain('Synthetic model one');
   });
 });

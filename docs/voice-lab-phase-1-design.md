@@ -111,3 +111,21 @@ A/B/loop controls, explicit live apply/save/export, disabled states, and clear.
 Automated tests cannot establish microphone capture, audible quality, feedback
 safety, Windows dialog behavior, or real endpoint compatibility; those remain
 manual acceptance items.
+
+## Phase 4.1 preview compatibility addendum
+
+Preview playback no longer requests the clip or active DSP sample rate from the
+output device. The selected device is inspected independently, with 48 kHz
+preferred, followed by its default rate and then another supported rate. A
+`PreparedPreview` owns bounded normalized samples converted offline to that rate;
+the source original/processed clip is not mutated.
+
+Both A/B sources use this policy. A source cursor is converted by elapsed time
+when switching between prepared buffers with different rates, and loop restart
+uses the prepared rate without accumulating a fractional-frame error. The
+existing short edge fade remains in the callback. Preview diagnostics report clip
+rate, output rate, whether conversion is active, output channels, and sample
+format.
+
+This addendum changes only Voice Lab preview construction. It does not change
+Voice Lab rendering, live Use/Test negotiation, external routing, or DSP order.

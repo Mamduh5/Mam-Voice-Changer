@@ -1,24 +1,20 @@
-import type { VoiceDatasetManifest, VoiceProfileSummary } from '../../types/voiceDataset';
+import type { VoiceDatasetManifest } from '../../types/voiceDataset';
 import type { TrainingSnapshot } from '../../types/voiceModel';
 import { modelProfileReadiness } from '../../utils/modelReadiness';
 
 export function TrainingSnapshotPanel({
-  profiles,
   manifest,
   snapshots,
   selectedSnapshotId,
   busy,
-  onSelectProfile,
   onCreate,
   onSelectSnapshot,
   onDelete,
 }: {
-  profiles: VoiceProfileSummary[];
   manifest: VoiceDatasetManifest | null;
   snapshots: TrainingSnapshot[];
   selectedSnapshotId: string;
   busy: boolean;
-  onSelectProfile: (profileId: string) => Promise<boolean>;
   onCreate: () => Promise<unknown>;
   onSelectSnapshot: (snapshotId: string) => void;
   onDelete: (snapshotId: string) => Promise<unknown>;
@@ -30,24 +26,9 @@ export function TrainingSnapshotPanel({
   return (
     <section className="card model-snapshot-panel">
       <div className="section-heading">
-        <h2>1. Consenting Dataset and snapshot</h2>
+        <h2>Dataset snapshot</h2>
         <span>{readiness.message}</span>
       </div>
-      <label>
-        Dataset profile
-        <select
-          value={manifest?.profile.id ?? ''}
-          disabled={busy}
-          onChange={(event) => void onSelectProfile(event.target.value)}
-        >
-          <option value="">Select a profile</option>
-          {profiles.map(({ profile, health }) => (
-            <option key={profile.id} value={profile.id} disabled={health !== 'healthy'}>
-              {profile.displayName} · {health}
-            </option>
-          ))}
-        </select>
-      </label>
       {manifest && (
         <div className="model-metrics">
           <span>{manifest.statistics.acceptedTakes} accepted takes</span>
@@ -57,7 +38,7 @@ export function TrainingSnapshotPanel({
           <span>{Object.keys(manifest.statistics.categoryCoverage).length} prompt categories</span>
         </div>
       )}
-      <div className="voice-lab-actions">
+      <div className="workspace-primary-actions" aria-label="Snapshot actions">
         <button type="button" disabled={busy || !readiness.ready} onClick={() => void onCreate()}>
           Create training snapshot
         </button>

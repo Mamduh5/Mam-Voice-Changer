@@ -1,17 +1,231 @@
-import { useEffect,useState } from 'react';
-import {api,defaults,Device,Parameters,Status} from './api';
-const presets:Record<string,Parameters>={Natural:defaults,Deep:{...defaults,pitch_semitones:-4},Bright:{...defaults,pitch_semitones:3},Robot:{...defaults,pitch_semitones:-2,mix:.75,gate_threshold_db:-38}};
-function Slider({label,value,min,max,step,onChange,suffix=''}:{label:string;value:number;min:number;max:number;step:number;onChange:(n:number)=>void;suffix?:string}){return <label className="slider"><span>{label}<b>{value}{suffix}</b></span><input type="range" value={value} min={min} max={max} step={step} onChange={e=>onChange(+e.target.value)}/></label>}
-export default function App(){
- const [inputs,setInputs]=useState<Device[]>([]),[outputs,setOutputs]=useState<Device[]>([]); const [input,setInput]=useState(''),[output,setOutput]=useState('');
- const [p,setP]=useState(defaults),[status,setStatus]=useState<Status>({running:false,input_level:0,output_level:0,underruns:0,message:'Ready'}),[error,setError]=useState('');
- const load=async()=>{try{const d=await api.devices();setInputs(d.inputs);setOutputs(d.outputs);setInput(x=>x||d.inputs.find(v=>v.is_default)?.id||d.inputs[0]?.id||'');setOutput(x=>x||d.outputs.find(v=>v.name.toLowerCase().includes('cable input'))?.id||d.outputs.find(v=>v.is_default)?.id||d.outputs[0]?.id||'');setError('')}catch(e){setError(String(e))}};
- useEffect(()=>{load()},[]); useEffect(()=>{if(!status.running)return;const id=setInterval(()=>api.status().then(setStatus).catch(e=>setError(String(e))),250);return()=>clearInterval(id)},[status.running]);
- const patch=(v:Partial<Parameters>)=>{const next={...p,...v};setP(next);if(status.running)api.parameters(next).catch(e=>setError(String(e)))};
- const toggle=async()=>{try{status.running?await api.stop():await api.start(input,output,p);setStatus(await api.status());setError('')}catch(e){setError(String(e))}};
- return <main><header><div className="brand"><span className="logo">M</span><div><h1>Mam Voice Changer</h1><p>Live voice studio • audio stays on this PC</p></div></div><span className={status.running?'live':'idle'}>{status.running?'● LIVE':'○ READY'}</span></header>
- <section className="routing card"><h2>Audio routing</h2><div className="route"><label>Microphone<select value={input} disabled={status.running} onChange={e=>setInput(e.target.value)}>{inputs.map(d=><option key={d.id} value={d.id}>{d.name}{d.is_default?' (Default)':''}</option>)}</select></label><span>→</span><label>Virtual output<select value={output} disabled={status.running} onChange={e=>setOutput(e.target.value)}>{outputs.map(d=><option key={d.id} value={d.id}>{d.name}{d.is_default?' (Default)':''}</option>)}</select></label><button className="refresh" onClick={load} disabled={status.running}>↻</button></div></section>
- <div className="grid"><section className="card"><h2>Voice</h2><div className="presets">{Object.entries(presets).map(([name,v])=><button key={name} onClick={()=>{setP(v);if(status.running)api.parameters(v)}}>{name}</button>)}</div><Slider label="Pitch" value={p.pitch_semitones} min={-8} max={8} step={1} suffix=" st" onChange={n=>patch({pitch_semitones:n})}/><Slider label="Effect mix" value={Math.round(p.mix*100)} min={0} max={100} step={1} suffix="%" onChange={n=>patch({mix:n/100})}/><Slider label="Noise gate" value={p.gate_threshold_db} min={-70} max={-20} step={1} suffix=" dB" onChange={n=>patch({gate_threshold_db:n})}/></section>
- <section className="card"><h2>Levels</h2><Meter label="Input" value={status.input_level}/><Meter label="Output" value={status.output_level}/><Slider label="Input gain" value={Math.round(p.input_gain*100)} min={0} max={200} step={1} suffix="%" onChange={n=>patch({input_gain:n/100})}/><Slider label="Output gain" value={Math.round(p.output_gain*100)} min={0} max={200} step={1} suffix="%" onChange={n=>patch({output_gain:n/100})}/></section></div>
- <section className="transport card"><div><strong>{status.message}</strong><small>Buffer underruns: {status.underruns}</small></div><button className={status.running?'stop':'start'} disabled={!input||!output} onClick={toggle}>{status.running?'Stop engine':'Start voice changer'}</button></section>{error&&<div className="error">{error}</div>}<footer>Tip: choose CABLE Output as the microphone in Discord, OBS, or your browser.</footer></main>}
-function Meter({label,value}:{label:string;value:number}){return <div className="meter"><span>{label}</span><div><i style={{width:`${Math.min(100,value*100)}%`}}/></div><b>{Math.round(value*100)}%</b></div>}
+import { useState } from 'react';
+import { PageNavigation, type NavigationPage } from './components/PageNavigation';
+import { SettingsDiagnosticsPage } from './components/SettingsDiagnosticsPage';
+import { TestPage } from './components/TestPage';
+import { UsePage } from './components/UsePage';
+import { VoiceLabPage } from './components/VoiceLabPage';
+import { useAudioDevices } from './hooks/useAudioDevices';
+import { useAudioParameters } from './hooks/useAudioParameters';
+import { useEngineState } from './hooks/useEngineState';
+import { usePresets } from './hooks/usePresets';
+import { useVoiceLab } from './hooks/useVoiceLab';
+import { useModelShutdownGuard } from './hooks/useModelShutdownGuard';
+import { DESKTOP_RUNTIME_UNAVAILABLE, tauriAudioApi } from './services/tauriAudioApi';
+import { isLeavingTest } from './utils/monitoringMode';
+
+export default function App() {
+  useModelShutdownGuard();
+  const [voiceLabOpen, setVoiceLabOpen] = useState(false);
+  const desktopRuntimeAvailable = tauriAudioApi.isDesktopRuntimeAvailable();
+  const devices = useAudioDevices(desktopRuntimeAvailable);
+  const engine = useEngineState(desktopRuntimeAvailable);
+  const audioParameters = useAudioParameters(desktopRuntimeAvailable);
+  const presets = usePresets(
+    desktopRuntimeAvailable,
+    audioParameters.beginPresetOperation,
+    audioParameters.finishPresetOperation,
+  );
+  const voiceLab = useVoiceLab(voiceLabOpen && desktopRuntimeAvailable, audioParameters.parameters);
+  const active = ['running', 'degraded', 'recovering'].includes(engine.status.state);
+  const transitioning = ['starting', 'stopping'].includes(engine.status.state);
+
+  const deviceName = (id: string, output = false) =>
+    (output ? devices.outputs : devices.physicalInputs).find((device) => device.id === id)?.name ??
+    '';
+
+  const startUse = () => {
+    void engine.start({
+      mode: 'use',
+      inputId: devices.inputId,
+      inputName: deviceName(devices.inputId),
+      externalRouteId: devices.selectedRoute?.routeId ?? '',
+      reliabilityProfile: devices.reliabilityProfile,
+    });
+  };
+
+  const startTest = () => {
+    void engine.start({
+      mode: 'test',
+      inputId: devices.inputId,
+      inputName: deviceName(devices.inputId),
+      monitorId: devices.localMonitorId,
+      monitorName: deviceName(devices.localMonitorId, true),
+      reliabilityProfile: devices.reliabilityProfile,
+    });
+  };
+
+  const stop = () => {
+    void engine.stop();
+  };
+
+  const activePage: NavigationPage = voiceLabOpen ? 'voiceLab' : devices.lastPage;
+
+  const navigate = (nextPage: NavigationPage) => {
+    if (isLeavingTest(devices.lastPage, nextPage === 'voiceLab' ? 'use' : nextPage)) {
+      void engine.stopTestRoute();
+    }
+    if (nextPage === 'voiceLab') {
+      voiceLab.initialize(audioParameters.parameters);
+      setVoiceLabOpen(true);
+    } else {
+      setVoiceLabOpen(false);
+      devices.setLastPage(nextPage);
+    }
+  };
+
+  const errors: Array<{ id: string; label: string; message: string }> = [];
+  if (desktopRuntimeAvailable) {
+    if (engine.commandError)
+      errors.push({ id: 'engine-command', label: 'Engine command', message: engine.commandError });
+    if (engine.status.lastRuntimeError)
+      errors.push({
+        id: 'engine-runtime',
+        label: 'Audio runtime',
+        message: engine.status.lastRuntimeError,
+      });
+    if (engine.pollError)
+      errors.push({ id: 'engine-status', label: 'Engine status', message: engine.pollError });
+    if (devices.error) errors.push({ id: 'devices', label: 'Settings', message: devices.error });
+    if (audioParameters.error)
+      errors.push({ id: 'parameters', label: 'Audio settings', message: audioParameters.error });
+    if (presets.error) errors.push({ id: 'presets', label: 'Presets', message: presets.error });
+    if (voiceLabOpen && voiceLab.error)
+      errors.push({ id: 'voice-lab', label: 'Voice Lab', message: voiceLab.error });
+  }
+
+  return (
+    <main>
+      {!desktopRuntimeAvailable && (
+        <div className="runtime-notice" role="status">
+          {DESKTOP_RUNTIME_UNAVAILABLE}
+        </div>
+      )}
+      <header>
+        <div className="brand">
+          <span className="logo">M</span>
+          <div>
+            <h1>Mam Voice Changer</h1>
+            <p>Local Windows routing and an isolated offline Voice Lab</p>
+          </div>
+        </div>
+        <span className={active ? 'live' : 'idle'}>
+          {active ? 'ACTIVE' : engine.status.state.toUpperCase()}
+        </span>
+      </header>
+
+      <div className="navigation-row">
+        <PageNavigation page={activePage} onNavigate={navigate} />
+        <button
+          type="button"
+          className="refresh"
+          disabled={!desktopRuntimeAvailable || active || transitioning || devices.loading}
+          onClick={() => void devices.refresh()}
+        >
+          {devices.loading ? 'Refreshing...' : 'Refresh devices'}
+        </button>
+      </div>
+
+      {!voiceLabOpen && devices.lastPage === 'use' && (
+        <UsePage
+          physicalInputs={devices.physicalInputs}
+          inputs={devices.inputs}
+          outputs={devices.outputs}
+          inputId={devices.inputId}
+          routes={devices.externalRoutes}
+          selectedRoute={devices.selectedRoute}
+          validation={devices.routeValidation}
+          draftRouteId={devices.draftRouteId}
+          draftPlaybackId={devices.draftPlaybackId}
+          draftCaptureId={devices.draftCaptureId}
+          confirmPhysicalEndpoints={devices.confirmPhysicalEndpoints}
+          routeBusy={devices.routeBusy}
+          disabled={!desktopRuntimeAvailable}
+          status={engine.status}
+          catalog={presets.catalog}
+          presetBusy={presets.busy}
+          onInputChange={devices.setInputId}
+          onDraftRouteChange={devices.setDraftRouteId}
+          onDraftPlaybackChange={devices.setDraftPlaybackId}
+          onDraftCaptureChange={devices.setDraftCaptureId}
+          onConfirmPhysicalEndpointsChange={devices.setConfirmPhysicalEndpoints}
+          onSaveRoute={devices.saveExternalRoute}
+          onDeleteRoute={devices.deleteExternalRoute}
+          onValidateRoute={devices.validateSelectedRoute}
+          onApplyPreset={presets.apply}
+          onStart={startUse}
+          onStop={stop}
+        />
+      )}
+      {!voiceLabOpen && devices.lastPage === 'test' && (
+        <TestPage
+          inputs={devices.physicalInputs}
+          outputs={devices.outputs}
+          inputId={devices.inputId}
+          monitorId={devices.localMonitorId}
+          disabled={!desktopRuntimeAvailable}
+          status={engine.status}
+          parameters={audioParameters.parameters}
+          catalog={presets.catalog}
+          presetBusy={presets.busy}
+          presetActions={presets}
+          onInputChange={devices.setInputId}
+          onMonitorDeviceChange={devices.setLocalMonitorId}
+          onParametersChange={audioParameters.update}
+          onStart={startTest}
+          onStop={stop}
+        />
+      )}
+      {!voiceLabOpen && devices.lastPage === 'diagnostics' && (
+        <SettingsDiagnosticsPage
+          inputs={devices.inputs}
+          outputs={devices.outputs}
+          inputId={devices.inputId}
+          monitorId={devices.localMonitorId}
+          selectedRoute={devices.selectedRoute}
+          routeValidation={devices.routeValidation}
+          reliabilityProfile={devices.reliabilityProfile}
+          status={engine.status}
+          disabled={!desktopRuntimeAvailable}
+          onReliabilityProfileChange={devices.setReliabilityProfile}
+        />
+      )}
+      {voiceLabOpen && (
+        <VoiceLabPage
+          inputs={devices.physicalInputs}
+          outputs={devices.outputs}
+          defaultInputId={devices.inputId}
+          defaultOutputId={devices.localMonitorId}
+          disabled={!desktopRuntimeAvailable}
+          liveActive={engine.status.state !== 'stopped'}
+          parameters={voiceLab.parameters}
+          status={voiceLab.status}
+          catalog={presets.catalog}
+          busy={voiceLab.busy || presets.busy}
+          renderStale={voiceLab.renderStale}
+          onParametersChange={voiceLab.updateParameters}
+          onApplyPreset={voiceLab.applyPreset}
+          onRecord={voiceLab.record}
+          onStopRecording={voiceLab.stopRecording}
+          onImport={voiceLab.importWav}
+          onRender={voiceLab.render}
+          onPreview={voiceLab.preview}
+          onStopPreview={voiceLab.stopPreview}
+          onStopAudio={voiceLab.stopAudio}
+          onSavePreset={presets.saveVoiceLab}
+          onApplyLive={audioParameters.applySnapshot}
+          onExport={voiceLab.exportWav}
+          onClear={voiceLab.clear}
+        />
+      )}
+
+      {errors.map((error) => (
+        <div className="error" role="alert" key={error.id}>
+          <strong>{error.label}:</strong> {error.message}
+        </div>
+      ))}
+      <footer>
+        This app is not a Windows microphone device. Receiving apps require a real capture endpoint.
+      </footer>
+    </main>
+  );
+}

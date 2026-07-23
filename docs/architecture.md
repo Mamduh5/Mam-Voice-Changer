@@ -1,0 +1,305 @@
+# Architecture
+
+## Runtime ownership
+
+```text
+React controls
+  -> typed Tauri service
+  -> Tauri commands
+  -> atomic parameter state / bounded engine commands
+  -> engine thread owning CPAL streams
+
+input callback -> normalized/channel-mapped input ring
+  -> fixed-block DSP worker
+  -> independent bounded destination ring -> virtual playback callback (Use)
+  -> independent bounded monitor ring -> optional monitor callback
+```
+
+The CPAL callbacks only convert/map samples, access bounded rings, signal the DSP
+worker, and update atomics. Device discovery, frontend calls, logging, locks,
+allocation, and DSP algorithms stay out of the callbacks.
+
+## Voice Dataset ownership
+
+Voice Dataset Capture is independent from live routing, DSP, application settings,
+and the temporary Voice Lab comparison session:
+
+```text
+React Dataset components
+  -> useVoiceDataset metadata/status hook
+  -> typed Tauri Dataset commands
+  -> bounded VoiceDatasetController command channel
+  -> dedicated Dataset session thread owning CPAL capture/preview streams
+  -> DatasetStorage owning voice-datasets/ JSON and WAV transactions
+
+physical microphone -> dry mono callback -> bounded ring -> capture worker
+  -> finite f32 canonicalization -> PCM24 mono 48 kHz WAV
+  -> offline quality analysis -> pending manual review
+```
+
+`AppState` holds only the controller sender and an atomic active flag; non-`Send`
+CPAL streams remain on the Dataset session thread. The shared backend audio-operation
+lock serializes starts, and Rust checks live engine, Voice Lab, and Dataset active
+flags in both directions. Frontend disabled controls are not the ownership boundary.
+
+Managed data uses its own schema-v1 profile index, manifest, consent document, raw
+masters, and derived trimmed files under `voice-datasets/`. It is not stored in
+application-settings schema v4. JSON writes use same-directory temporary and backup
+files with flush-before-rename recovery. Opaque generated IDs form every managed
+path; manifest paths are relative and validated. WAV files are complete before a
+manifest references them, while deletion removes references before files and leaves
+an explicit tombstone for partial cleanup.
+
+Quality analysis, WAV decoding/resampling, hashing, trimming, export, and JSON/file
+I/O run outside CPAL callbacks. Dataset preview opens only a selected physical output,
+has a short edge fade, and never reuses the virtual Use route. `VoiceDatasetSource`
+is a read-only iterator over accepted, non-excluded canonical files. Phase 3 uses
+that interface only while constructing an immutable consent-bound snapshot; it
+never trains against the live Dataset manifest.
+
+## Offline voice-model ownership
+
+```text
+React Models components
+  -> typed Tauri model commands
+  -> VoiceModelController metadata/orchestration
+  -> direct Python child process (JSON Lines protocol v1)
+  -> optional user-configured Seed-VC checkout
+
+accepted consenting Dataset -> immutable snapshot copies -> local fine-tuning
+  -> hash-validated artifact -> offline evaluation -> explicit approval
+  -> offline synthetic WAV -> validated managed path -> Voice Lab processed clip
+```
+
+The Rust controller owns configuration, job manifests, cancellation tokens, bounded
+logs, progress, artifact metadata, and temporary result provenance. It owns no
+model tensors or live audio stream. Python/PyTorch and backend code remain in a
+separate child process launched directly without a shell. Requests have fixed typed
+arguments; stdout is strict bounded JSON Lines and stderr is captured separately.
+
+Snapshots, jobs, artifacts, and temporary inference outputs live under the separate
+`voice-models/` application-data root. Manifests use relative paths, schema versions,
+content hashes, same-directory atomic replacement, and consent provenance. Startup
+marks abandoned active jobs interrupted and never resumes automatically. A native
+close guard blocks shutdown while model work is active until the user confirms
+bounded cancellation.
+
+The only Voice Lab insertion is a validated generated WAV loaded as the existing
+processed comparison clip by managed path. No sample arrays or tensors cross IPC.
+The live CPAL engine, DSP order, Use, Test, saved external routes, virtual endpoint
+pairing, and application-settings schema v4 have no model selection or neural path.
+
+Phase 4 adds a separate qualification plane around the Phase 3 worker boundary:
+
+```text
+strict compatibility profile + fixed read-only Git probes + SHA-256 file identity
+  -> versioned environment fingerprint
+  -> static / worker / framework / backend-import / audio / optional inference checks
+  -> persistent sanitized qualification report and explicit depth
+  -> acknowledged training preflight
+  -> artifact provenance + bounded portable package
+```
+
+Qualification runs, snapshots, jobs, artifacts, temporary inference results, and
+imports have rebuildable versioned indexes; item manifests remain authoritative.
+Startup marks abandoned runs interrupted, preserves incomplete/orphaned content for
+explicit repair, and finishes only previously confirmed deletion tombstones.
+Checkpoint resume verifies the recorded SHA-256, asks the fixed adapter for bounded
+structural usability without Rust deserialization, compares material environment
+identity, and never resumes automatically.
+
+Model packages use a bounded project-owned stored-ZIP implementation so normal
+validation adds no dependency download. Import never executes archive content,
+rejects unsafe paths/flags/duplicates/limits/hash mismatches, and atomically installs
+an unapproved artifact under a user-confirmed consent-active opaque profile ID.
+
+## External-route ownership
+
+`audio/device.rs` exposes raw input/output endpoints plus advisory direction,
+virtual-family, common-rate, and channel metadata. `audio/external_route.rs`
+performs conservative playback/capture pairing without opening either endpoint.
+`commands/external_routes.rs` owns list, save, delete, and readiness validation;
+schema-v4 settings persist both endpoint identities, friendly-name fallbacks,
+pairing source, and whether the user explicitly created the pair.
+
+The Use start boundary accepts only a saved route id. Rust resolves it back to a
+ready route, opens the physical input and virtual playback endpoint, and retains
+the capture endpoint as metadata for the receiving application. It does not open
+the paired capture endpoint continuously. Test remains a separate tagged request
+that opens only the physical input and selected local monitor. The controller
+rejects a second start while either route owns streams or recovery state.
+
+```text
+physical microphone -> DSP -> virtual playback endpoint
+virtual device transport -> paired capture endpoint -> receiving application
+```
+
+CPAL 0.15 does not provide stable WASAPI endpoint GUIDs through this seam, so app
+ids are direction-scoped friendly-name fingerprints. Unique friendly-name restore
+is allowed; duplicate matches remain unset and produce a warning.
+
+## DSP ownership
+
+- `dsp/chain.rs`: validated parameters and exact processor order
+- `dsp/gain.rs`: smoothed input/output gain
+- `dsp/high_pass.rs`: per-channel DC-blocking filter
+- `dsp/noise_gate.rs`: linked soft speech expander with hysteresis, hold, and an attenuation floor
+- `dsp/pitch.rs`: fixed-chunk formant-aware pitch frontend
+- `dsp/signalsmith.rs`: owned Rust boundary for the static C ABI
+- `dsp/dry_wet.rs`: pitch-latency alignment for dry and bypass signals
+- `dsp/tone.rs`: smoothed 200 Hz low shelf and 4 kHz high shelf
+- `dsp/master_limiter.rs`: linked lookahead ceiling limiter
+- `dsp/smoothing.rs`: allocation-free live parameter ramps
+
+## Pitch backend and packaging
+
+Pitch and formant processing use Signalsmith Stretch 1.3.2. The upstream C++11
+header and its Signalsmith Linear dependency are vendored with their MIT license
+texts. A small C ABI wrapper is compiled by `cc` with the existing Windows MSVC
+toolchain and linked statically into the Tauri binary. There is no external DSP
+DLL.
+
+The backend is configured with a 2,048-frame analysis block and 512-frame
+interval. Pitch and formant values ramp over 20 ms and are applied at fixed
+512-frame processing boundaries. Formant compensation remains enabled during
+pitch shifts; the independent formant control adds -6 to +6 semitones of spectral
+envelope movement.
+
+The published Rust crate wrapper was evaluated but is not used because its build
+script requires `libclang` to regenerate a stable C ABI at every build. The local
+fixed declarations remove that packaging dependency while using the same upstream
+implementation.
+
+## Signal order
+
+```text
+normalized input
+  -> input gain
+  -> 20 Hz high-pass
+  -> soft speech expander (when Gate is enabled)
+  -> formant-aware pitch
+  -> pitch-aligned dry/wet
+  -> warmth low shelf
+  -> brightness high shelf
+  -> pitch-aligned bypass crossfade
+  -> output gain
+  -> linked lookahead master limiter
+  -> final mute ramp
+  -> processed output ring
+```
+
+Bypass skips gate, pitch, dry/wet, warmth, and brightness. Input gain and the
+high-pass filter remain before the bypass tap. Output gain and the master limiter
+remain active after bypass. Mute is the final authority.
+
+## Latency
+
+Signalsmith reports separate input and output latency. Their sum is the pitch-path
+latency used by both dry/wet and bypass delay lines. The chain then adds the
+master limiter's 5 ms lookahead. The DSP metric adds one fixed worker block:
+
+```text
+DSP latency frames = Signalsmith input latency
+                   + Signalsmith output latency
+                   + limiter lookahead
+                   + worker block frames
+```
+
+The device estimate adds negotiated input/output buffers and profile-specific output-ring prefill.
+These values are configuration-derived estimates, not measured round-trip delay.
+
+## Reliability and recovery
+
+Low latency requests 128 callback frames, uses 80 ms input/output rings, 256 prefill frames, no worker underrun tolerance, and up to 3 ms concealment. Balanced (default) uses 256 frames, 250 ms rings, 1,024 prefill frames, one-block tolerance, and 6 ms concealment. Reliable uses 512 frames, 500 ms rings, 2,048 prefill frames, two-block tolerance, and 10 ms concealment. Actual callback sizes remain subject to CPAL/WASAPI negotiation.
+
+Input starts first. Output streams are constructed and started only after all configured processed-output rings reach the prefill target; 500/1,000/1,500 ms profile-specific timeouts prevent an indefinite startup wait. Very short underruns continue the last valid frame with linear decay, then crossfade back over 2 ms. Longer gaps become silence.
+
+Input or active-output errors are retained and trigger at most three staged restart attempts with 100, 300, and 900 ms delays. Use recovery reopens only its physical input and saved virtual playback endpoint; Test recovery reopens only its input and monitor. Endpoints are re-enumerated by stable identifier, then by a unique matching friendly name. Stop cancels queued recovery, and exhausted or invalid-DSP recovery clears route ownership so a later explicit start can proceed.
+
+Ring-fill trends and a correction ratio/min/max of 1.0 are exposed for clock-drift observation. Adaptive resampling is intentionally pending until long-session evidence shows persistent drift.
+
+## Live updates and allocation boundary
+
+The frontend submits complete validated parameter snapshots. `ParameterState`
+stores scalar fields atomically; the DSP worker reads one snapshot per fixed block.
+Gain, mix, pitch, formant, tone coefficients, bypass, and mute transition without
+hard parameter jumps. All scratch buffers, delay lines, filter states, limiter
+lookahead storage, and backend capacity are prepared before block processing.
+
+
+## Preset persistence
+
+`config/presets.rs` owns the versioned JSON document, built-in definitions, strict
+name/id/timestamp/parameter validation, and atomic file replacement. The file is
+stored as `presets.json` in Tauri's application-data directory. It stores user
+presets and the selected preset id; the three built-ins (`Natural`, `Warm tone`,
+and `Bright tone`) are defined by the application and merged into the catalog at
+read time. A completed file is never replaced by invalid JSON; temporary and
+backup files support recovery from an interrupted write.
+
+Preset commands run on the application side, outside CPAL callbacks and the DSP
+worker. Save creates and selects a user preset from one complete validated
+`DspParameters` snapshot. Apply, duplicate, deletion of the selected user preset,
+and reset publish the resulting complete snapshot through the existing parameter
+state; rename changes metadata only. Reset selects `Natural`, and deleting the
+selected user preset has the same fallback. Built-ins can be applied or duplicated
+but cannot be renamed or deleted. The selected preset id is committed with the
+document and restored before audio starts.
+
+Preset persistence is not an application-compatibility claim. Its storage and
+state transitions are device-independent; audible behavior and compatibility with
+VB-CABLE or receiving applications remain separate manual validation work.
+
+## Master limiter boundary
+
+The limiter detects the linked peak across all channels, applies immediate gain
+reduction to a delayed signal, holds reduction through the lookahead window, and
+releases over 80 ms. Non-finite input is replaced with silence. A final ceiling
+clamp covers numerical and live-ceiling edge cases while the limiter is enabled.
+
+This is a digital peak boundary only. It does not guarantee safe acoustic volume
+or prevent feedback elsewhere in the physical monitoring path.
+
+## Phase 4.1 preview, profile, and workspace boundaries
+
+Voice Lab preview owns a single prepared-buffer cache keyed by source clip ID,
+selected output device ID, negotiated rate, channels, and sample format. Playback
+negotiation inspects supported configurations on the explicitly selected device,
+preferring 48 kHz, its default rate, then another valid rate. Preparation invokes
+the shared offline linear converter before stream construction. CPAL callbacks
+never allocate, block, or resample.
+
+```text
+Rust-owned original or processed clip
+  -> selected-device capability negotiation
+  -> bounded offline preview preparation
+  -> prepared mono buffer at the output rate
+  -> output channel/sample-format mapping in the CPAL callback
+```
+
+The source clips are immutable during preparation. Original/processed switching
+maps the playback cursor by elapsed seconds, and looping restarts at frame zero of
+the prepared buffer. Clip replacement, processing, output-device/rate changes,
+source changes, and session clear invalidate or miss the cache.
+
+The offline converter is also the canonical Dataset import/capture conversion
+seam. It is intentionally not reachable from `AudioController`, Use, Test, or the
+external virtual route.
+
+Frontend profile ownership is centralized in `useVoiceProfiles`. It validates a
+persisted opaque ID against the current healthy profile list, clears deletion, and
+provides consent, health, storage, Dataset, and model-dependency summaries.
+Dataset and Models receive that same service and selected ID:
+
+```text
+Profiles workspace -> shared selected profile
+                         |-> Dataset collection
+                         `-> Models snapshots/training/artifacts
+```
+
+Voice Lab renders one of Compare, Profiles, Dataset, or Models beneath a persistent
+secondary tab list. Workspaces use responsive master-detail grids, one primary
+page scroll, sticky desktop sidebars/actions, a compact narrow action region, and
+collapsed advanced diagnostics. This navigation does not alter live routing,
+training lifecycle, persistence schemas, or artifact protocols.
+

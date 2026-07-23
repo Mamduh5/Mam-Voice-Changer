@@ -7,9 +7,12 @@ Build a Windows desktop voice changer that:
 - Captures audio from a physical microphone.
 - Applies real-time voice effects locally.
 - Sends processed audio to a selected Windows output device.
-- Works with Discord, TikTok Live Studio, OBS, Facebook Live, browsers, and other applications through a virtual audio device such as VB-CABLE.
+- Targets Discord, TikTok Live Studio, OBS, Facebook Live, browsers, and other applications through a virtual audio device such as VB-CABLE.
 
-The first prototype should validate the complete live audio path before attempting a custom Windows virtual audio driver.
+Those receiving-application targets require separate manual compatibility tests.
+They are goals, not current compatibility claims. The prototype should validate
+the complete live audio path before any custom Windows virtual audio driver is
+considered.
 
 ---
 
@@ -44,8 +47,8 @@ Initial development should remain Windows-only.
 | Audio input/output | CPAL | Device enumeration, microphone capture, and output streaming |
 | Audio buffering | Ring buffer | Transfer audio safely between input and output streams |
 | DSP | Native Rust modules | Gain, gate, filtering, pitch processing, mixing, and limiting |
-| Pitch-shifting fallback | SoundTouch through FFI | More advanced pitch shifting if the initial Rust implementation is insufficient |
-| Serialization | Serde and serde_json | Presets and application settings |
+| Pitch and formant backend | Signalsmith Stretch 1.3.2 through a static C ABI | Formant-aware, stream-length-preserving transformation without a runtime DLL |
+| Serialization | Serde and serde_json | Versioned local JSON documents |
 | Error handling | thiserror | Typed internal errors |
 | Logging | tracing and tracing-subscriber | Structured diagnostics outside audio callbacks |
 
@@ -90,7 +93,7 @@ Do not build a custom Windows audio driver during the prototype.
 ```text
 React UI
    |
-   | Tauri commands and events
+   | Tauri commands and status polling
    v
 Application State
    |
@@ -123,38 +126,59 @@ Input Sample Conversion
 Channel Normalization
     |
     v
+Input Gain
+    |
+    v
 High-Pass / DC Blocker
     |
     v
 Noise Gate
     |
     v
-Pitch Transformation
+Formant-Aware Pitch Transformation
     |
     v
-Dry / Wet Mix
+Pitch-Latency-Aligned Dry / Wet Mix
     |
     v
-Input and Output Gain
+Warmth Low Shelf
     |
     v
-Soft Limiter
+Brightness High Shelf
+    |
+    v
+Pitch-Latency-Aligned Bypass Crossfade
+    |
+    v
+Output Gain
+    |
+    v
+Linked Lookahead Master Limiter
+    |
+    v
+Final Mute Ramp
     |
     v
 Selected Output Device
 ```
 
 The output device will normally be `CABLE Input` from VB-CABLE.
+Bypass skips the gate, pitch/formant transformation, dry/wet mix, and tone EQ.
+Input gain and the high-pass filter remain before the bypass tap; output gain, the
+master limiter, and final mute remain after it.
 
 ---
 
-## Repository Structure
+## Key Repository Structure
+
+This is a current map of the principal source files, not an exhaustive vendor or
+generated-file listing.
 
 ```text
 Mam-Voice-Changer/
 ├─ README.md
-├─ LICENSE
 ├─ .gitignore
+├─ .github/workflows/windows-ci.yml
 ├─ package.json
 ├─ package-lock.json
 ├─ tsconfig.json
@@ -166,9 +190,11 @@ Mam-Voice-Changer/
 ├─ docs/
 │  ├─ architecture.md
 │  ├─ audio-routing.md
+│  ├─ dsp.md
 │  ├─ prototype-scope.md
 │  ├─ manual-test-plan.md
-│  └─ troubleshooting.md
+│  ├─ troubleshooting.md
+│  └─ Mam-Voice-Changer-Tech-Stack-and-Structure.md
 │
 ├─ src/
 │  ├─ main.tsx
@@ -177,16 +203,15 @@ Mam-Voice-Changer/
 │  ├─ components/
 │  │  ├─ DeviceSelector.tsx
 │  │  ├─ EngineControls.tsx
-│  │  ├─ VoiceControls.tsx
+│  │  ├─ DspControls.tsx
 │  │  ├─ LevelMeter.tsx
-│  │  ├─ PresetSelector.tsx
-│  │  ├─ StatusPanel.tsx
+│  │  ├─ PresetControls.tsx
 │  │  └─ DiagnosticsPanel.tsx
 │  │
 │  ├─ hooks/
 │  │  ├─ useAudioDevices.ts
+│  │  ├─ useAudioParameters.ts
 │  │  ├─ useEngineState.ts
-│  │  ├─ useEngineMetrics.ts
 │  │  └─ usePresets.ts
 │  │
 │  ├─ services/
@@ -195,11 +220,13 @@ Mam-Voice-Changer/
 │  ├─ types/
 │  │  ├─ audio.ts
 │  │  ├─ engine.ts
-│  │  └─ preset.ts
+│  │  ├─ parameters.ts
+│  │  └─ presets.ts
 │  │
-│  └─ styles/
-│     ├─ global.css
-│     └─ app.css
+│  ├─ utils/
+│  │  └─ deviceSelection.ts
+│  │
+│  └─ styles.css
 │
 ├─ src-tauri/
 │  ├─ Cargo.toml
@@ -225,7 +252,6 @@ Mam-Voice-Changer/
 │     ├─ audio/
 │     │  ├─ mod.rs
 │     │  ├─ device.rs
-│     │  ├─ engine.rs
 │     │  ├─ controller.rs
 │     │  ├─ input_stream.rs
 │     │  ├─ output_stream.rs
@@ -240,20 +266,19 @@ Mam-Voice-Changer/
 │     │  ├─ mod.rs
 │     │  ├─ processor.rs
 │     │  ├─ chain.rs
-│     │  ├─ bypass.rs
 │     │  ├─ high_pass.rs
 │     │  ├─ noise_gate.rs
 │     │  ├─ pitch.rs
+│     │  ├─ signalsmith.rs
 │     │  ├─ dry_wet.rs
 │     │  ├─ gain.rs
-│     │  └─ limiter.rs
+│     │  ├─ tone.rs
+│     │  ├─ smoothing.rs
+│     │  └─ master_limiter.rs
 │     │
 │     ├─ config/
 │     │  ├─ mod.rs
-│     │  ├─ model.rs
-│     │  ├─ defaults.rs
-│     │  ├─ validation.rs
-│     │  └─ storage.rs
+│     │  └─ presets.rs
 │     │
 │     └─ state/
 │        ├─ mod.rs
@@ -262,9 +287,7 @@ Mam-Voice-Changer/
 │        └─ parameter_state.rs
 │
 └─ tests/
-   ├─ README.md
-   └─ fixtures/
-      └─ README.md
+   └─ README.md
 ```
 
 ---
@@ -289,7 +312,7 @@ Components should not contain audio-processing logic.
 
 ### `src/hooks`
 
-Contains reusable frontend state and Tauri event handling.
+Contains reusable frontend state, polling, and Tauri command coordination.
 
 Responsibilities:
 
@@ -303,15 +326,21 @@ Responsibilities:
 
 Contains the typed frontend boundary for Tauri commands.
 
-Example responsibilities:
+Current responsibilities:
 
-- `listInputDevices`
-- `listOutputDevices`
+- `listAudioDevices`
 - `startEngine`
 - `stopEngine`
-- `updateParameters`
+- `getEngineStatus`
+- `getParameters`
+- `setParameters`
+- `listPresets`
 - `savePreset`
-- `loadPreset`
+- `renamePreset`
+- `duplicatePreset`
+- `deletePreset`
+- `applyPreset`
+- `resetPreset`
 
 ### `src-tauri/src/commands`
 
@@ -361,15 +390,16 @@ DSP modules should be testable without opening a real audio device.
 
 ### `src-tauri/src/config`
 
-Contains serializable settings and presets.
+Contains serializable local configuration. Preset storage is currently isolated in
+`config/presets.rs`; unrelated application settings must not be added to
+`presets.json`.
 
 Responsibilities:
 
-- Default parameters
-- Configuration validation
-- Local JSON persistence
-- Preset loading and saving
-- Missing-device fallback behavior
+- Versioned preset documents
+- Preset and complete-DSP-snapshot validation
+- Atomic local JSON persistence and interrupted-write recovery
+- Built-in definitions plus user-preset loading and saving
 
 ### `src-tauri/src/state`
 
@@ -378,8 +408,8 @@ Contains shared application state.
 Responsibilities:
 
 - Current engine state
-- Selected devices
 - Current parameter snapshot
+- Preset-store ownership
 - Engine controller ownership
 - Safe communication between Tauri commands and the audio engine
 
@@ -419,12 +449,17 @@ pub enum EngineState {
 ### Main Audio Parameters
 
 ```rust
-pub struct AudioParameters {
+pub struct DspParameters {
     pub pitch_semitones: f32,
+    pub formant_shift_semitones: f32,
     pub dry_wet: f32,
+    pub gate_enabled: bool,
+    pub gate_threshold_db: f32,
     pub input_gain_db: f32,
     pub output_gain_db: f32,
-    pub gate_threshold_db: f32,
+    pub master_ceiling_db: f32,
+    pub warmth_db: f32,
+    pub brightness_db: f32,
     pub limiter_enabled: bool,
     pub bypass: bool,
     pub muted: bool,
@@ -442,33 +477,37 @@ The prototype only needs one main window.
 - Input-device selector
 - Output-device selector
 - Refresh devices button
-- Selected sample rate
-- Buffer or latency setting
 
-### Voice Section
+### DSP Section
 
 - Pitch slider
+- Formant-shift slider
 - Dry/wet slider
 - Input gain
 - Output gain
+- Noise-gate toggle
 - Noise-gate threshold
+- Warmth
+- Brightness
+- Master-ceiling control
 - Limiter toggle
+- Bypass
+- Mute
 
 ### Runtime Section
 
 - Start
 - Stop
-- Bypass
-- Mute
-- Optional monitor toggle
-- Reset parameters
 
 ### Preset Section
 
 - Preset selector
-- Save preset
-- Delete preset
-- Reset to default
+- Separate built-in and user-preset groups
+- Save current parameters as a user preset
+- Rename user preset
+- Duplicate built-in or user preset
+- Delete user preset
+- Reset to built-in `Natural`
 
 ### Status Section
 
@@ -510,27 +549,49 @@ Use:
 
 ## Prototype Scope
 
-### Included
+### Implemented
 
 - Windows microphone capture
 - Windows output-device streaming
-- VB-CABLE routing
-- Pitch control
-- Noise gate
-- Input gain
-- Output gain
-- Dry/wet mix
-- Soft limiter
-- Bypass
-- Mute
-- Device selection
-- Presets
+- Common-rate negotiation and normalized channel mapping
+- Bounded rings and a dedicated fixed-block DSP worker
+- Pitch and independent formant controls
+- Noise gate, input/output gain, dry/wet mix, tone EQ, bypass, and mute
+- Linked lookahead master limiter
+- Device enumeration and selection
+- Versioned built-in and user-preset persistence
+- Preset apply, save, rename, duplicate, delete, and reset
 - Input and output meters
 - Error reporting
 - Basic latency metrics
-- Discord compatibility testing
-- OBS compatibility testing
-- TikTok Live Studio routing documentation
+
+Built-ins can be applied or duplicated but cannot be renamed or deleted. User
+presets contain the complete `DspParameters` snapshot, and the selected preset is
+restored before audio starts.
+
+### Automated validation coverage present
+
+- Device-independent DSP and state tests
+- Preset schema, validation, persistence, selection, operation, and corrupt-file tests
+- Frontend device-selection fallback tests
+
+Coverage does not itself assert that the current checkout passed every command,
+and synthetic tests do not establish audible behavior.
+
+### Manual validation completed
+
+- Tauri debug executable launch on 2026-07-18
+- React interface rendering on 2026-07-18
+- Enumeration of the Realtek endpoints present during that session
+
+### Manual validation still required
+
+- Preset workflows and persistence across a real application restart
+- Continuous monitored audio and repeated start/stop cycles
+- VB-CABLE routing
+- Discord, OBS, TikTok Live Studio, browser, and Facebook Live compatibility
+- Device-disconnection recovery and long-duration stability
+- Subjective voice quality and safe monitoring behavior
 
 ### Deferred
 
@@ -538,7 +599,6 @@ Use:
 - AI voice conversion
 - Voice cloning
 - Neural inference
-- Formant control unless genuinely implemented
 - macOS support
 - Linux support
 - Mobile support
@@ -551,49 +611,45 @@ Use:
 - Chat reading
 - AI comment filtering
 
+Compatibility validation is pending manual evidence; it is not categorized as a
+current implementation failure.
+
 ---
 
 ## Prototype Milestones
 
 ### Milestone 1: Audio Passthrough
 
-- Enumerate input and output devices.
-- Capture microphone audio.
-- Send unmodified audio to the selected output.
-- Confirm VB-CABLE routing works.
+- Implemented: enumerate input and output devices.
+- Implemented: capture and output stream infrastructure.
+- Implemented: latency-aligned bypass for a clean comparison path.
+- Manual validation pending: continuous passthrough and VB-CABLE routing.
 
 ### Milestone 2: Basic DSP
 
-- Add gain.
-- Add mute.
-- Add bypass.
-- Add high-pass filtering.
-- Add limiter.
+- Implemented: gain, mute, bypass, high-pass filtering, and the linked master limiter.
 
 ### Milestone 3: Voice Transformation
 
-- Add real-time pitch transformation.
-- Add dry/wet control.
-- Add noise gate.
-- Verify continuous output.
+- Implemented: real-time pitch/formant transformation, dry/wet, noise gate, and tone EQ.
+- Manual validation pending: continuous monitored output and subjective quality.
 
 ### Milestone 4: Desktop Interface
 
-- Connect all controls to the real engine.
-- Add meters and runtime status.
-- Add error handling.
-- Add preset persistence.
+- Implemented: native control integration, meters, runtime status, and visible errors.
+- Implemented: versioned preset persistence and complete preset operations.
+- Manual validation pending: preset workflows across an actual desktop restart.
 
 ### Milestone 5: Compatibility Validation
 
-- Verify Discord input.
-- Verify OBS input.
-- Document TikTok Live Studio routing.
-- Run a long-duration stability test.
+- Pending: verify Discord input.
+- Pending: verify OBS input.
+- Pending: verify TikTok Live Studio and other receiving applications.
+- Pending: run and record a long-duration stability test.
 
 ---
 
-## Prototype Success Condition
+## Prototype Success Condition (manual acceptance target)
 
 The prototype is successful when this path works reliably:
 
@@ -616,4 +672,7 @@ CABLE Output
 Discord Microphone Test
 ```
 
-The transformed voice must be audible in Discord with acceptable latency and without application crashes, fake processing, or prerecorded audio.
+The transformed voice must be audible in Discord with acceptable latency and
+without application crashes, fake processing, or prerecorded audio. This target
+has not been established by compile-time or device-independent automated checks;
+it remains pending until the corresponding manual test is performed and recorded.

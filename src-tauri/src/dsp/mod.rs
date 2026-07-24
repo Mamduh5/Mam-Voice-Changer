@@ -10,3 +10,4 @@ mod signalsmith;
 pub mod smoothing;
 pub mod tone;
 pub mod vocal_aging;
+pub mod voicing;

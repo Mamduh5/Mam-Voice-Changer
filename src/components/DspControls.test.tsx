@@ -4,17 +4,18 @@ import { defaultAudioParameters } from '../types/parameters';
 import { DspControls } from './DspControls';
 
 describe('DspControls', () => {
-  it('renders the three accessible vocal-aging controls and disclosure note', () => {
+  it('renders consonant preservation and the three vocal-aging controls', () => {
     const markup = renderToStaticMarkup(
       <DspControls parameters={defaultAudioParameters} disabled={false} onChange={vi.fn()} />,
     );
 
     expect(markup).toContain('Vocal aging');
+    expect(markup).toContain('Consonant preservation');
     expect(markup).toContain('Age Character');
     expect(markup).toContain('Breathiness');
     expect(markup).toContain('Tremor');
     expect(markup).toContain('This is not neural voice cloning.');
-    expect(markup.match(/type="range"/g)?.length).toBe(12);
+    expect(markup.match(/type="range"/g)?.length).toBe(13);
   });
 
   it('disables vocal-aging sliders during preset operations', () => {

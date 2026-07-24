@@ -1,6 +1,7 @@
 export type AudioParameters = {
   pitchSemitones: number;
   formantShiftSemitones: number;
+  consonantPreservation: number;
   dryWet: number;
   ageCharacter: number;
   breathiness: number;
@@ -20,6 +21,7 @@ export type AudioParameters = {
 export const defaultAudioParameters: AudioParameters = {
   pitchSemitones: 0,
   formantShiftSemitones: 0,
+  consonantPreservation: 1,
   dryWet: 0.35,
   ageCharacter: 0,
   breathiness: 0,

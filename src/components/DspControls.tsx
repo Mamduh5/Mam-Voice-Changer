@@ -78,6 +78,17 @@ export function DspControls({ parameters, disabled, onChange }: Props) {
         onChange={(formantShiftSemitones) => onChange({ formantShiftSemitones })}
       />
       <SliderControl
+        label="Consonant preservation"
+        value={parameters.consonantPreservation}
+        displayValue={parameters.consonantPreservation * 100}
+        min={0}
+        max={1}
+        step={0.01}
+        unit="%"
+        disabled={disabled}
+        onChange={(consonantPreservation) => onChange({ consonantPreservation })}
+      />
+      <SliderControl
         label="Dry / wet"
         value={parameters.dryWet}
         displayValue={parameters.dryWet * 100}

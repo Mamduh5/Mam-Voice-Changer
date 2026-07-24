@@ -21,6 +21,7 @@ independent local monitor is available only on Test and defaults off.
 - Input gain, 20 Hz high-pass filtering, an optional soft speech expander, and output gain
 - Signalsmith Stretch pitch shifting with formant compensation and independent
   formant shift
+- Deterministic causal voiced/unvoiced analysis with consonant/fricative preservation
 - Pitch-latency-aligned dry/wet mixing and bypass
 - Warmth (200 Hz low shelf) and brightness (4 kHz high shelf)
 - Linked 5 ms lookahead master limiter with a configurable digital ceiling
@@ -220,8 +221,9 @@ tabs.
   measured acoustic round trip.
 - Formant processing is spectral and polyphonic rather than a monophonic PSOLA
   model. Extreme pitch/formant combinations can still sound synthetic.
-- The real-time Signalsmith layer does not yet separate voiced/unvoiced regions
-  or apply dedicated consonant-preservation processing.
+- Voiced/unvoiced classification is deterministic DSP rather than a neural model.
+  It can misclassify whispered, breathy, irregular, multi-speaker, musical, or
+  heavily noisy material and does not guarantee subjective naturalness.
 - Compatibility and subjective listening quality have not been established by
   compile-time or deterministic DSP checks.
 - Dataset quality and SNR values are heuristics. Dataset collection does not clone

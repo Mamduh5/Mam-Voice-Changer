@@ -34,15 +34,23 @@ impl DryWetMixer {
         self.delay.set_latency_frames(latency_frames);
     }
 
+    #[cfg(test)]
     pub fn process(&mut self, dry: &[f32], wet: &mut [f32], delayed_dry: &mut [f32]) {
+        self.delay_dry(dry, delayed_dry);
+        self.mix_aligned(delayed_dry, wet);
+    }
+
+    pub fn delay_dry(&mut self, dry: &[f32], delayed_dry: &mut [f32]) {
         self.delay.process(dry, delayed_dry);
-        for ((dry_frame, wet_frame), delayed_frame) in dry
+    }
+
+    pub fn mix_aligned(&mut self, delayed_dry: &[f32], wet: &mut [f32]) {
+        for (delayed_frame, wet_frame) in delayed_dry
             .chunks(self.channels)
             .zip(wet.chunks_mut(self.channels))
-            .zip(delayed_dry.chunks_mut(self.channels))
         {
             let mix = self.mix.next();
-            for channel in 0..dry_frame.len() {
+            for channel in 0..delayed_frame.len() {
                 wet_frame[channel] =
                     delayed_frame[channel] * (1.0 - mix) + wet_frame[channel] * mix;
             }

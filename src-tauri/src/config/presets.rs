@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::dsp::chain::DspParameters;
 
-pub const PRESET_SCHEMA_VERSION: u32 = 2;
+pub const PRESET_SCHEMA_VERSION: u32 = 3;
 pub const PRESET_FILE_NAME: &str = "presets.json";
 pub const NATURAL_PRESET_ID: &str = "builtin-natural";
 pub const OLD_LADY_PRESET_ID: &str = "builtin-old-lady";
@@ -62,6 +62,45 @@ struct DspParametersV1 {
     pitch_semitones: f32,
     formant_shift_semitones: f32,
     dry_wet: f32,
+    gate_enabled: bool,
+    gate_threshold_db: f32,
+    input_gain_db: f32,
+    output_gain_db: f32,
+    master_ceiling_db: f32,
+    warmth_db: f32,
+    brightness_db: f32,
+    limiter_enabled: bool,
+    bypass: bool,
+    muted: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PresetDocumentV2 {
+    schema_version: u32,
+    presets: Vec<UserPresetV2>,
+    selected_preset_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UserPresetV2 {
+    id: String,
+    name: String,
+    parameters: DspParametersV2,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DspParametersV2 {
+    pitch_semitones: f32,
+    formant_shift_semitones: f32,
+    dry_wet: f32,
+    age_character: f32,
+    breathiness: f32,
+    tremor: f32,
     gate_enabled: bool,
     gate_threshold_db: f32,
     input_gain_db: f32,
@@ -396,6 +435,10 @@ fn decode_document(contents: &str) -> Result<(PresetDocument, bool), PresetError
             let legacy: PresetDocumentV1 = serde_json::from_value(value)?;
             Ok((migrate_v1(legacy), true))
         }
+        2 => {
+            let legacy: PresetDocumentV2 = serde_json::from_value(value)?;
+            Ok((migrate_v2(legacy), true))
+        }
         version if version == u64::from(PRESET_SCHEMA_VERSION) => {
             Ok((serde_json::from_value(value)?, false))
         }
@@ -424,15 +467,59 @@ fn migrate_v1(document: PresetDocumentV1) -> PresetDocument {
     }
 }
 
+fn migrate_v2(document: PresetDocumentV2) -> PresetDocument {
+    debug_assert_eq!(document.schema_version, 2);
+    PresetDocument {
+        schema_version: PRESET_SCHEMA_VERSION,
+        presets: document
+            .presets
+            .into_iter()
+            .map(|preset| UserPreset {
+                id: preset.id,
+                name: preset.name,
+                parameters: preset.parameters.into(),
+                created_at: preset.created_at,
+                updated_at: preset.updated_at,
+            })
+            .collect(),
+        selected_preset_id: document.selected_preset_id,
+    }
+}
+
 impl From<DspParametersV1> for DspParameters {
     fn from(parameters: DspParametersV1) -> Self {
         Self {
             pitch_semitones: parameters.pitch_semitones,
             formant_shift_semitones: parameters.formant_shift_semitones,
+            consonant_preservation: 1.0,
             dry_wet: parameters.dry_wet,
             age_character: 0.0,
             breathiness: 0.0,
             tremor: 0.0,
+            gate_enabled: parameters.gate_enabled,
+            gate_threshold_db: parameters.gate_threshold_db,
+            input_gain_db: parameters.input_gain_db,
+            output_gain_db: parameters.output_gain_db,
+            master_ceiling_db: parameters.master_ceiling_db,
+            warmth_db: parameters.warmth_db,
+            brightness_db: parameters.brightness_db,
+            limiter_enabled: parameters.limiter_enabled,
+            bypass: parameters.bypass,
+            muted: parameters.muted,
+        }
+    }
+}
+
+impl From<DspParametersV2> for DspParameters {
+    fn from(parameters: DspParametersV2) -> Self {
+        Self {
+            pitch_semitones: parameters.pitch_semitones,
+            formant_shift_semitones: parameters.formant_shift_semitones,
+            consonant_preservation: 1.0,
+            dry_wet: parameters.dry_wet,
+            age_character: parameters.age_character,
+            breathiness: parameters.breathiness,
+            tremor: parameters.tremor,
             gate_enabled: parameters.gate_enabled,
             gate_threshold_db: parameters.gate_threshold_db,
             input_gain_db: parameters.input_gain_db,
@@ -647,7 +734,7 @@ mod tests {
         let decoded: PresetDocument = serde_json::from_str(&json).unwrap();
 
         assert_eq!(decoded, document);
-        assert!(json.contains("\"schemaVersion\":2"));
+        assert!(json.contains("\"schemaVersion\":3"));
         assert!(json.contains("\"selectedPresetId\":\"builtin-natural\""));
     }
 
@@ -672,7 +759,7 @@ mod tests {
         });
         assert!(validate_document(&document).is_err());
 
-        let unknown = r#"{"schemaVersion":2,"presets":[],"selectedPresetId":null,"extra":true}"#;
+        let unknown = r#"{"schemaVersion":3,"presets":[],"selectedPresetId":null,"extra":true}"#;
         assert!(serde_json::from_str::<PresetDocument>(unknown).is_err());
     }
 
@@ -714,10 +801,58 @@ mod tests {
         assert_eq!(catalog.active_parameters.age_character, 0.0);
         assert_eq!(catalog.active_parameters.breathiness, 0.0);
         assert_eq!(catalog.active_parameters.tremor, 0.0);
+        assert_eq!(catalog.active_parameters.consonant_preservation, 1.0);
 
         let persisted = fs::read_to_string(&path).unwrap();
-        assert!(persisted.contains("\"schemaVersion\": 2"));
+        assert!(persisted.contains("\"schemaVersion\": 3"));
         assert!(persisted.contains("\"ageCharacter\": 0.0"));
+        assert!(persisted.contains("\"consonantPreservation\": 1.0"));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn migrates_v2_parameters_with_conservative_preservation_default() {
+        let path = test_path("migrate-v2");
+        cleanup(&path);
+        let legacy = r#"{
+          "schemaVersion": 2,
+          "presets": [{
+            "id": "user-version-two",
+            "name": "Version two",
+            "parameters": {
+              "pitchSemitones": 2.0,
+              "formantShiftSemitones": 1.0,
+              "dryWet": 0.7,
+              "ageCharacter": 0.4,
+              "breathiness": 0.2,
+              "tremor": 0.1,
+              "gateEnabled": false,
+              "gateThresholdDb": -50.0,
+              "inputGainDb": 0.0,
+              "outputGainDb": -7.0,
+              "masterCeilingDb": -3.0,
+              "warmthDb": 1.0,
+              "brightnessDb": -1.0,
+              "limiterEnabled": true,
+              "bypass": false,
+              "muted": false
+            },
+            "createdAt": "1000",
+            "updatedAt": "1000"
+          }],
+          "selectedPresetId": "user-version-two"
+        }"#;
+        fs::write(&path, legacy).unwrap();
+
+        let store = PresetStore::load(path.clone()).unwrap();
+        let catalog = store.catalog().unwrap();
+        assert_eq!(catalog.schema_version, PRESET_SCHEMA_VERSION);
+        assert_eq!(catalog.active_parameters.age_character, 0.4);
+        assert_eq!(catalog.active_parameters.consonant_preservation, 1.0);
+
+        let persisted = fs::read_to_string(&path).unwrap();
+        assert!(persisted.contains("\"schemaVersion\": 3"));
+        assert!(persisted.contains("\"consonantPreservation\": 1.0"));
         cleanup(&path);
     }
 

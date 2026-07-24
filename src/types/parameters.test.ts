@@ -6,6 +6,7 @@ describe('audio parameter model', () => {
     expect(defaultAudioParameters.ageCharacter).toBe(0);
     expect(defaultAudioParameters.breathiness).toBe(0);
     expect(defaultAudioParameters.tremor).toBe(0);
+    expect(defaultAudioParameters.consonantPreservation).toBe(1);
   });
 
   it('round-trips all vocal-aging fields in a complete parameter snapshot', () => {
@@ -14,6 +15,7 @@ describe('audio parameter model', () => {
       ageCharacter: 0.78,
       breathiness: 0.48,
       tremor: 0.34,
+      consonantPreservation: 0.67,
     };
 
     expect(JSON.parse(JSON.stringify(parameters))).toEqual(parameters);

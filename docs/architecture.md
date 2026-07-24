@@ -147,6 +147,7 @@ is allowed; duplicate matches remain unset and produce a warning.
 - `dsp/pitch.rs`: fixed-chunk formant-aware pitch frontend
 - `dsp/signalsmith.rs`: owned Rust boundary for the static C ABI
 - `dsp/dry_wet.rs`: pitch-latency alignment for dry and bypass signals
+- `dsp/voicing.rs`: causal linked voicing analysis and smoothed consonant preservation
 - `dsp/tone.rs`: smoothed 200 Hz low shelf and 4 kHz high shelf
 - `dsp/master_limiter.rs`: linked lookahead ceiling limiter
 - `dsp/smoothing.rs`: allocation-free live parameter ramps
@@ -177,8 +178,11 @@ normalized input
   -> input gain
   -> 20 Hz high-pass
   -> soft speech expander (when Gate is enabled)
+  -> causal linked voicing analysis
   -> formant-aware pitch
+  -> pitch-aligned consonant preservation
   -> pitch-aligned dry/wet
+  -> vocal-aging movement and aspiration
   -> warmth low shelf
   -> brightness high shelf
   -> pitch-aligned bypass crossfade
@@ -188,19 +192,23 @@ normalized input
   -> processed output ring
 ```
 
-Bypass skips gate, pitch, dry/wet, warmth, and brightness. Input gain and the
+Bypass skips gate, voicing analysis, pitch, consonant preservation, dry/wet,
+vocal aging, warmth, and brightness. Input gain and the
 high-pass filter remain before the bypass tap. Output gain and the master limiter
 remain active after bypass. Mute is the final authority.
 
 ## Latency
 
 Signalsmith reports separate input and output latency. Their sum is the pitch-path
-latency used by both dry/wet and bypass delay lines. The chain then adds the
+latency used by the consonant-preservation/dry-wet delay and bypass delay. The
+causal detector has no lookahead, and its probability is delayed to match the
+Signalsmith result at recombination. The chain then adds the
 master limiter's 5 ms lookahead. The DSP metric adds one fixed worker block:
 
 ```text
 DSP latency frames = Signalsmith input latency
                    + Signalsmith output latency
+                   + voicing lookahead (0)
                    + limiter lookahead
                    + worker block frames
 ```
@@ -226,9 +234,10 @@ Ring-fill trends and a correction ratio/min/max of 1.0 are exposed for clock-dri
 
 The frontend submits complete validated parameter snapshots. `ParameterState`
 stores scalar fields atomically; the DSP worker reads one snapshot per fixed block.
-Gain, mix, pitch, formant, tone coefficients, bypass, and mute transition without
+Gain, mix, pitch, formant, consonant preservation, tone coefficients, bypass, and mute transition without
 hard parameter jumps. All scratch buffers, delay lines, filter states, limiter
-lookahead storage, and backend capacity are prepared before block processing.
+lookahead storage, voicing-analysis storage, and backend capacity are prepared
+before block processing.
 
 
 ## Preset persistence

@@ -5,6 +5,7 @@ use crate::dsp::chain::DspParameters;
 pub struct ParameterState {
     pitch_semitones: AtomicU32,
     formant_shift_semitones: AtomicU32,
+    consonant_preservation: AtomicU32,
     dry_wet: AtomicU32,
     age_character: AtomicU32,
     breathiness: AtomicU32,
@@ -27,6 +28,7 @@ impl Default for ParameterState {
         Self {
             pitch_semitones: AtomicU32::new(parameters.pitch_semitones.to_bits()),
             formant_shift_semitones: AtomicU32::new(parameters.formant_shift_semitones.to_bits()),
+            consonant_preservation: AtomicU32::new(parameters.consonant_preservation.to_bits()),
             dry_wet: AtomicU32::new(parameters.dry_wet.to_bits()),
             age_character: AtomicU32::new(parameters.age_character.to_bits()),
             breathiness: AtomicU32::new(parameters.breathiness.to_bits()),
@@ -52,6 +54,10 @@ impl ParameterState {
             .store(parameters.pitch_semitones.to_bits(), Ordering::Release);
         self.formant_shift_semitones.store(
             parameters.formant_shift_semitones.to_bits(),
+            Ordering::Release,
+        );
+        self.consonant_preservation.store(
+            parameters.consonant_preservation.to_bits(),
             Ordering::Release,
         );
         self.dry_wet
@@ -89,6 +95,9 @@ impl ParameterState {
             formant_shift_semitones: f32::from_bits(
                 self.formant_shift_semitones.load(Ordering::Acquire),
             ),
+            consonant_preservation: f32::from_bits(
+                self.consonant_preservation.load(Ordering::Acquire),
+            ),
             dry_wet: f32::from_bits(self.dry_wet.load(Ordering::Acquire)),
             age_character: f32::from_bits(self.age_character.load(Ordering::Acquire)),
             breathiness: f32::from_bits(self.breathiness.load(Ordering::Acquire)),
@@ -118,6 +127,7 @@ mod tests {
         let parameters = DspParameters {
             pitch_semitones: 5.0,
             formant_shift_semitones: -2.0,
+            consonant_preservation: 0.65,
             dry_wet: 0.75,
             age_character: 0.8,
             breathiness: 0.45,

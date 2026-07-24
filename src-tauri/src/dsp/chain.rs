@@ -16,6 +16,7 @@ use super::{
     smoothing::SmoothedValue,
     tone::{ToneEq, MAX_TONE_DB, MIN_TONE_DB},
     vocal_aging::VocalAgingProcessor,
+    voicing::{ConsonantPreserver, VoicingDetector},
 };
 
 pub const MIN_GAIN_DB: f32 = -24.0;
@@ -34,6 +35,7 @@ const TRANSITION_RAMP_MS: f32 = 10.0;
 pub struct DspParameters {
     pub pitch_semitones: f32,
     pub formant_shift_semitones: f32,
+    pub consonant_preservation: f32,
     pub dry_wet: f32,
     pub age_character: f32,
     pub breathiness: f32,
@@ -55,6 +57,7 @@ impl Default for DspParameters {
         Self {
             pitch_semitones: 0.0,
             formant_shift_semitones: 0.0,
+            consonant_preservation: 1.0,
             dry_wet: 0.35,
             age_character: 0.0,
             breathiness: 0.0,
@@ -88,6 +91,13 @@ impl DspParameters {
             MIN_FORMANT_SHIFT_SEMITONES,
             MAX_FORMANT_SHIFT_SEMITONES,
             "semitones",
+        )?;
+        validate_range(
+            "Consonant preservation",
+            self.consonant_preservation,
+            0.0,
+            1.0,
+            "",
         )?;
         validate_range("Dry/wet", self.dry_wet, 0.0, 1.0, "")?;
         validate_range(
@@ -165,7 +175,9 @@ pub struct DspChain {
     input_gain: Gain,
     high_pass: HighPass,
     noise_gate: NoiseGate,
+    voicing_detector: VoicingDetector,
     pitch: PitchShifter,
+    consonant_preserver: ConsonantPreserver,
     dry_wet: DryWetMixer,
     vocal_aging: VocalAgingProcessor,
     tone: ToneEq,
@@ -175,6 +187,7 @@ pub struct DspChain {
     output_gain: Gain,
     limiter: MasterLimiter,
     dry_scratch: Vec<f32>,
+    voicing_scratch: Vec<f32>,
     delayed_dry_scratch: Vec<f32>,
     bypass_scratch: Vec<f32>,
     delayed_bypass_scratch: Vec<f32>,
@@ -191,7 +204,9 @@ impl Default for DspChain {
             input_gain: Gain::new(parameters.input_gain_db),
             high_pass: HighPass::default(),
             noise_gate: NoiseGate::default(),
+            voicing_detector: VoicingDetector::default(),
             dry_wet: DryWetMixer::new(parameters.dry_wet, latency_frames),
+            consonant_preserver: ConsonantPreserver::default(),
             vocal_aging: VocalAgingProcessor::default(),
             tone: ToneEq::default(),
             bypass_delay: DelayLine::new(latency_frames),
@@ -201,6 +216,7 @@ impl Default for DspChain {
             output_gain: Gain::new(parameters.output_gain_db),
             limiter: MasterLimiter::default(),
             dry_scratch: Vec::new(),
+            voicing_scratch: Vec::new(),
             delayed_dry_scratch: Vec::new(),
             bypass_scratch: Vec::new(),
             delayed_bypass_scratch: Vec::new(),
@@ -219,6 +235,8 @@ impl DspChain {
         self.pitch.set_pitch_semitones(parameters.pitch_semitones);
         self.pitch
             .set_formant_shift_semitones(parameters.formant_shift_semitones);
+        self.consonant_preserver
+            .set_amount(parameters.consonant_preservation);
         self.dry_wet.set_mix(parameters.dry_wet);
         self.vocal_aging.set_parameters(
             parameters.age_character,
@@ -238,6 +256,7 @@ impl DspChain {
 
     pub fn latency_frames(&self) -> usize {
         self.dry_wet.latency_frames()
+            + self.voicing_detector.added_latency_frames()
             + self.vocal_aging.latency_frames()
             + self.limiter.latency_frames()
     }
@@ -276,10 +295,14 @@ impl AudioProcessor for DspChain {
             .prepare(sample_rate, self.channels, maximum_block_size)?;
         self.noise_gate
             .prepare(sample_rate, self.channels, maximum_block_size)?;
+        self.voicing_detector
+            .prepare(sample_rate, self.channels, maximum_block_size)?;
         let pitch_latency_frames = self.pitch.latency_frames();
         self.dry_wet.set_latency_frames(pitch_latency_frames);
         self.bypass_delay.set_latency_frames(pitch_latency_frames);
         self.dry_wet.prepare(sample_rate, self.channels);
+        self.consonant_preserver
+            .prepare(sample_rate, self.channels, pitch_latency_frames)?;
         self.vocal_aging
             .prepare(sample_rate, self.channels, maximum_block_size)?;
         self.tone
@@ -292,6 +315,7 @@ impl AudioProcessor for DspChain {
         self.limiter
             .prepare(sample_rate, self.channels, maximum_block_size)?;
         self.dry_scratch = vec![0.0; block_samples];
+        self.voicing_scratch = vec![0.0; maximum_block_size];
         self.delayed_dry_scratch = vec![0.0; block_samples];
         self.bypass_scratch = vec![0.0; block_samples];
         self.delayed_bypass_scratch = vec![0.0; block_samples];
@@ -312,14 +336,24 @@ impl AudioProcessor for DspChain {
         self.noise_gate.process(samples);
         self.dry_scratch[..len].copy_from_slice(samples);
         let frames = len / self.channels;
+        self.voicing_detector.process(
+            &self.dry_scratch[..len],
+            &mut self.voicing_scratch[..frames],
+        );
         let pitch_offset = self.vocal_aging.pitch_offset_semitones(frames);
         self.pitch.set_dynamic_pitch_offset_semitones(pitch_offset);
         self.pitch.process(samples);
-        self.dry_wet.process(
+        self.dry_wet.delay_dry(
             &self.dry_scratch[..len],
-            samples,
             &mut self.delayed_dry_scratch[..len],
         );
+        self.consonant_preserver.process(
+            &self.voicing_scratch[..frames],
+            &self.delayed_dry_scratch[..len],
+            samples,
+        );
+        self.dry_wet
+            .mix_aligned(&self.delayed_dry_scratch[..len], samples);
         self.vocal_aging.process(samples);
         self.tone.process(samples);
         self.bypass_delay.process(
@@ -351,7 +385,9 @@ impl AudioProcessor for DspChain {
         self.input_gain.reset();
         self.high_pass.reset();
         self.noise_gate.reset();
+        self.voicing_detector.reset();
         self.pitch.reset();
+        self.consonant_preserver.reset();
         self.dry_wet.reset();
         self.vocal_aging.reset();
         self.tone.reset();
@@ -361,6 +397,7 @@ impl AudioProcessor for DspChain {
         self.output_gain.reset();
         self.limiter.reset();
         self.dry_scratch.fill(0.0);
+        self.voicing_scratch.fill(0.0);
         self.delayed_dry_scratch.fill(0.0);
         self.bypass_scratch.fill(0.0);
         self.delayed_bypass_scratch.fill(0.0);
@@ -436,6 +473,14 @@ mod tests {
         }
         .validate()
         .is_err());
+        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.01, 1.01] {
+            assert!(DspParameters {
+                consonant_preservation: invalid,
+                ..DspParameters::default()
+            }
+            .validate()
+            .is_err());
+        }
         for invalid in [-0.1, 1.1, f32::NAN, f32::INFINITY] {
             assert!(DspParameters {
                 age_character: invalid,

@@ -44,18 +44,25 @@ type Props = {
   onExport: (version: VoiceLabClipVersion) => Promise<boolean>;
   onClear: () => Promise<boolean>;
   chromeHidden: boolean;
-  onChromeActivity: () => void;
+  onChromeAutomaticActivity: () => void;
+  onChromeNavigationFocus: () => void;
 };
 
 function formatDuration(milliseconds: number) {
   return `${(milliseconds / 1_000).toFixed(2)} s`;
 }
 
+function formatSampleRate(sampleRate: number | null | undefined) {
+  return sampleRate ? `${(sampleRate / 1_000).toFixed(1)} kHz` : 'Unknown rate';
+}
+
 function ClipCard({ title, clip }: { title: string; clip: VoiceLabClipSummary }) {
   return (
     <article className="voice-lab-clip">
-      <div className="section-heading">
-        <h3>{title}</h3>
+      <div className="voice-lab-active-clip-heading">
+        <span>
+          Active clip: <strong>{title}</strong>
+        </span>
         <span>{formatDuration(clip.durationMs)}</span>
       </div>
       <div className="voice-lab-waveform" aria-label={`${title} waveform`}>
@@ -63,13 +70,6 @@ function ClipCard({ title, clip }: { title: string; clip: VoiceLabClipSummary })
           <span key={index} style={{ height: `${Math.max(4, peak * 100)}%` }} />
         ))}
       </div>
-      <details className="advanced-section clip-metadata">
-        <summary>Clip technical metadata</summary>
-        <small>
-          {clip.sourceName} · {clip.sampleRate.toLocaleString()} Hz ·{' '}
-          {clip.channels === 1 ? 'mono' : 'stereo'}
-        </small>
-      </details>
     </article>
   );
 }
@@ -114,6 +114,10 @@ export function VoiceLabPage(props: Props) {
   const previewPosition = props.status.preview.durationMs
     ? Math.min(100, (props.status.preview.positionMs / props.status.preview.durationMs) * 100)
     : 0;
+  const activeClip =
+    comparisonVersion === 'processed' && props.status.processed
+      ? props.status.processed
+      : props.status.original;
   const sections = [
     ['compare', 'Compare'],
     ['profiles', 'Profiles'],
@@ -133,9 +137,7 @@ export function VoiceLabPage(props: Props) {
       data-application-chrome
       aria-label="Voice Lab sections"
       role="tablist"
-      onFocusCapture={props.onChromeActivity}
-      onPointerEnter={props.onChromeActivity}
-      onClick={props.onChromeActivity}
+      onFocusCapture={props.onChromeNavigationFocus}
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
@@ -353,33 +355,37 @@ export function VoiceLabPage(props: Props) {
           </section>
 
           <section className="card voice-lab-comparison">
-            <div className="section-heading">
-              <h2>2. Compare</h2>
-              {props.status.preview.active && <span>Playing {props.status.preview.kind}</span>}
-            </div>
-            <div className="voice-lab-clip-selector" aria-label="Comparison clip">
-              <button
-                type="button"
-                className={comparisonVersion === 'original' ? 'active' : ''}
-                aria-pressed={comparisonVersion === 'original'}
-                disabled={!props.status.original}
-                onClick={() => setComparisonVersion('original')}
-              >
-                Original{' '}
-                {props.status.original ? formatDuration(props.status.original.durationMs) : 'Empty'}
-              </button>
-              <button
-                type="button"
-                className={comparisonVersion === 'processed' ? 'active' : ''}
-                aria-pressed={comparisonVersion === 'processed'}
-                disabled={!props.status.processed}
-                onClick={() => setComparisonVersion('processed')}
-              >
-                {props.status.processedSynthetic ? 'Processed · Synthetic' : 'Processed'}{' '}
-                {props.status.processed
-                  ? formatDuration(props.status.processed.durationMs)
-                  : 'Empty'}
-              </button>
+            <div className="voice-lab-compare-heading">
+              <div className="section-heading">
+                <h2>2. Compare</h2>
+                {props.status.preview.active && <span>Playing {props.status.preview.kind}</span>}
+              </div>
+              <div className="voice-lab-clip-selector" aria-label="Comparison clip">
+                <button
+                  type="button"
+                  className={comparisonVersion === 'original' ? 'active' : ''}
+                  aria-pressed={comparisonVersion === 'original'}
+                  disabled={!props.status.original}
+                  onClick={() => setComparisonVersion('original')}
+                >
+                  Original{' '}
+                  {props.status.original
+                    ? formatDuration(props.status.original.durationMs)
+                    : 'Empty'}
+                </button>
+                <button
+                  type="button"
+                  className={comparisonVersion === 'processed' ? 'active' : ''}
+                  aria-pressed={comparisonVersion === 'processed'}
+                  disabled={!props.status.processed}
+                  onClick={() => setComparisonVersion('processed')}
+                >
+                  {props.status.processedSynthetic ? 'Processed · Synthetic' : 'Processed'}{' '}
+                  {props.status.processed
+                    ? formatDuration(props.status.processed.durationMs)
+                    : 'Empty'}
+                </button>
+              </div>
             </div>
             {comparisonVersion === 'processed' && props.status.processed ? (
               <ClipCard
@@ -398,30 +404,50 @@ export function VoiceLabPage(props: Props) {
                 Processed is empty until you render the dry source.
               </p>
             )}
-            <label className="limiter-toggle">
+            <div className="voice-lab-progress" aria-label="Preview position">
+              <span style={{ width: `${previewPosition}%` }} />
+            </div>
+            <label className="limiter-toggle voice-lab-loop-control">
               <input
                 type="checkbox"
                 checked={looping}
                 disabled={props.status.preview.active}
                 onChange={(event) => setLooping(event.target.checked)}
               />
-              Loop replay
+              <span>Loop replay</span>
             </label>
-            <div className="voice-lab-progress" aria-label="Preview position">
-              <span style={{ width: `${previewPosition}%` }} />
-            </div>
             {(props.status.preview.clipSampleRate || props.status.preview.outputSampleRate) && (
-              <div className="preview-diagnostics" role="status">
-                <span>Clip rate: {props.status.preview.clipSampleRate ?? 'Unknown'} Hz</span>
-                <span>Output rate: {props.status.preview.outputSampleRate ?? 'Unknown'} Hz</span>
-                <span>
-                  Resampling active: {props.status.preview.resamplingActive ? 'Yes' : 'No'}
-                </span>
-                <span>Output channels: {props.status.preview.outputChannels ?? 'Unknown'}</span>
-                <span>Output format: {props.status.preview.outputSampleFormat ?? 'Unknown'}</span>
+              <div className="preview-metadata-grid" role="status">
+                <div className="preview-metadata-item">
+                  <span className="metadata-label">Clip rate</span>
+                  <strong>{formatSampleRate(props.status.preview.clipSampleRate)}</strong>
+                </div>
+                <div className="preview-metadata-item">
+                  <span className="metadata-label">Output rate</span>
+                  <strong>{formatSampleRate(props.status.preview.outputSampleRate)}</strong>
+                </div>
+                <div className="preview-metadata-item">
+                  <span className="metadata-label">Channels / format</span>
+                  <strong>
+                    {props.status.preview.outputChannels ?? 'Unknown'} /{' '}
+                    {props.status.preview.outputSampleFormat ?? 'Unknown'}
+                  </strong>
+                </div>
+                <div className="preview-metadata-item">
+                  <span className="metadata-label">Resampling</span>
+                  <strong>{props.status.preview.resamplingActive ? 'Active' : 'Inactive'}</strong>
+                </div>
               </div>
             )}
-            <small>Playback controls are in the primary action bar.</small>
+            {activeClip && (
+              <details className="advanced-section clip-metadata">
+                <summary>Clip technical metadata</summary>
+                <small>
+                  {activeClip.sourceName} · {activeClip.frames.toLocaleString()} frames · peak{' '}
+                  {activeClip.peak.toFixed(3)}
+                </small>
+              </details>
+            )}
           </section>
           {props.status.processedSynthetic && <SyntheticAudioNotice />}
         </div>

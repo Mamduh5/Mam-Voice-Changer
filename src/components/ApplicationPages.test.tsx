@@ -368,7 +368,8 @@ describe('application pages', () => {
         onExport={action}
         onClear={action}
         chromeHidden={false}
-        onChromeActivity={vi.fn()}
+        onChromeAutomaticActivity={vi.fn()}
+        onChromeNavigationFocus={vi.fn()}
       />,
     );
 
@@ -399,12 +400,25 @@ describe('application pages', () => {
     expect(markup).toContain('Export original WAV');
     expect(markup).toContain('Export processed WAV');
     expect(markup).toContain('Clear temporary audio');
-    expect(markup).toContain('Clip rate:');
-    expect(markup).toContain('44100 Hz');
-    expect(markup).toContain('Output rate:');
-    expect(markup).toContain('48000 Hz');
-    expect(markup).toContain('Resampling active:');
-    expect(markup).toContain('Yes');
+    expect(markup).toContain('voice-lab-compare-heading');
+    expect(markup).toContain('voice-lab-active-clip-heading');
+    expect(markup).toContain('preview-metadata-grid');
+    expect(markup.match(/preview-metadata-item/g)).toHaveLength(4);
+    expect(markup).toContain('Clip rate');
+    expect(markup).toContain('Output rate');
+    expect(markup).toContain('Channels / format');
+    expect(markup).toContain('Resampling');
+    expect(markup).toContain('44.1 kHz');
+    expect(markup).toContain('48.0 kHz');
+    expect(markup).toContain('Clip technical metadata');
+    expect(markup).not.toContain('voice-lab-preview-diagnostics');
+    expect(markup.indexOf('voice-lab-waveform')).toBeLessThan(markup.indexOf('voice-lab-progress'));
+    expect(markup.indexOf('voice-lab-progress')).toBeLessThan(markup.indexOf('Loop replay'));
+    expect(markup.indexOf('Loop replay')).toBeLessThan(markup.indexOf('preview-metadata-grid'));
+    expect(markup.indexOf('preview-metadata-grid')).toBeLessThan(
+      markup.indexOf('Clip technical metadata'),
+    );
+    expect(markup).not.toContain('Playback controls are in the primary action bar.');
     expect(markup).toContain('not neural voice cloning');
     expect(markup).not.toContain('Train model');
     expect(markup).not.toContain('Realtime AI');
@@ -412,7 +426,12 @@ describe('application pages', () => {
 
   it('keeps chrome navigation present for keyboard access while the visual chrome is hidden', () => {
     const markup = renderToStaticMarkup(
-      <ApplicationChrome hidden onReveal={vi.fn()} onScheduleHide={vi.fn()}>
+      <ApplicationChrome
+        hidden
+        onAutomaticReveal={vi.fn()}
+        onNavigationFocus={vi.fn()}
+        onScheduleAutomaticHide={vi.fn()}
+      >
         <PageNavigation page="voiceLab" onNavigate={vi.fn()} />
       </ApplicationChrome>,
     );

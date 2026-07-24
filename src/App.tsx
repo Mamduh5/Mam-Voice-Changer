@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApplicationChrome } from './components/ApplicationChrome';
 import { PageNavigation, type NavigationPage } from './components/PageNavigation';
 import { SettingsDiagnosticsPage } from './components/SettingsDiagnosticsPage';
@@ -6,7 +6,7 @@ import { TestPage } from './components/TestPage';
 import { UsePage } from './components/UsePage';
 import { VoiceLabPage } from './components/VoiceLabPage';
 import { useAudioDevices } from './hooks/useAudioDevices';
-import { useAutoHideChrome } from './hooks/useAutoHideChrome';
+import { isBackgroundChromeToggle, useAutoHideChrome } from './hooks/useAutoHideChrome';
 import { useAudioParameters } from './hooks/useAudioParameters';
 import { useEngineState } from './hooks/useEngineState';
 import { usePresets } from './hooks/usePresets';
@@ -18,6 +18,7 @@ import { isLeavingTest } from './utils/monitoringMode';
 export default function App() {
   useModelShutdownGuard();
   const chrome = useAutoHideChrome();
+  const backgroundPointerStart = useRef<{ x: number; y: number } | null>(null);
   const [voiceLabOpen, setVoiceLabOpen] = useState(false);
   const desktopRuntimeAvailable = tauriAudioApi.isDesktopRuntimeAvailable();
   const devices = useAudioDevices(desktopRuntimeAvailable);
@@ -97,146 +98,173 @@ export default function App() {
   }
 
   return (
-    <main>
-      {!desktopRuntimeAvailable && (
-        <div className="runtime-notice" role="status">
-          {DESKTOP_RUNTIME_UNAVAILABLE}
-        </div>
-      )}
-      <ApplicationChrome
-        hidden={chrome.hidden}
-        onReveal={chrome.reveal}
-        onScheduleHide={chrome.scheduleHide}
-      >
-        <header>
-          <div className="brand">
-            <span className="logo">M</span>
-            <div>
-              <h1>Mam Voice Changer</h1>
-              <p>Local Windows routing and an isolated offline Voice Lab</p>
-            </div>
+    <main
+      className="application-background"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) {
+          backgroundPointerStart.current = { x: event.clientX, y: event.clientY };
+        }
+      }}
+      onPointerUp={(event) => {
+        const start = backgroundPointerStart.current;
+        backgroundPointerStart.current = null;
+        if (
+          start &&
+          isBackgroundChromeToggle(
+            event.target,
+            event.currentTarget,
+            Math.hypot(event.clientX - start.x, event.clientY - start.y),
+            Boolean(window.getSelection()?.toString()),
+          )
+        ) {
+          chrome.toggleBackground();
+        }
+      }}
+    >
+      <div className="application-content">
+        {!desktopRuntimeAvailable && (
+          <div className="runtime-notice" role="status">
+            {DESKTOP_RUNTIME_UNAVAILABLE}
           </div>
-          <span className={active ? 'live' : 'idle'}>
-            {active ? 'ACTIVE' : engine.status.state.toUpperCase()}
-          </span>
-        </header>
+        )}
+        <ApplicationChrome
+          hidden={!chrome.state.visible}
+          onAutomaticReveal={chrome.automaticShow}
+          onNavigationFocus={chrome.navigationFocus}
+          onScheduleAutomaticHide={chrome.scheduleAutomaticHide}
+        >
+          <header>
+            <div className="brand">
+              <span className="logo">M</span>
+              <div>
+                <h1>Mam Voice Changer</h1>
+                <p>Local Windows routing and an isolated offline Voice Lab</p>
+              </div>
+            </div>
+            <span className={active ? 'live' : 'idle'}>
+              {active ? 'ACTIVE' : engine.status.state.toUpperCase()}
+            </span>
+          </header>
 
-        <div className="navigation-row">
-          <PageNavigation page={activePage} onNavigate={navigate} />
-          <button
-            type="button"
-            className="refresh"
-            disabled={!desktopRuntimeAvailable || active || transitioning || devices.loading}
-            onClick={() => void devices.refresh()}
-          >
-            {devices.loading ? 'Refreshing...' : 'Refresh devices'}
-          </button>
-        </div>
-      </ApplicationChrome>
+          <div className="navigation-row">
+            <PageNavigation page={activePage} onNavigate={navigate} />
+            <button
+              type="button"
+              className="refresh"
+              disabled={!desktopRuntimeAvailable || active || transitioning || devices.loading}
+              onClick={() => void devices.refresh()}
+            >
+              {devices.loading ? 'Refreshing...' : 'Refresh devices'}
+            </button>
+          </div>
+        </ApplicationChrome>
 
-      {!voiceLabOpen && devices.lastPage === 'use' && (
-        <UsePage
-          physicalInputs={devices.physicalInputs}
-          inputs={devices.inputs}
-          outputs={devices.outputs}
-          inputId={devices.inputId}
-          routes={devices.externalRoutes}
-          selectedRoute={devices.selectedRoute}
-          validation={devices.routeValidation}
-          draftRouteId={devices.draftRouteId}
-          draftPlaybackId={devices.draftPlaybackId}
-          draftCaptureId={devices.draftCaptureId}
-          confirmPhysicalEndpoints={devices.confirmPhysicalEndpoints}
-          routeBusy={devices.routeBusy}
-          disabled={!desktopRuntimeAvailable}
-          status={engine.status}
-          catalog={presets.catalog}
-          presetBusy={presets.busy}
-          onInputChange={devices.setInputId}
-          onDraftRouteChange={devices.setDraftRouteId}
-          onDraftPlaybackChange={devices.setDraftPlaybackId}
-          onDraftCaptureChange={devices.setDraftCaptureId}
-          onConfirmPhysicalEndpointsChange={devices.setConfirmPhysicalEndpoints}
-          onSaveRoute={devices.saveExternalRoute}
-          onDeleteRoute={devices.deleteExternalRoute}
-          onValidateRoute={devices.validateSelectedRoute}
-          onApplyPreset={presets.apply}
-          onStart={startUse}
-          onStop={stop}
-        />
-      )}
-      {!voiceLabOpen && devices.lastPage === 'test' && (
-        <TestPage
-          inputs={devices.physicalInputs}
-          outputs={devices.outputs}
-          inputId={devices.inputId}
-          monitorId={devices.localMonitorId}
-          disabled={!desktopRuntimeAvailable}
-          status={engine.status}
-          parameters={audioParameters.parameters}
-          catalog={presets.catalog}
-          presetBusy={presets.busy}
-          presetActions={presets}
-          onInputChange={devices.setInputId}
-          onMonitorDeviceChange={devices.setLocalMonitorId}
-          onParametersChange={audioParameters.update}
-          onStart={startTest}
-          onStop={stop}
-        />
-      )}
-      {!voiceLabOpen && devices.lastPage === 'diagnostics' && (
-        <SettingsDiagnosticsPage
-          inputs={devices.inputs}
-          outputs={devices.outputs}
-          inputId={devices.inputId}
-          monitorId={devices.localMonitorId}
-          selectedRoute={devices.selectedRoute}
-          routeValidation={devices.routeValidation}
-          reliabilityProfile={devices.reliabilityProfile}
-          status={engine.status}
-          disabled={!desktopRuntimeAvailable}
-          onReliabilityProfileChange={devices.setReliabilityProfile}
-        />
-      )}
-      {voiceLabOpen && (
-        <VoiceLabPage
-          inputs={devices.physicalInputs}
-          outputs={devices.outputs}
-          defaultInputId={devices.inputId}
-          defaultOutputId={devices.localMonitorId}
-          disabled={!desktopRuntimeAvailable}
-          liveActive={engine.status.state !== 'stopped'}
-          parameters={voiceLab.parameters}
-          status={voiceLab.status}
-          catalog={presets.catalog}
-          busy={voiceLab.busy || presets.busy}
-          renderStale={voiceLab.renderStale}
-          onParametersChange={voiceLab.updateParameters}
-          onApplyPreset={voiceLab.applyPreset}
-          onRecord={voiceLab.record}
-          onStopRecording={voiceLab.stopRecording}
-          onImport={voiceLab.importWav}
-          onRender={voiceLab.render}
-          onPreview={voiceLab.preview}
-          onStopPreview={voiceLab.stopPreview}
-          onStopAudio={voiceLab.stopAudio}
-          onSavePreset={presets.saveVoiceLab}
-          onApplyLive={audioParameters.applySnapshot}
-          onExport={voiceLab.exportWav}
-          onClear={voiceLab.clear}
-          chromeHidden={chrome.hidden}
-          onChromeActivity={chrome.reveal}
-        />
-      )}
+        {!voiceLabOpen && devices.lastPage === 'use' && (
+          <UsePage
+            physicalInputs={devices.physicalInputs}
+            inputs={devices.inputs}
+            outputs={devices.outputs}
+            inputId={devices.inputId}
+            routes={devices.externalRoutes}
+            selectedRoute={devices.selectedRoute}
+            validation={devices.routeValidation}
+            draftRouteId={devices.draftRouteId}
+            draftPlaybackId={devices.draftPlaybackId}
+            draftCaptureId={devices.draftCaptureId}
+            confirmPhysicalEndpoints={devices.confirmPhysicalEndpoints}
+            routeBusy={devices.routeBusy}
+            disabled={!desktopRuntimeAvailable}
+            status={engine.status}
+            catalog={presets.catalog}
+            presetBusy={presets.busy}
+            onInputChange={devices.setInputId}
+            onDraftRouteChange={devices.setDraftRouteId}
+            onDraftPlaybackChange={devices.setDraftPlaybackId}
+            onDraftCaptureChange={devices.setDraftCaptureId}
+            onConfirmPhysicalEndpointsChange={devices.setConfirmPhysicalEndpoints}
+            onSaveRoute={devices.saveExternalRoute}
+            onDeleteRoute={devices.deleteExternalRoute}
+            onValidateRoute={devices.validateSelectedRoute}
+            onApplyPreset={presets.apply}
+            onStart={startUse}
+            onStop={stop}
+          />
+        )}
+        {!voiceLabOpen && devices.lastPage === 'test' && (
+          <TestPage
+            inputs={devices.physicalInputs}
+            outputs={devices.outputs}
+            inputId={devices.inputId}
+            monitorId={devices.localMonitorId}
+            disabled={!desktopRuntimeAvailable}
+            status={engine.status}
+            parameters={audioParameters.parameters}
+            catalog={presets.catalog}
+            presetBusy={presets.busy}
+            presetActions={presets}
+            onInputChange={devices.setInputId}
+            onMonitorDeviceChange={devices.setLocalMonitorId}
+            onParametersChange={audioParameters.update}
+            onStart={startTest}
+            onStop={stop}
+          />
+        )}
+        {!voiceLabOpen && devices.lastPage === 'diagnostics' && (
+          <SettingsDiagnosticsPage
+            inputs={devices.inputs}
+            outputs={devices.outputs}
+            inputId={devices.inputId}
+            monitorId={devices.localMonitorId}
+            selectedRoute={devices.selectedRoute}
+            routeValidation={devices.routeValidation}
+            reliabilityProfile={devices.reliabilityProfile}
+            status={engine.status}
+            disabled={!desktopRuntimeAvailable}
+            onReliabilityProfileChange={devices.setReliabilityProfile}
+          />
+        )}
+        {voiceLabOpen && (
+          <VoiceLabPage
+            inputs={devices.physicalInputs}
+            outputs={devices.outputs}
+            defaultInputId={devices.inputId}
+            defaultOutputId={devices.localMonitorId}
+            disabled={!desktopRuntimeAvailable}
+            liveActive={engine.status.state !== 'stopped'}
+            parameters={voiceLab.parameters}
+            status={voiceLab.status}
+            catalog={presets.catalog}
+            busy={voiceLab.busy || presets.busy}
+            renderStale={voiceLab.renderStale}
+            onParametersChange={voiceLab.updateParameters}
+            onApplyPreset={voiceLab.applyPreset}
+            onRecord={voiceLab.record}
+            onStopRecording={voiceLab.stopRecording}
+            onImport={voiceLab.importWav}
+            onRender={voiceLab.render}
+            onPreview={voiceLab.preview}
+            onStopPreview={voiceLab.stopPreview}
+            onStopAudio={voiceLab.stopAudio}
+            onSavePreset={presets.saveVoiceLab}
+            onApplyLive={audioParameters.applySnapshot}
+            onExport={voiceLab.exportWav}
+            onClear={voiceLab.clear}
+            chromeHidden={!chrome.state.visible}
+            onChromeAutomaticActivity={chrome.automaticShow}
+            onChromeNavigationFocus={chrome.navigationFocus}
+          />
+        )}
 
-      {errors.map((error) => (
-        <div className="error" role="alert" key={error.id}>
-          <strong>{error.label}:</strong> {error.message}
-        </div>
-      ))}
-      <footer>
-        This app is not a Windows microphone device. Receiving apps require a real capture endpoint.
-      </footer>
+        {errors.map((error) => (
+          <div className="error" role="alert" key={error.id}>
+            <strong>{error.label}:</strong> {error.message}
+          </div>
+        ))}
+        <footer>
+          This app is not a Windows microphone device. Receiving apps require a real capture
+          endpoint.
+        </footer>
+      </div>
     </main>
   );
 }

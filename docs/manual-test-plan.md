@@ -497,3 +497,19 @@ or physical window layout.
   controls are covered by the sticky action area.
 
 Status: pending manual layout acceptance.
+
+### Phase 4.2.2 Compare width and stable navigation hiding
+
+- Open **Voice Lab → Compare** and confirm the Compare card uses all available width,
+  the heading stays on one line, and Original/Processed selectors remain readable.
+- Confirm the active waveform and playback progress use the full card width; confirm
+  Loop replay is below progress and left aligned.
+- Confirm metadata is two readable items per row with no standalone punctuation, and
+  technical metadata remains below the summary grid.
+- Click the real page background. Confirm navigation hides, remains hidden for five
+  seconds, and does not reveal from top-edge pointer movement or scrolling.
+- Click the real page background again. Confirm navigation appears, remains visible for
+  five seconds, and does not flash. Hide it once more, press Escape, and confirm it
+  appears.
+
+Status: pending manual acceptance.

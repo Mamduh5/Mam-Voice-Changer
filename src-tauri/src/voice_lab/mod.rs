@@ -1,7 +1,7 @@
 mod capture;
 pub mod clip;
 pub mod controller;
-mod offline;
+pub(crate) mod offline;
 mod output_config;
 mod preview;
 pub mod session;

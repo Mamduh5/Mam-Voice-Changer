@@ -167,6 +167,7 @@ monitoring levels.
 - [Audio routing](docs/audio-routing.md)
 - [External-routing implementation note](docs/external-routing-implementation-note.md)
 - [Voice Lab Phase 1 design](docs/voice-lab-phase-1-design.md)
+- [Deterministic voice-transformation evaluation](docs/voice-evaluation.md)
 - [Voice Dataset Phase 2 design](docs/voice-dataset-phase-2-design.md)
 - [Voice Dataset Phase 2 implementation note](docs/voice-dataset-phase-2-implementation-note.md)
 - [Voice Model Phase 3 design](docs/voice-model-phase-3-design.md)

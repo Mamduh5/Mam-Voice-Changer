@@ -239,6 +239,16 @@ hard parameter jumps. All scratch buffers, delay lines, filter states, limiter
 lookahead storage, voicing-analysis storage, and backend capacity are prepared
 before block processing.
 
+## Offline evaluation
+
+`voice_evaluation/` is a developer-tool-only analysis and reporting subsystem.
+The `voice-eval` binary imports WAVs through Voice Lab validation and calls the
+same `ExistingDspOfflineProcessor`, including its reported-latency trimming. Its
+F0, voicing, FFT, spectral, formant-fixture, expectation, baseline, and report
+logic may allocate and never runs in the live callback, worker, or Tauri startup.
+The evaluator exposes no parameter publication or routing path and does not alter
+DSP preparation, thresholds, defaults, presets, or processor order.
+
 
 ## Preset persistence
 

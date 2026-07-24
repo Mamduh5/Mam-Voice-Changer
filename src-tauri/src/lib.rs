@@ -5,6 +5,7 @@ mod dsp;
 mod error;
 mod state;
 mod voice_dataset;
+pub mod voice_evaluation;
 mod voice_lab;
 mod voice_model;
 

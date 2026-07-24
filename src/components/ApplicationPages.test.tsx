@@ -9,6 +9,7 @@ import type {
 import { stoppedStatus } from '../types/engine';
 import { defaultAudioParameters } from '../types/parameters';
 import { EngineControls } from './EngineControls';
+import { ApplicationChrome } from './ApplicationChrome';
 import { PageNavigation } from './PageNavigation';
 import { RoutingNotice } from './RoutingNotice';
 import { SettingsDiagnosticsPage } from './SettingsDiagnosticsPage';
@@ -366,6 +367,8 @@ describe('application pages', () => {
         onApplyLive={action}
         onExport={action}
         onClear={action}
+        chromeHidden={false}
+        onChromeActivity={vi.fn()}
       />,
     );
 
@@ -382,8 +385,11 @@ describe('application pages', () => {
     expect(markup).toContain('Models');
     expect(markup).toContain('Profiles');
     expect(markup).toContain('role="tablist"');
-    expect(markup).toContain('workspace-primary-actions');
-    expect(markup).toContain('compare-master-detail');
+    expect(markup.match(/workspace-primary-actions/g)).toHaveLength(1);
+    expect(markup).toContain('voice-lab-compare-layout');
+    expect(markup).toContain('voice-lab-source-column');
+    expect(markup).toContain('voice-lab-configuration-column');
+    expect(markup).toContain('voice-lab-empty-processed');
     expect(markup).toContain('Advanced DSP controls');
     expect(markup).not.toContain('Voice Dataset Capture');
     expect(markup).not.toContain('Voice Models');
@@ -402,6 +408,19 @@ describe('application pages', () => {
     expect(markup).toContain('not neural voice cloning');
     expect(markup).not.toContain('Train model');
     expect(markup).not.toContain('Realtime AI');
+  });
+
+  it('keeps chrome navigation present for keyboard access while the visual chrome is hidden', () => {
+    const markup = renderToStaticMarkup(
+      <ApplicationChrome hidden onReveal={vi.fn()} onScheduleHide={vi.fn()}>
+        <PageNavigation page="voiceLab" onNavigate={vi.fn()} />
+      </ApplicationChrome>,
+    );
+
+    expect(markup).toContain('application-chrome--hidden');
+    expect(markup).toContain('chrome-activation-zone');
+    expect(markup).toContain('Application sections');
+    expect(markup).toContain('Voice Lab');
   });
 
   it('renders route-specific recovery controls and honest routing notice', () => {

@@ -1342,6 +1342,148 @@ summary:focus-visible {
   min-width: 110px;
 }
 
+.application-chrome {
+  display: grid;
+  max-height: 180px;
+  overflow: hidden;
+  transition:
+    max-height 180ms ease,
+    transform 180ms ease,
+    margin 180ms ease;
+}
+
+.application-chrome--hidden {
+  max-height: 0;
+  margin-bottom: 0;
+  transform: translateY(-12px);
+}
+
+.chrome-activation-zone {
+  position: fixed;
+  z-index: 30;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 8px;
+}
+
+.application-chrome-secondary {
+  transition:
+    max-height 180ms ease,
+    padding 180ms ease,
+    border-width 180ms ease,
+    transform 180ms ease;
+}
+
+.application-chrome-secondary--hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  overflow: hidden;
+  transform: translateY(-8px);
+}
+
+.voice-lab-page {
+  gap: 12px;
+}
+
+.voice-lab-intro {
+  gap: 8px;
+  padding: 16px 18px;
+}
+
+.voice-lab-intro h2 {
+  font-size: 21px;
+}
+
+.voice-lab-intro p {
+  margin: 0;
+}
+
+.voice-lab-primary-actions {
+  position: sticky;
+  z-index: 11;
+  top: 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 8px;
+}
+
+.voice-lab-compare-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.4fr) minmax(0, 0.6fr);
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+}
+
+.voice-lab-source-column,
+.voice-lab-configuration-column {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+
+.voice-lab-source,
+.voice-lab-presets,
+.voice-lab-finish,
+.voice-lab-comparison {
+  gap: 12px;
+  padding: 16px;
+}
+
+.voice-lab-configuration-column .voice-lab-preset-grid {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.voice-lab-comparison {
+  display: grid;
+}
+
+.voice-lab-clip-selector {
+  display: flex;
+  gap: 8px;
+}
+
+.voice-lab-clip-selector button {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #4a3861;
+  border-radius: 9px;
+  color: #d8cfe2;
+  background: #20172c;
+  cursor: pointer;
+}
+
+.voice-lab-clip-selector button.active {
+  color: #fff;
+  background: #563080;
+}
+
+.voice-lab-empty-clip,
+.voice-lab-empty-processed {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #aaa0b8;
+  background: #20172c;
+}
+
+.voice-lab-empty-processed {
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .application-chrome,
+  .application-chrome-secondary {
+    transition: none;
+  }
+}
+
 .compare-master-detail,
 .profiles-master-detail,
 .dataset-master-detail,
@@ -1611,6 +1753,10 @@ summary:focus-visible {
   .compact-profile-header {
     grid-template-columns: 1fr;
   }
+
+  .voice-lab-compare-layout {
+    grid-template-columns: minmax(240px, 0.42fr) minmax(0, 0.58fr);
+  }
 }
 
 @media (max-width: 800px) {
@@ -1622,6 +1768,10 @@ summary:focus-visible {
   .profiles-master-detail,
   .dataset-master-detail,
   .model-master-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .voice-lab-compare-layout {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1644,6 +1794,15 @@ summary:focus-visible {
   .workspace-primary-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .voice-lab-primary-actions {
+    width: 100%;
+    top: 4px;
+  }
+
+  .voice-lab-configuration-column .voice-lab-preset-grid {
+    grid-template-columns: 1fr;
   }
 
   .workspace-primary-actions {

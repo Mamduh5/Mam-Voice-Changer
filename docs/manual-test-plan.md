@@ -442,17 +442,20 @@ audible pass.
 
 ## Phase 4.1 preview, Profiles, and responsive UI acceptance
 
-Status for this implementation run: **pending manual execution**. Automated tests
-do not establish audible playback on the reported Realtek endpoint, native focus
-behavior, or physical window layout.
+Status: **partially executed**. The three Realtek preview outcomes below were manually
+passed. Automated tests do not establish other audible behavior, native focus behavior,
+or physical window layout.
 
 ### Preview error fix
 
 - Launch the app and open **Voice Lab → Compare**.
 - Select `Speaker/HP (Realtek High Definition Audio)`.
 - Record or import a 44.1 kHz clip.
-- Play Original and confirm it is audible.
-- Render a processed clip, play Processed, and confirm it is audible.
+- Play Original and confirm it is audible. **Passed manually:** playback worked through
+  the selected Realtek output.
+- Render a processed clip, play Processed, and confirm it is audible. **Passed manually:**
+  processed playback worked through the selected Realtek output.
+- **Passed manually:** processed playback audibly contained the selected DSP modification.
 - Confirm diagnostics show clip rate 44100, output rate 48000 (or another rate
   actually supported by the selected device), and resampling active Yes.
 - Switch Original/Processed near the middle and confirm approximate time is
@@ -481,3 +484,16 @@ behavior, or physical window layout.
   Escape close, and focus restoration.
 - Confirm Compare, Profiles, Dataset, and Models are not rendered simultaneously.
 - Confirm Use, Test, VB-CABLE pairing, and external routing behave as before.
+
+### Phase 4.2 compact layout and auto-hidden chrome
+
+- Open **Voice Lab → Compare** at 1920×1080 and confirm no large empty grid cells,
+  independently stacked Source and Configuration columns, compact Processed Empty state,
+  and one primary action bar.
+- Scroll downward and confirm application and Voice Lab navigation hide; move the pointer
+  to the top edge or scroll upward and confirm they reveal.
+- Navigate by keyboard and confirm the chrome remains visible and accessible.
+- Repeat at 1280×720, 1024×768, and 800×600; confirm no horizontal overflow and no
+  controls are covered by the sticky action area.
+
+Status: pending manual layout acceptance.

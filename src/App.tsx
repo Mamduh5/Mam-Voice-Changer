@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { ApplicationChrome } from './components/ApplicationChrome';
 import { PageNavigation, type NavigationPage } from './components/PageNavigation';
 import { SettingsDiagnosticsPage } from './components/SettingsDiagnosticsPage';
 import { TestPage } from './components/TestPage';
 import { UsePage } from './components/UsePage';
 import { VoiceLabPage } from './components/VoiceLabPage';
 import { useAudioDevices } from './hooks/useAudioDevices';
+import { useAutoHideChrome } from './hooks/useAutoHideChrome';
 import { useAudioParameters } from './hooks/useAudioParameters';
 import { useEngineState } from './hooks/useEngineState';
 import { usePresets } from './hooks/usePresets';
@@ -15,6 +17,7 @@ import { isLeavingTest } from './utils/monitoringMode';
 
 export default function App() {
   useModelShutdownGuard();
+  const chrome = useAutoHideChrome();
   const [voiceLabOpen, setVoiceLabOpen] = useState(false);
   const desktopRuntimeAvailable = tauriAudioApi.isDesktopRuntimeAvailable();
   const devices = useAudioDevices(desktopRuntimeAvailable);
@@ -100,30 +103,36 @@ export default function App() {
           {DESKTOP_RUNTIME_UNAVAILABLE}
         </div>
       )}
-      <header>
-        <div className="brand">
-          <span className="logo">M</span>
-          <div>
-            <h1>Mam Voice Changer</h1>
-            <p>Local Windows routing and an isolated offline Voice Lab</p>
+      <ApplicationChrome
+        hidden={chrome.hidden}
+        onReveal={chrome.reveal}
+        onScheduleHide={chrome.scheduleHide}
+      >
+        <header>
+          <div className="brand">
+            <span className="logo">M</span>
+            <div>
+              <h1>Mam Voice Changer</h1>
+              <p>Local Windows routing and an isolated offline Voice Lab</p>
+            </div>
           </div>
-        </div>
-        <span className={active ? 'live' : 'idle'}>
-          {active ? 'ACTIVE' : engine.status.state.toUpperCase()}
-        </span>
-      </header>
+          <span className={active ? 'live' : 'idle'}>
+            {active ? 'ACTIVE' : engine.status.state.toUpperCase()}
+          </span>
+        </header>
 
-      <div className="navigation-row">
-        <PageNavigation page={activePage} onNavigate={navigate} />
-        <button
-          type="button"
-          className="refresh"
-          disabled={!desktopRuntimeAvailable || active || transitioning || devices.loading}
-          onClick={() => void devices.refresh()}
-        >
-          {devices.loading ? 'Refreshing...' : 'Refresh devices'}
-        </button>
-      </div>
+        <div className="navigation-row">
+          <PageNavigation page={activePage} onNavigate={navigate} />
+          <button
+            type="button"
+            className="refresh"
+            disabled={!desktopRuntimeAvailable || active || transitioning || devices.loading}
+            onClick={() => void devices.refresh()}
+          >
+            {devices.loading ? 'Refreshing...' : 'Refresh devices'}
+          </button>
+        </div>
+      </ApplicationChrome>
 
       {!voiceLabOpen && devices.lastPage === 'use' && (
         <UsePage
@@ -215,6 +224,8 @@ export default function App() {
           onApplyLive={audioParameters.applySnapshot}
           onExport={voiceLab.exportWav}
           onClear={voiceLab.clear}
+          chromeHidden={chrome.hidden}
+          onChromeActivity={chrome.reveal}
         />
       )}
 

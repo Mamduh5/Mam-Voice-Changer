@@ -216,13 +216,14 @@ impl AudioAnalysis {
                 ));
             }
         }
+        let sample_count = samples.len();
         Ok(Self {
             samples,
             mono,
             frames,
             sample_rate,
             channels,
-            sample_count: samples.len(),
+            sample_count,
             non_finite_samples,
         })
     }

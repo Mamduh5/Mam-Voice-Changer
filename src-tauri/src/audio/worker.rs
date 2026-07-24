@@ -64,7 +64,9 @@ impl DspWorker {
         profile: ReliabilityProfile,
     ) -> Result<(Self, SyncSender<()>, usize), AudioError> {
         let mut chain = DspChain::default();
-        chain.prepare(sample_rate, channels, block_frames);
+        chain
+            .prepare(sample_rate, channels, block_frames)
+            .map_err(AudioError::DspPreparation)?;
         chain.reset();
         let processing_latency_frames = chain.latency_frames() + block_frames;
         let (wake_tx, wake_rx) = mpsc::sync_channel(WAKE_CAPACITY);

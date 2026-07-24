@@ -49,13 +49,19 @@ impl MasterLimiter {
 }
 
 impl AudioProcessor for MasterLimiter {
-    fn prepare(&mut self, sample_rate: u32, channels: usize, _block_size: usize) {
+    fn prepare(
+        &mut self,
+        sample_rate: u32,
+        channels: usize,
+        _maximum_block_size: usize,
+    ) -> Result<(), String> {
         self.channels = channels.max(1);
         self.lookahead_frames =
             ((sample_rate.max(1) as f32 * LOOKAHEAD_MS / 1_000.0).round() as usize).max(1);
         self.delay = vec![0.0; self.lookahead_frames * self.channels];
         self.release_coefficient = time_coefficient(sample_rate, RELEASE_MS);
         self.reset();
+        Ok(())
     }
 
     fn process(&mut self, samples: &mut [f32]) {
@@ -130,7 +136,7 @@ mod tests {
     #[test]
     fn links_channels_and_bounds_delayed_peaks() {
         let mut limiter = MasterLimiter::default();
-        limiter.prepare(1_000, 2, 16);
+        limiter.prepare(1_000, 2, 16).unwrap();
         limiter.set_ceiling_db(-6.0);
         let mut samples = vec![0.0; 24];
         samples[2] = 2.0;

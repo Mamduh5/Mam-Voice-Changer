@@ -142,7 +142,12 @@ impl VocalAgingProcessor {
 }
 
 impl AudioProcessor for VocalAgingProcessor {
-    fn prepare(&mut self, sample_rate: u32, channels: usize, _block_size: usize) {
+    fn prepare(
+        &mut self,
+        sample_rate: u32,
+        channels: usize,
+        _maximum_block_size: usize,
+    ) -> Result<(), String> {
         self.sample_rate = sample_rate.max(1) as f32;
         self.channels = channels.max(1);
         for value in [
@@ -164,6 +169,7 @@ impl AudioProcessor for VocalAgingProcessor {
         self.spectral_high_coefficient = low_pass_coefficient(self.sample_rate, 7_500.0);
         self.spectral_states = vec![SpectralState::default(); self.channels];
         self.reset();
+        Ok(())
     }
 
     fn process(&mut self, samples: &mut [f32]) {
@@ -343,7 +349,7 @@ mod tests {
     ) -> VocalAgingProcessor {
         let mut processor = VocalAgingProcessor::default();
         processor.set_parameters(age, breath, tremor);
-        processor.prepare(sample_rate, channels, 256);
+        processor.prepare(sample_rate, channels, 256).unwrap();
         processor
     }
 

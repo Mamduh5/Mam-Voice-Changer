@@ -23,11 +23,17 @@ impl Default for HighPass {
 }
 
 impl AudioProcessor for HighPass {
-    fn prepare(&mut self, sample_rate: u32, channels: usize, _block_size: usize) {
+    fn prepare(
+        &mut self,
+        sample_rate: u32,
+        channels: usize,
+        _maximum_block_size: usize,
+    ) -> Result<(), String> {
         self.coefficient = (-TAU * CUTOFF_HZ / sample_rate.max(1) as f32).exp();
         self.previous_input = vec![0.0; channels.max(1)];
         self.previous_output = vec![0.0; channels.max(1)];
         self.channel_cursor = 0;
+        Ok(())
     }
 
     fn process(&mut self, samples: &mut [f32]) {
@@ -62,7 +68,7 @@ mod tests {
     #[test]
     fn rejects_a_dc_signal_without_becoming_unstable() {
         let mut filter = HighPass::default();
-        filter.prepare(48_000, 1, 256);
+        filter.prepare(48_000, 1, 256).unwrap();
         let mut samples = vec![1.0; 48_000];
 
         filter.process(&mut samples);
@@ -74,7 +80,7 @@ mod tests {
     #[test]
     fn keeps_channel_history_independent() {
         let mut filter = HighPass::default();
-        filter.prepare(48_000, 2, 4);
+        filter.prepare(48_000, 2, 4).unwrap();
         let mut samples = [1.0, 0.0, 1.0, 0.0];
 
         filter.process(&mut samples);

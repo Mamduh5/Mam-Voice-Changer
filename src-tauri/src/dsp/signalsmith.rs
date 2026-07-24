@@ -24,7 +24,7 @@ extern "C" {
         input_frames: usize,
         output: *mut f32,
         output_frames: usize,
-    );
+    ) -> bool;
 }
 
 pub struct SignalsmithStretch {
@@ -35,11 +35,29 @@ pub struct SignalsmithStretch {
 unsafe impl Send for SignalsmithStretch {}
 
 impl SignalsmithStretch {
-    pub fn new(channels: usize, block_frames: usize, interval_frames: usize) -> Option<Self> {
-        let channels = channels.max(1);
-        let handle =
-            unsafe { mam_signalsmith_create(channels as c_int, block_frames, interval_frames) };
-        NonNull::new(handle).map(|handle| Self { handle, channels })
+    pub fn new(
+        channels: usize,
+        block_frames: usize,
+        interval_frames: usize,
+    ) -> Result<Self, String> {
+        if channels == 0 {
+            return Err("Signalsmith requires at least one audio channel.".to_owned());
+        }
+        if block_frames == 0 || interval_frames == 0 || interval_frames > block_frames {
+            return Err(
+                "Signalsmith requires a nonzero interval no larger than its analysis block."
+                    .to_owned(),
+            );
+        }
+        let channels = c_int::try_from(channels)
+            .map_err(|_| "Signalsmith channel count exceeds the native ABI limit.".to_owned())?;
+        let handle = unsafe { mam_signalsmith_create(channels, block_frames, interval_frames) };
+        NonNull::new(handle)
+            .map(|handle| Self {
+                handle,
+                channels: channels as usize,
+            })
+            .ok_or_else(|| "Signalsmith could not allocate or configure its backend.".to_owned())
     }
 
     pub fn reset(&mut self) {
@@ -64,10 +82,15 @@ impl SignalsmithStretch {
         }
     }
 
-    pub fn process(&mut self, input: &mut [f32], output: &mut [f32]) {
-        debug_assert_eq!(input.len() % self.channels, 0);
-        debug_assert_eq!(output.len() % self.channels, 0);
-        unsafe {
+    pub fn process(&mut self, input: &mut [f32], output: &mut [f32]) -> Result<(), &'static str> {
+        if input.len() != output.len()
+            || !input.len().is_multiple_of(self.channels)
+            || !output.len().is_multiple_of(self.channels)
+        {
+            output.fill(0.0);
+            return Err("Signalsmith input and output must contain equal complete frames.");
+        }
+        let processed = unsafe {
             mam_signalsmith_process(
                 self.handle.as_ptr(),
                 input.as_mut_ptr(),
@@ -75,6 +98,12 @@ impl SignalsmithStretch {
                 output.as_mut_ptr(),
                 output.len() / self.channels,
             )
+        };
+        if processed {
+            Ok(())
+        } else {
+            output.fill(0.0);
+            Err("Signalsmith rejected the processing block.")
         }
     }
 }

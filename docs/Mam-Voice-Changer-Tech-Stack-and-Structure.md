@@ -47,7 +47,7 @@ Initial development should remain Windows-only.
 | Audio input/output | CPAL | Device enumeration, microphone capture, and output streaming |
 | Audio buffering | Ring buffer | Transfer audio safely between input and output streams |
 | DSP | Native Rust modules | Gain, gate, filtering, pitch processing, mixing, and limiting |
-| Pitch and formant backend | Signalsmith Stretch 1.3.2 through a static C ABI | Formant-aware, stream-length-preserving transformation without a runtime DLL |
+| Pitch and formant backend | Signalsmith Stretch 1.3.1 through a static C ABI | Formant-aware, stream-length-preserving transformation without a runtime DLL |
 | Serialization | Serde and serde_json | Versioned local JSON documents |
 | Error handling | thiserror | Typed internal errors |
 | Logging | tracing and tracing-subscriber | Structured diagnostics outside audio callbacks |

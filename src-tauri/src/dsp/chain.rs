@@ -248,37 +248,59 @@ impl DspChain {
 }
 
 impl AudioProcessor for DspChain {
-    fn prepare(&mut self, sample_rate: u32, channels: usize, block_size: usize) {
-        self.channels = channels.max(1);
+    fn prepare(
+        &mut self,
+        sample_rate: u32,
+        channels: usize,
+        maximum_block_size: usize,
+    ) -> Result<(), String> {
+        if sample_rate == 0 {
+            return Err("DSP preparation requires a nonzero sample rate.".to_owned());
+        }
+        if channels == 0 {
+            return Err("DSP preparation requires at least one channel.".to_owned());
+        }
+        if maximum_block_size == 0 {
+            return Err("DSP preparation requires a nonzero maximum block size.".to_owned());
+        }
+        let block_samples = maximum_block_size
+            .checked_mul(channels)
+            .ok_or_else(|| "DSP block size overflowed.".to_owned())?;
+
+        self.pitch
+            .prepare(sample_rate, channels, maximum_block_size)?;
+        self.channels = channels;
         self.input_gain
-            .prepare(sample_rate, self.channels, block_size);
+            .prepare(sample_rate, self.channels, maximum_block_size)?;
         self.high_pass
-            .prepare(sample_rate, self.channels, block_size);
+            .prepare(sample_rate, self.channels, maximum_block_size)?;
         self.noise_gate
-            .prepare(sample_rate, self.channels, block_size);
-        self.pitch.prepare(sample_rate, self.channels, block_size);
+            .prepare(sample_rate, self.channels, maximum_block_size)?;
         let pitch_latency_frames = self.pitch.latency_frames();
         self.dry_wet.set_latency_frames(pitch_latency_frames);
         self.bypass_delay.set_latency_frames(pitch_latency_frames);
         self.dry_wet.prepare(sample_rate, self.channels);
         self.vocal_aging
-            .prepare(sample_rate, self.channels, block_size);
-        self.tone.prepare(sample_rate, self.channels, block_size);
+            .prepare(sample_rate, self.channels, maximum_block_size)?;
+        self.tone
+            .prepare(sample_rate, self.channels, maximum_block_size)?;
         self.bypass_delay.prepare(self.channels);
         self.bypass_mix.prepare(sample_rate, TRANSITION_RAMP_MS);
         self.mute_gain.prepare(sample_rate, TRANSITION_RAMP_MS);
         self.output_gain
-            .prepare(sample_rate, self.channels, block_size);
-        self.limiter.prepare(sample_rate, self.channels, block_size);
-        let block_samples = block_size.max(1) * self.channels;
+            .prepare(sample_rate, self.channels, maximum_block_size)?;
+        self.limiter
+            .prepare(sample_rate, self.channels, maximum_block_size)?;
         self.dry_scratch = vec![0.0; block_samples];
         self.delayed_dry_scratch = vec![0.0; block_samples];
         self.bypass_scratch = vec![0.0; block_samples];
         self.delayed_bypass_scratch = vec![0.0; block_samples];
+        Ok(())
     }
 
     fn process(&mut self, samples: &mut [f32]) {
-        if samples.len() > self.dry_scratch.len() {
+        if samples.len() > self.dry_scratch.len() || !samples.len().is_multiple_of(self.channels) {
+            samples.fill(0.0);
             return;
         }
 
@@ -351,7 +373,7 @@ mod tests {
 
     fn prepared_chain(parameters: DspParameters) -> DspChain {
         let mut chain = DspChain::default();
-        chain.prepare(48_000, 1, 256);
+        chain.prepare(48_000, 1, 256).unwrap();
         chain.set_parameters(parameters);
         chain.reset();
         chain
@@ -487,7 +509,7 @@ mod tests {
     #[test]
     fn long_aged_stereo_processing_remains_finite_and_bounded() {
         let mut chain = DspChain::default();
-        chain.prepare(44_100, 2, 127);
+        chain.prepare(44_100, 2, 127).unwrap();
         chain.set_parameters(DspParameters {
             pitch_semitones: 3.5,
             formant_shift_semitones: 2.0,

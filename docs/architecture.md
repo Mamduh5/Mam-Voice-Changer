@@ -153,15 +153,15 @@ is allowed; duplicate matches remain unset and produce a warning.
 
 ## Pitch backend and packaging
 
-Pitch and formant processing use Signalsmith Stretch 1.3.2. The upstream C++11
+Pitch and formant processing use Signalsmith Stretch 1.3.1. The upstream C++11
 header and its Signalsmith Linear dependency are vendored with their MIT license
 texts. A small C ABI wrapper is compiled by `cc` with the existing Windows MSVC
 toolchain and linked statically into the Tauri binary. There is no external DSP
 DLL.
 
 The backend is configured with a 2,048-frame analysis block and 512-frame
-interval. Pitch and formant values ramp over 20 ms and are applied at fixed
-512-frame processing boundaries. Formant compensation remains enabled during
+interval. Pitch and formant values ramp over 20 ms and are applied at bounded
+64-frame control boundaries. Formant compensation remains enabled during
 pitch shifts; the independent formant control adds -6 to +6 semitones of spectral
 envelope movement.
 
@@ -204,6 +204,10 @@ DSP latency frames = Signalsmith input latency
                    + limiter lookahead
                    + worker block frames
 ```
+
+With the current configuration, Signalsmith reports 2,048 total algorithmic
+frames: about 42.7 ms at 48 kHz or 46.4 ms at 44.1 kHz. The frame count is read
+from the prepared backend and converted using the negotiated live sample rate.
 
 The device estimate adds negotiated input/output buffers and profile-specific output-ring prefill.
 These values are configuration-derived estimates, not measured round-trip delay.

@@ -33,9 +33,17 @@ impl ToneEq {
 }
 
 impl AudioProcessor for ToneEq {
-    fn prepare(&mut self, sample_rate: u32, channels: usize, block_size: usize) {
-        self.warmth.prepare(sample_rate, channels, block_size);
-        self.brightness.prepare(sample_rate, channels, block_size);
+    fn prepare(
+        &mut self,
+        sample_rate: u32,
+        channels: usize,
+        maximum_block_size: usize,
+    ) -> Result<(), String> {
+        self.warmth
+            .prepare(sample_rate, channels, maximum_block_size)?;
+        self.brightness
+            .prepare(sample_rate, channels, maximum_block_size)?;
+        Ok(())
     }
 
     fn process(&mut self, samples: &mut [f32]) {
@@ -116,7 +124,12 @@ impl ShelfFilter {
 }
 
 impl AudioProcessor for ShelfFilter {
-    fn prepare(&mut self, sample_rate: u32, channels: usize, _block_size: usize) {
+    fn prepare(
+        &mut self,
+        sample_rate: u32,
+        channels: usize,
+        _maximum_block_size: usize,
+    ) -> Result<(), String> {
         self.sample_rate = sample_rate.max(1) as f32;
         self.channels = channels.max(1);
         self.ramp_frames =
@@ -135,6 +148,7 @@ impl AudioProcessor for ShelfFilter {
             .scale(1.0 / self.ramp_frames as f32);
         self.remaining_frames = self.ramp_frames;
         self.states = vec![FilterState::default(); self.channels];
+        Ok(())
     }
 
     fn process(&mut self, samples: &mut [f32]) {

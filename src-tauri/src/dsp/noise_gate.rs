@@ -81,7 +81,12 @@ impl NoiseGate {
 }
 
 impl AudioProcessor for NoiseGate {
-    fn prepare(&mut self, sample_rate: u32, channels: usize, _block_size: usize) {
+    fn prepare(
+        &mut self,
+        sample_rate: u32,
+        channels: usize,
+        _maximum_block_size: usize,
+    ) -> Result<(), String> {
         self.channels = channels.max(1);
         self.hold_frames =
             ((sample_rate.max(1) as f32 * HOLD_MS / 1_000.0).round() as usize).max(1);
@@ -89,6 +94,7 @@ impl AudioProcessor for NoiseGate {
         self.release_coefficient = time_coefficient(sample_rate, RELEASE_MS);
         self.envelope_attack_coefficient = time_coefficient(sample_rate, ENVELOPE_ATTACK_MS);
         self.envelope_release_coefficient = time_coefficient(sample_rate, ENVELOPE_RELEASE_MS);
+        Ok(())
     }
 
     fn process(&mut self, samples: &mut [f32]) {
@@ -170,7 +176,7 @@ mod tests {
 
     fn expander(sample_rate: u32, channels: usize) -> NoiseGate {
         let mut expander = NoiseGate::default();
-        expander.prepare(sample_rate, channels, 256);
+        expander.prepare(sample_rate, channels, 256).unwrap();
         expander.set_threshold_db(-40.0);
         expander.reset();
         expander

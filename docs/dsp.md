@@ -27,10 +27,29 @@ Signalsmith Stretch performs pitch transformation while preserving stream length
 Formant compensation is active during pitch changes, and the formant slider moves
 the estimated spectral envelope independently. This is genuine native processing;
 the frontend does not synthesize results or provide a fallback device response.
+Pitch follows the equal-tempered ratio `2^(semitones / 12)`. Formant shift changes
+the spectral envelope without intentionally changing F0.
 
 Dry/wet combines the transformed signal with a dry signal delayed by the backend's
 reported pitch latency. At 0% the result is latency-aligned dry audio; at 100% it
 is fully transformed.
+
+The configured 2,048-frame analysis backend reports 2,048 total algorithmic
+latency frames (Signalsmith input latency plus output latency). The application
+converts that frame count using the active sample rate: about 42.7 ms at 48 kHz
+or 46.4 ms at 44.1 kHz. The live DSP estimate additionally includes limiter
+lookahead and one worker block. Both the dry mix and bypass tap delay by the
+Signalsmith total before crossfading, so they do not combine an immediate dry
+signal with delayed transformed audio.
+
+Pitch and formant targets use a 20 ms ramp and are published to Signalsmith at
+bounded 64-frame control intervals without reconstructing the backend.
+
+Extreme pitch/formant combinations can sound synthetic. This layer does not
+perform voiced/unvoiced separation or dedicated consonant preservation.
+Deterministic DSP tests establish frequency, envelope, duration, transition,
+latency, and finite-output behavior; they do not establish subjective voice
+quality.
 
 ## Vocal aging
 

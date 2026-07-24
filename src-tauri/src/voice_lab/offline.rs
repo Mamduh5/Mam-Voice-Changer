@@ -42,7 +42,7 @@ impl OfflineVoiceProcessor for ExistingDspOfflineProcessor {
     ) -> Result<RenderedClip, String> {
         let parameters = parameters.validate()?;
         let mut chain = DspChain::default();
-        chain.prepare(input.sample_rate, input.channels, OFFLINE_BLOCK_FRAMES);
+        chain.prepare(input.sample_rate, input.channels, OFFLINE_BLOCK_FRAMES)?;
         chain.reset();
         chain.set_parameters(parameters);
         let latency_frames = chain.latency_frames();

@@ -220,8 +220,10 @@ tabs.
   measured acoustic round trip.
 - Formant processing is spectral and polyphonic rather than a monophonic PSOLA
   model. Extreme pitch/formant combinations can still sound synthetic.
+- The real-time Signalsmith layer does not yet separate voiced/unvoiced regions
+  or apply dedicated consonant-preservation processing.
 - Compatibility and subjective listening quality have not been established by
-  compile-time checks.
+  compile-time or deterministic DSP checks.
 - Dataset quality and SNR values are heuristics. Dataset collection does not clone
   a voice, train a model, or establish that a profile can reproduce a speaker.
 - Dataset files are local plaintext in application-managed storage. Explicit

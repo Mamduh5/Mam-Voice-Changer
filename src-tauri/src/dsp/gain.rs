@@ -22,9 +22,15 @@ impl Gain {
 }
 
 impl AudioProcessor for Gain {
-    fn prepare(&mut self, sample_rate: u32, channels: usize, _block_size: usize) {
+    fn prepare(
+        &mut self,
+        sample_rate: u32,
+        channels: usize,
+        _maximum_block_size: usize,
+    ) -> Result<(), String> {
         self.channels = channels.max(1);
         self.linear_gain.prepare(sample_rate, GAIN_RAMP_MS);
+        Ok(())
     }
 
     fn process(&mut self, samples: &mut [f32]) {

@@ -8,6 +8,7 @@ type Props = {
   allowEmpty?: boolean;
   emptyLabel?: string;
   showOutputClassification?: boolean;
+  unavailableName?: string | null;
   onChange: (id: string) => void;
 };
 
@@ -19,6 +20,7 @@ export function DeviceSelector({
   allowEmpty = false,
   emptyLabel = 'Select a device',
   showOutputClassification = false,
+  unavailableName = null,
   onChange,
 }: Props) {
   return (
@@ -29,8 +31,14 @@ export function DeviceSelector({
         disabled={disabled || (devices.length === 0 && !allowEmpty)}
         onChange={(event) => onChange(event.target.value)}
       >
-        {(allowEmpty || devices.length === 0) && (
-          <option value="">{devices.length === 0 ? 'No devices found' : emptyLabel}</option>
+        {(allowEmpty || devices.length === 0 || Boolean(unavailableName)) && (
+          <option value="">
+            {unavailableName
+              ? `Select another device (${unavailableName} is unavailable)`
+              : devices.length === 0
+                ? 'No devices found'
+                : emptyLabel}
+          </option>
         )}
         {devices.map((device) => (
           <option key={device.id} value={device.id}>

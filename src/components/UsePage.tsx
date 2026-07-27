@@ -45,6 +45,7 @@ type Props = {
   inputs: AudioDevice[];
   outputs: AudioDevice[];
   inputId: string;
+  unavailableInputName?: string | null;
   routes: ExternalAudioRouteCatalog;
   selectedRoute: ExternalAudioRoute | null;
   validation: RouteCompatibilityResult;
@@ -95,6 +96,7 @@ export function UsePage(props: Props) {
           label="Physical input microphone"
           value={props.inputId}
           devices={props.physicalInputs}
+          unavailableName={props.unavailableInputName}
           disabled={props.disabled || routeLocked}
           onChange={props.onInputChange}
         />

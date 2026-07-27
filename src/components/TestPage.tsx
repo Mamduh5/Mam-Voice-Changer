@@ -22,6 +22,8 @@ type Props = {
   outputs: AudioDevice[];
   inputId: string;
   monitorId: string;
+  unavailableInputName?: string | null;
+  unavailableMonitorName?: string | null;
   disabled: boolean;
   status: EngineStatus;
   parameters: AudioParameters;
@@ -63,6 +65,7 @@ export function TestPage(props: Props) {
             label="Input microphone"
             value={props.inputId}
             devices={props.inputs}
+            unavailableName={props.unavailableInputName}
             disabled={props.disabled || routeLocked}
             onChange={props.onInputChange}
           />
@@ -70,6 +73,7 @@ export function TestPage(props: Props) {
             label="Test monitor device"
             value={props.monitorId}
             devices={props.outputs}
+            unavailableName={props.unavailableMonitorName}
             disabled={props.disabled || routeLocked}
             showOutputClassification
             onChange={props.onMonitorDeviceChange}

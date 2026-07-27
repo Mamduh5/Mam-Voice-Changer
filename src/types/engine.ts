@@ -11,6 +11,9 @@ export type EngineStatus = {
   inputLevel: number;
   outputLevel: number;
   monitorLevel: number;
+  inputClipping: boolean;
+  outputClipping: boolean;
+  monitorClipping: boolean;
   reliabilityProfile: ReliabilityProfile;
   inputCallbackGaps: number;
   inputRingOverflows: number;
@@ -54,6 +57,9 @@ export const stoppedStatus: EngineStatus = {
   inputLevel: 0,
   outputLevel: 0,
   monitorLevel: 0,
+  inputClipping: false,
+  outputClipping: false,
+  monitorClipping: false,
   reliabilityProfile: 'balanced',
   inputCallbackGaps: 0,
   inputRingOverflows: 0,

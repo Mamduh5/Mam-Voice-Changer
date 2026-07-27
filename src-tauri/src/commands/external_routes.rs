@@ -318,6 +318,10 @@ fn route_document(
             .clone(),
         reliability_profile: current.reliability_profile,
         last_page: current.last_page,
+        dsp_parameters: current.dsp_parameters,
+        dsp_parameters_initialized: current.dsp_parameters_initialized,
+        first_run_setup_dismissed: current.first_run_setup_dismissed,
+        last_successful_configuration: current.last_successful_configuration.clone(),
     }
 }
 

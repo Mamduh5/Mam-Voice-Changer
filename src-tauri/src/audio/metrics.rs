@@ -27,6 +27,9 @@ pub struct EngineStatus {
     pub input_level: f32,
     pub output_level: f32,
     pub monitor_level: f32,
+    pub input_clipping: bool,
+    pub output_clipping: bool,
+    pub monitor_clipping: bool,
     pub reliability_profile: ReliabilityProfile,
     pub input_callback_gaps: u64,
     pub input_ring_overflows: u64,
@@ -70,6 +73,9 @@ pub struct SharedMetrics {
     input_level: AtomicU32,
     output_level: AtomicU32,
     monitor_level: AtomicU32,
+    input_clipping: AtomicBool,
+    output_clipping: AtomicBool,
+    monitor_clipping: AtomicBool,
     reliability_profile: AtomicU8,
     input_callback_gaps: AtomicU64,
     input_ring_overflows: AtomicU64,
@@ -114,6 +120,9 @@ impl Default for SharedMetrics {
             input_level: AtomicU32::new(0.0_f32.to_bits()),
             output_level: AtomicU32::new(0.0_f32.to_bits()),
             monitor_level: AtomicU32::new(0.0_f32.to_bits()),
+            input_clipping: AtomicBool::new(false),
+            output_clipping: AtomicBool::new(false),
+            monitor_clipping: AtomicBool::new(false),
             reliability_profile: AtomicU8::new(profile_to_u8(ReliabilityProfile::Balanced)),
             input_callback_gaps: AtomicU64::new(0),
             input_ring_overflows: AtomicU64::new(0),
@@ -170,17 +179,30 @@ impl SharedMetrics {
     }
 
     pub fn set_input_level(&self, level: f32) {
-        self.input_level
-            .store(finite_level(level).to_bits(), Ordering::Relaxed);
+        let level = finite_level(level);
+        self.input_level.store(level.to_bits(), Ordering::Relaxed);
+        if level >= 0.999 {
+            self.input_clipping.store(true, Ordering::Relaxed);
+        }
     }
 
     pub fn set_output_level(&self, level: f32, monitor: bool) {
-        let target = if monitor {
-            &self.monitor_level
+        let level = finite_level(level);
+        let (target, clipping) = if monitor {
+            (&self.monitor_level, &self.monitor_clipping)
         } else {
-            &self.output_level
+            (&self.output_level, &self.output_clipping)
         };
-        target.store(finite_level(level).to_bits(), Ordering::Relaxed);
+        target.store(level.to_bits(), Ordering::Relaxed);
+        if level >= 0.999 {
+            clipping.store(true, Ordering::Relaxed);
+        }
+    }
+
+    pub fn clear_clipping(&self) {
+        self.input_clipping.store(false, Ordering::Relaxed);
+        self.output_clipping.store(false, Ordering::Relaxed);
+        self.monitor_clipping.store(false, Ordering::Relaxed);
     }
 
     pub fn record_input_callback_gap(&self) {
@@ -320,6 +342,7 @@ impl SharedMetrics {
             .store(UNOBSERVED_MINIMUM, Ordering::Relaxed);
         self.startup_prefill_timed_out
             .store(false, Ordering::Relaxed);
+        self.clear_clipping();
         for ratio in [
             &self.clock_drift_correction_ratio,
             &self.minimum_clock_drift_correction_ratio,
@@ -376,6 +399,9 @@ impl SharedMetrics {
             input_level: load_f32(&self.input_level),
             output_level: load_f32(&self.output_level),
             monitor_level: load_f32(&self.monitor_level),
+            input_clipping: self.input_clipping.load(Ordering::Relaxed),
+            output_clipping: self.output_clipping.load(Ordering::Relaxed),
+            monitor_clipping: self.monitor_clipping.load(Ordering::Relaxed),
             reliability_profile: profile_from_u8(self.reliability_profile.load(Ordering::Relaxed)),
             input_callback_gaps: self.input_callback_gaps.load(Ordering::Relaxed),
             input_ring_overflows: self.input_ring_overflows.load(Ordering::Relaxed),
@@ -572,5 +598,24 @@ mod tests {
         assert_eq!(status.maximum_dsp_processing_time_ms, 2.5);
         assert_eq!(status.input_callback_gaps, 0);
         assert_eq!(status.output_ring_underruns, 0);
+    }
+
+    #[test]
+    fn clipping_latches_until_explicitly_cleared_or_session_reset() {
+        let metrics = SharedMetrics::default();
+        metrics.set_input_level(1.0);
+        metrics.set_output_level(1.2, false);
+        metrics.set_output_level(0.5, true);
+        let clipped = metrics.snapshot();
+        assert!(clipped.input_clipping);
+        assert!(clipped.output_clipping);
+        assert!(!clipped.monitor_clipping);
+
+        metrics.set_input_level(0.1);
+        metrics.set_output_level(0.1, false);
+        assert!(metrics.snapshot().output_clipping);
+        metrics.clear_clipping();
+        assert!(!metrics.snapshot().input_clipping);
+        assert!(!metrics.snapshot().output_clipping);
     }
 }

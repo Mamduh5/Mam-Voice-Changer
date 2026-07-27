@@ -16,10 +16,9 @@ virtual playback/capture pair is required to bridge those samples back into a
 Windows capture endpoint. Physical speakers are playback endpoints only and are
 never chosen automatically as an external route.
 
-Some products use counterintuitive names. With VB-CABLE, for example, the app
-commonly writes to `CABLE Input`, while Discord selects `CABLE Output`. Other
-products differ; use the exact paired capture name shown on Use rather than
-assuming every endpoint containing `Output` is a microphone.
+Products can use counterintuitive names. Use the exact paired capture name shown
+on Use rather than assuming every endpoint containing `Output` is a microphone.
+See the [Windows setup guide](windows-setup.md) for a concise user workflow.
 
 ## Discovery and pairing
 

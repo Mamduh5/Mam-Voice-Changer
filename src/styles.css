@@ -1315,8 +1315,6 @@ body {
   overflow-x: hidden;
 }
 
-
-
 button,
 select,
 input[type='checkbox'],
@@ -1887,6 +1885,181 @@ summary:focus-visible {
   box-shadow: 0 24px 80px rgb(0 0 0 / 50%);
 }
 
+.navigation-actions,
+.diagnostic-actions,
+.error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.setup-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(5 3 10 / 82%);
+  backdrop-filter: blur(8px);
+}
+
+.quick-setup {
+  width: min(880px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border-color: #76509b;
+  box-shadow: 0 28px 90px rgb(0 0 0 / 60%);
+}
+
+.setup-steps {
+  display: grid;
+  gap: 18px;
+  padding-left: 24px;
+}
+
+.setup-steps > li {
+  padding-left: 8px;
+}
+
+.setup-steps > li > strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.setup-result,
+.stream-format {
+  color: #bdb4ca;
+}
+
+.setup-result.ready {
+  color: #77dca3;
+}
+
+.setup-dismiss {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.audio-health {
+  margin-top: 18px;
+}
+
+.health-meter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.health-state,
+.diagnostic-outcome {
+  align-self: flex-start;
+  padding: 5px 9px;
+  border: 1px solid #665377;
+  border-radius: 999px;
+  color: #d8cee2;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.health-state.running,
+.diagnostic-outcome.ready {
+  border-color: #34734f;
+  color: #77dca3;
+}
+
+.health-state.degraded,
+.health-state.recovering,
+.diagnostic-outcome.readyWithWarnings {
+  border-color: #92702e;
+  color: #ffd47c;
+}
+
+.health-state.error,
+.diagnostic-outcome.notReady {
+  border-color: #8b3f52;
+  color: #ff9eb4;
+}
+
+.clipping-warning,
+.recoverable-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.clipping-warning {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #8b3f52;
+  border-radius: 10px;
+  background: rgb(139 63 82 / 14%);
+}
+
+.clipping-warning p,
+.recoverable-error small {
+  display: block;
+  margin: 4px 0 0;
+}
+
+.product-diagnostics {
+  display: grid;
+  gap: 16px;
+}
+
+.diagnostic-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.diagnostic-results article {
+  padding: 12px;
+  border: 1px solid #4b4057;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.diagnostic-results article.pass {
+  border-color: #345d47;
+}
+
+.diagnostic-results article.warning {
+  border-color: #80672f;
+}
+
+.diagnostic-results article.failure {
+  border-color: #7d3e4d;
+}
+
+.diagnostic-results p {
+  margin: 6px 0;
+}
+
+.diagnostic-report {
+  width: 100%;
+  min-height: 280px;
+  margin-top: 10px;
+  padding: 12px;
+  resize: vertical;
+  color: #d9d3e1;
+  background: #0d0a12;
+  border: 1px solid #4d3f5b;
+  border-radius: 8px;
+  font-family: Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.about-product ul {
+  display: grid;
+  gap: 8px;
+}
+
 @media (max-width: 1080px) {
   main,
   .application-content {
@@ -1982,6 +2155,25 @@ summary:focus-visible {
 
   .preview-metadata-grid {
     grid-template-columns: 1fr;
+  }
+
+  .health-meter-grid,
+  .diagnostic-results {
+    grid-template-columns: 1fr;
+  }
+
+  .clipping-warning,
+  .recoverable-error {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .setup-backdrop {
+    padding: 10px;
+  }
+
+  .quick-setup {
+    max-height: calc(100vh - 20px);
   }
 
   .preview-metadata-item {

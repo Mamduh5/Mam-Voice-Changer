@@ -25,6 +25,8 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if state.voice_model().has_active_work() {
                     api.prevent_close();
                     let _ = window.emit("voice-model-shutdown-blocked", ());
+                } else {
+                    let _ = state.controller().stop();
                 }
             }
         })
@@ -55,8 +57,11 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             commands::engine::stop_engine,
             commands::engine::stop_test_route,
             commands::engine::get_engine_status,
+            commands::engine::clear_clipping_status,
             commands::parameters::get_parameters,
             commands::parameters::set_parameters,
+            commands::parameters::persist_audio_parameters,
+            commands::product::get_product_information,
             commands::presets::list_presets,
             commands::presets::save_preset,
             commands::presets::save_voice_lab_preset,

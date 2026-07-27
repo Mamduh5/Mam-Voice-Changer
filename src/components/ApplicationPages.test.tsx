@@ -11,6 +11,7 @@ import { defaultAudioParameters } from '../types/parameters';
 import { EngineControls } from './EngineControls';
 import { ApplicationChrome } from './ApplicationChrome';
 import { PageNavigation } from './PageNavigation';
+import { QuickSetup } from './QuickSetup';
 import { RoutingNotice } from './RoutingNotice';
 import { SettingsDiagnosticsPage } from './SettingsDiagnosticsPage';
 import { TestPage } from './TestPage';
@@ -302,6 +303,42 @@ describe('application pages', () => {
     expect(diagnostics).toContain('None');
     expect(diagnostics).toContain('does not prove');
     expect(diagnostics).not.toContain('Discord connected');
+  });
+
+  it('renders first-run setup with explicit safe defaults and no automatic-start claim', () => {
+    const setup = renderToStaticMarkup(
+      <QuickSetup
+        inputs={[input]}
+        outputs={[monitor]}
+        inputId={input.id}
+        monitorId={monitor.id}
+        unavailableInputName={null}
+        unavailableMonitorName={null}
+        routes={routeCatalog}
+        draftRouteId={route.routeId}
+        draftPlaybackId={playback.id}
+        draftCaptureId={capture.id}
+        routeValidation={readyValidation}
+        status={stoppedStatus}
+        disabled={false}
+        onInputChange={vi.fn()}
+        onMonitorChange={vi.fn()}
+        onDraftRouteChange={vi.fn()}
+        onDraftPlaybackChange={vi.fn()}
+        onDraftCaptureChange={vi.fn()}
+        onSaveRoute={asyncAction}
+        onApplySafeDefaults={asyncAction}
+        onStart={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(setup).toContain('Quick setup');
+    expect(setup).toContain('Apply safe defaults');
+    expect(setup).toContain('Start processing');
+    expect(setup).toContain('Do not show this automatically again');
+    expect(setup).toContain('never starts automatically');
+    expect(setup).not.toContain('WORLD');
   });
 
   it('renders the bounded, explicit Voice Lab workflow without live mutation claims', () => {

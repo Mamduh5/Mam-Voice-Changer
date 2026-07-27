@@ -5,7 +5,11 @@ import { ParameterSynchronizer } from './parameterSynchronizer';
 
 export function useAudioParameters(enabled = true) {
   const [parameters, setParameters] = useState(defaultAudioParameters);
-  const [error, setError] = useState<string | null>(null);
+  const [confirmedParameters, setConfirmedParameters] = useState(defaultAudioParameters);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [persistenceReady, setPersistenceReady] = useState(false);
+
   const [synchronizer] = useState(
     () =>
       new ParameterSynchronizer(defaultAudioParameters, {
@@ -13,7 +17,8 @@ export function useAudioParameters(enabled = true) {
         setParameters: tauriAudioApi.setParameters,
         onStateChange: (state) => {
           setParameters(state.parameters);
-          setError(state.error);
+          setConfirmedParameters(state.confirmedParameters);
+          setSyncError(state.error);
         },
       }),
   );
@@ -24,11 +29,36 @@ export function useAudioParameters(enabled = true) {
       return undefined;
     }
 
+    let active = true;
     synchronizer.connect();
+    void synchronizer.settle().then(() => {
+      if (active) setPersistenceReady(true);
+    });
     return () => {
+      active = false;
       synchronizer.disconnect();
     };
   }, [enabled, synchronizer]);
+
+  useEffect(() => {
+    if (
+      !enabled ||
+      !persistenceReady ||
+      syncError !== null ||
+      JSON.stringify(parameters) !== JSON.stringify(confirmedParameters)
+    ) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      void tauriAudioApi
+        .persistAudioParameters({ ...confirmedParameters })
+        .then(() => setPersistenceError(null))
+        .catch((cause) =>
+          setPersistenceError(`Unable to save audio settings for restart: ${String(cause)}`),
+        );
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [confirmedParameters, enabled, parameters, persistenceReady, syncError]);
 
   const update = useCallback(
     (changes: Partial<AudioParameters>) => {
@@ -68,6 +98,6 @@ export function useAudioParameters(enabled = true) {
     beginPresetOperation,
     finishPresetOperation,
     applySnapshot,
-    error,
+    error: syncError ?? persistenceError,
   };
 }

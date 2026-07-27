@@ -10,6 +10,7 @@ import type {
 import type { EngineStatus } from '../types/engine';
 import type { AudioParameters } from '../types/parameters';
 import type { PresetCatalog } from '../types/presets';
+import type { ProductInformation } from '../types/product';
 import type { VoiceLabClipVersion, VoiceLabStatus } from '../types/voiceLab';
 import type {
   CreateVoiceProfileRequest,
@@ -92,9 +93,13 @@ export const tauriAudioApi = {
   stopEngine: () => invokeDesktop<void>('stop_engine'),
   stopTestRoute: () => invokeDesktop<void>('stop_test_route'),
   getEngineStatus: () => invokeDesktop<EngineStatus>('get_engine_status'),
+  clearClippingStatus: () => invokeDesktop<EngineStatus>('clear_clipping_status'),
   getParameters: () => invokeDesktop<AudioParameters>('get_parameters'),
   setParameters: (parameters: AudioParameters) =>
     invokeDesktop<void>('set_parameters', { parameters }),
+  persistAudioParameters: (parameters: AudioParameters) =>
+    invokeDesktop<void>('persist_audio_parameters', { parameters }),
+  getProductInformation: () => invokeDesktop<ProductInformation>('get_product_information'),
   listPresets: () => invokeDesktop<PresetCatalog>('list_presets'),
   savePreset: (name: string, parameters: AudioParameters) =>
     invokeDesktop<PresetCatalog>('save_preset', { name, parameters }),

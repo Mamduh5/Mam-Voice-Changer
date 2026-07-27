@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     audio::{
@@ -8,6 +9,7 @@ use crate::{
         reliability::ReliabilityProfile,
     },
     commands::external_routes::selected_saved_route,
+    config::application_settings::{LastSuccessfulConfiguration, LastSuccessfulMode},
     state::app_state::AppState,
 };
 
@@ -85,7 +87,67 @@ pub fn start_engine(
             }
         }
     };
-    state.controller().start(request)
+    state.controller().start(request.clone())?;
+    record_last_successful_configuration(&state, &request);
+    Ok(())
+}
+
+fn record_last_successful_configuration(state: &AppState, request: &StartAudioRequest) {
+    let status = state.controller().status();
+    let format = status.active_stream_format.as_ref();
+    let (mode, input_name, output_name, output_channels, reliability_profile) = match request {
+        StartAudioRequest::Use {
+            input_name,
+            processed_destination_name,
+            reliability_profile,
+            ..
+        } => (
+            LastSuccessfulMode::Use,
+            input_name,
+            processed_destination_name,
+            format.and_then(|active| active.processed_destination_channels),
+            *reliability_profile,
+        ),
+        StartAudioRequest::Test {
+            input_name,
+            monitor_name,
+            reliability_profile,
+            ..
+        } => (
+            LastSuccessfulMode::Test,
+            input_name,
+            monitor_name,
+            format.and_then(|active| active.local_monitor_channels),
+            *reliability_profile,
+        ),
+    };
+    let configuration = LastSuccessfulConfiguration {
+        mode,
+        input_device_name: input_name.clone(),
+        output_device_name: output_name.clone(),
+        sample_rate: format.map(|active| active.input_sample_rate),
+        input_channels: format.map(|active| active.input_channels),
+        output_channels,
+        reliability_profile,
+        used_at_unix_ms: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(1),
+    };
+    let result = state
+        .application_settings()
+        .lock()
+        .map_err(|_| "Application settings storage is unavailable.".to_owned())
+        .and_then(|mut store| {
+            let mut document = store.document().clone();
+            document.last_successful_configuration = Some(configuration);
+            store.save(document).map_err(|error| error.to_string())
+        });
+    if let Err(error) = result {
+        tracing::warn!(
+            "Audio started, but the last successful configuration was not saved: {error}"
+        );
+    }
 }
 
 fn resolve_physical_input(id: &str, friendly_name: &str) -> Result<DeviceInfo, String> {
@@ -133,6 +195,12 @@ pub fn stop_test_route(state: tauri::State<'_, AppState>) -> Result<(), String> 
 
 #[tauri::command]
 pub fn get_engine_status(state: tauri::State<'_, AppState>) -> EngineStatus {
+    state.controller().status()
+}
+
+#[tauri::command]
+pub fn clear_clipping_status(state: tauri::State<'_, AppState>) -> EngineStatus {
+    state.controller().clear_clipping();
     state.controller().status()
 }
 

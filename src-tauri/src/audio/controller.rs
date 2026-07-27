@@ -227,6 +227,10 @@ impl EngineController {
         self.metrics.snapshot()
     }
 
+    pub fn clear_clipping(&self) {
+        self.metrics.clear_clipping();
+    }
+
     pub fn parameters(&self) -> crate::dsp::chain::DspParameters {
         self.parameters.snapshot()
     }

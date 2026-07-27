@@ -31,8 +31,13 @@ impl AppState {
     ) -> Result<Self, PresetError> {
         let preset_store = PresetStore::load(preset_path)?;
         let application_settings = ApplicationSettingsStore::load(application_settings_path);
+        let startup_parameters = if application_settings.document().dsp_parameters_initialized {
+            application_settings.document().dsp_parameters
+        } else {
+            preset_store.selected_parameters()?
+        };
         controller
-            .set_parameters(preset_store.selected_parameters()?)
+            .set_parameters(startup_parameters)
             .map_err(PresetError::Validation)?;
 
         Ok(Self {

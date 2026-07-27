@@ -7,8 +7,10 @@ export function useEngineState(enabled = true) {
   const [status, setStatus] = useState<EngineStatus>(stoppedStatus);
   const [commandError, setCommandError] = useState<string | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
+  const [operation, setOperation] = useState<'starting' | 'stopping' | null>(null);
   const mountedRef = useRef(false);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
+  const operationRef = useRef<'starting' | 'stopping' | null>(null);
 
   const refreshStatus = useCallback((): Promise<void> => {
     if (!enabled) {
@@ -62,7 +64,12 @@ export function useEngineState(enabled = true) {
       if (!enabled) {
         return;
       }
+      if (operationRef.current || !['stopped', 'error'].includes(status.state)) {
+        return;
+      }
 
+      operationRef.current = 'starting';
+      setOperation('starting');
       setCommandError(null);
       try {
         await tauriAudioApi.startEngine(request);
@@ -72,16 +79,23 @@ export function useEngineState(enabled = true) {
         }
       } finally {
         await refreshStatus();
+        operationRef.current = null;
+        if (mountedRef.current) setOperation(null);
       }
     },
-    [enabled, refreshStatus],
+    [enabled, refreshStatus, status.state],
   );
 
   const stop = useCallback(async () => {
     if (!enabled) {
       return;
     }
+    if (operationRef.current || status.state === 'stopped' || status.state === 'stopping') {
+      return;
+    }
 
+    operationRef.current = 'stopping';
+    setOperation('stopping');
     setCommandError(null);
     try {
       await tauriAudioApi.stopEngine();
@@ -91,14 +105,21 @@ export function useEngineState(enabled = true) {
       }
     } finally {
       await refreshStatus();
+      operationRef.current = null;
+      if (mountedRef.current) setOperation(null);
     }
-  }, [enabled, refreshStatus]);
+  }, [enabled, refreshStatus, status.state]);
 
   const stopTestRoute = useCallback(async () => {
     if (!enabled) {
       return;
     }
+    if (operationRef.current || status.routePurpose !== 'test') {
+      return;
+    }
 
+    operationRef.current = 'stopping';
+    setOperation('stopping');
     setCommandError(null);
     try {
       await tauriAudioApi.stopTestRoute();
@@ -108,8 +129,41 @@ export function useEngineState(enabled = true) {
       }
     } finally {
       await refreshStatus();
+      operationRef.current = null;
+      if (mountedRef.current) setOperation(null);
     }
-  }, [enabled, refreshStatus]);
+  }, [enabled, refreshStatus, status.routePurpose]);
 
-  return { status, commandError, pollError, start, stop, stopTestRoute };
+  const clearClipping = useCallback(async () => {
+    if (!enabled) return;
+    try {
+      const nextStatus = await tauriAudioApi.clearClippingStatus();
+      if (mountedRef.current) setStatus(nextStatus);
+    } catch (cause) {
+      if (mountedRef.current) {
+        setCommandError(`Unable to clear clipping indicators: ${String(cause)}`);
+      }
+    }
+  }, [enabled]);
+
+  const displayedStatus: EngineStatus = operation
+    ? {
+        ...status,
+        state: operation,
+        message:
+          operation === 'starting' ? 'Starting audio processing' : 'Stopping audio processing',
+      }
+    : status;
+
+  return {
+    status: displayedStatus,
+    commandError,
+    pollError,
+    start,
+    stop,
+    stopTestRoute,
+    clearClipping,
+    refreshStatus,
+    clearCommandError: () => setCommandError(null),
+  };
 }

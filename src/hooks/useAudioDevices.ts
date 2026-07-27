@@ -4,11 +4,11 @@ import type {
   ApplicationPage,
   ApplicationSettingsUpdate,
   AudioDevice,
+  AudioDeviceList,
   ExternalAudioRouteCatalog,
   ReliabilityProfile,
   RouteCompatibilityResult,
 } from '../types/audio';
-import { preferredDevice, reconcileSelection } from '../utils/deviceSelection';
 
 function errorMessage(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause);
@@ -19,6 +19,7 @@ export const defaultApplicationSettings: ApplicationSettingsUpdate = {
   localMonitorId: null,
   reliabilityProfile: 'balanced',
   lastPage: 'use',
+  firstRunSetupDismissed: false,
 };
 
 export const emptyExternalRouteCatalog: ExternalAudioRouteCatalog = {
@@ -50,6 +51,12 @@ export function useAudioDevices(enabled = true) {
   const [draftCaptureId, setDraftCaptureId] = useState('');
   const [confirmPhysicalEndpoints, setConfirmPhysicalEndpoints] = useState(false);
   const [routeBusy, setRouteBusy] = useState(false);
+  const [unavailableInputName, setUnavailableInputName] = useState<string | null>(null);
+  const [unavailableLocalMonitorName, setUnavailableLocalMonitorName] = useState<string | null>(
+    null,
+  );
+  const [lastSuccessfulConfiguration, setLastSuccessfulConfiguration] =
+    useState<AudioDeviceList['lastSuccessfulConfiguration']>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const activeRef = useRef(false);
@@ -142,22 +149,22 @@ export function useAudioDevices(enabled = true) {
         tauriAudioApi.listExternalAudioRoutes(),
       ]);
       if (activeRef.current && revision === refreshRevisionRef.current) {
-        const physicalInputs = devices.inputs.filter((device) => !device.isLikelyVirtual);
-        const inputId = reconcileSelection(devices.selectedInputId ?? '', physicalInputs);
-        const monitorId = reconcileSelection(
-          devices.localMonitorId ?? preferredDevice(devices.outputs),
-          devices.outputs,
-        );
+        const inputId = devices.selectedInputId ?? '';
+        const monitorId = devices.localMonitorId ?? '';
         const next: ApplicationSettingsUpdate = {
           selectedInputId: inputId || null,
           localMonitorId: monitorId || null,
           reliabilityProfile: devices.reliabilityProfile,
           lastPage: devices.lastPage,
+          firstRunSetupDismissed: devices.firstRunSetupDismissed,
         };
         settingsRef.current = next;
         setSettings(next);
         setInputs(devices.inputs);
         setOutputs(devices.outputs);
+        setUnavailableInputName(devices.unavailableInputName);
+        setUnavailableLocalMonitorName(devices.unavailableLocalMonitorName);
+        setLastSuccessfulConfiguration(devices.lastSuccessfulConfiguration);
         applyRouteCatalog(routes);
         setError(
           [devices.restorationWarning, routes.restorationWarning].filter(Boolean).join(' ') || null,
@@ -202,6 +209,10 @@ export function useAudioDevices(enabled = true) {
   );
   const setLastPage = useCallback(
     (page: ApplicationPage) => updateSettings({ lastPage: page }),
+    [updateSettings],
+  );
+  const setFirstRunSetupDismissed = useCallback(
+    (dismissed: boolean) => updateSettings({ firstRunSetupDismissed: dismissed }),
     [updateSettings],
   );
   const setDraftRouteId = useCallback((routeId: string) => {
@@ -272,8 +283,12 @@ export function useAudioDevices(enabled = true) {
     outputs,
     inputId: settings.selectedInputId ?? '',
     localMonitorId: settings.localMonitorId ?? '',
+    unavailableInputName,
+    unavailableLocalMonitorName,
     reliabilityProfile: settings.reliabilityProfile,
     lastPage: settings.lastPage,
+    firstRunSetupDismissed: settings.firstRunSetupDismissed,
+    lastSuccessfulConfiguration,
     externalRoutes,
     selectedRoute,
     routeValidation,
@@ -286,6 +301,7 @@ export function useAudioDevices(enabled = true) {
     setLocalMonitorId,
     setReliabilityProfile,
     setLastPage,
+    setFirstRunSetupDismissed,
     setDraftRouteId,
     setDraftPlaybackId: (id: string) => {
       setDraftRouteIdState('');

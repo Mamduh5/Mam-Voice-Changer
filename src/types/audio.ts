@@ -71,12 +71,16 @@ export type AudioDeviceList = {
   inputs: AudioDevice[];
   outputs: AudioDevice[];
   selectedInputId: string | null;
+  unavailableInputName: string | null;
   selectedExternalRouteId: string | null;
   externalRoutePlaybackId: string | null;
   externalRouteCaptureId: string | null;
   localMonitorId: string | null;
+  unavailableLocalMonitorName: string | null;
   reliabilityProfile: ReliabilityProfile;
   lastPage: ApplicationPage;
+  firstRunSetupDismissed: boolean;
+  lastSuccessfulConfiguration: LastSuccessfulConfiguration | null;
   hasLikelyVirtualDestination: boolean;
   restorationWarning: string | null;
 };
@@ -86,6 +90,18 @@ export type ApplicationSettingsUpdate = {
   localMonitorId: string | null;
   reliabilityProfile: ReliabilityProfile;
   lastPage: ApplicationPage;
+  firstRunSetupDismissed: boolean;
+};
+
+export type LastSuccessfulConfiguration = {
+  mode: 'use' | 'test';
+  inputDeviceName: string;
+  outputDeviceName: string;
+  sampleRate: number | null;
+  inputChannels: number | null;
+  outputChannels: number | null;
+  reliabilityProfile: ReliabilityProfile;
+  usedAtUnixMs: number;
 };
 
 export type SaveExternalAudioRouteRequest = {

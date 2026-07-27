@@ -27,6 +27,10 @@ independent local monitor is available only on Test and defaults off.
 - Linked 5 ms lookahead master limiter with a configurable digital ceiling
 - Final smoothed mute stage
 - Atomic live parameter snapshots, meters, counters, and latency estimates
+- First-run quick setup, explicit start/stop lifecycle states, latched clipping
+  warnings, no-signal guidance, and user-triggered readiness diagnostics
+- Local versioned persistence for device choices and confirmed live DSP values,
+  plus a deliberately reviewable non-audio diagnostic report
 - Versioned preset persistence in Tauri's application-data directory
 - Three read-only built-in presets (`Natural`, `Warm tone`, and `Bright tone`) plus
   user presets created from the complete live DSP parameter snapshot
@@ -111,7 +115,8 @@ headphones, and increase levels gradually.
 - Rust stable with the MSVC toolchain
 - Microsoft C++ Build Tools
 - Microsoft Edge WebView2 Runtime
-- [VB-CABLE](https://vb-audio.com/Cable/) when virtual-microphone routing is needed
+- A compatible Windows virtual playback/capture cable when virtual-microphone
+  routing is needed; Mam Voice Changer does not install one
 
 Offline model work additionally requires a user-prepared Python environment,
 Seed-VC checkout, configuration, and pretrained checkpoints. None are bundled,
@@ -132,12 +137,11 @@ npm run dev
 `npm run dev` launches the Tauri desktop runtime. `npm run dev:web` intentionally
 launches only Vite; native audio controls remain disabled there.
 
-On Use, refresh devices and save a detected or manual playback/capture pair. For
-VB-CABLE this is commonly **CABLE Input** as Mam Voice Changer's playback endpoint
-and **CABLE Output** as the receiving application's microphone. Names vary by
-product; follow the paired capture endpoint shown by the app. Without a real
-virtual capture endpoint, Test can still use headphones, but Use cannot become a
-microphone source for another application.
+On Use, refresh devices and save a detected or manual playback/capture pair.
+Select the pair's playback side as Mam Voice Changer's processed output and the
+displayed paired capture side as the receiving application's microphone. Names
+vary by product. Without a real virtual capture endpoint, Test can still use
+headphones, but Use cannot become a microphone source for another application.
 
 ## Validation commands
 
@@ -165,6 +169,7 @@ monitoring levels.
 - [DSP design and parameters](docs/dsp.md)
 - [Architecture](docs/architecture.md)
 - [Audio routing](docs/audio-routing.md)
+- [Windows setup and troubleshooting](docs/windows-setup.md)
 - [External-routing implementation note](docs/external-routing-implementation-note.md)
 - [Voice Lab Phase 1 design](docs/voice-lab-phase-1-design.md)
 - [Deterministic voice-transformation evaluation](docs/voice-evaluation.md)
@@ -210,6 +215,17 @@ tabs.
 
 ## Known limitations
 
+- The current application is a prototype. Voice quality depends on the source
+  voice, microphone, room, and settings.
+- Pitch/formant processing does not guarantee convincing male/female or age
+  conversion. Extreme settings can sound artificial, and noise or feedback
+  reduces intelligibility.
+- Virtual-audio routing is separate Windows system configuration. Windows does
+  not necessarily provide a general-purpose virtual cable as a built-in
+  Microsoft component.
+- WORLD remains evaluator-only and is not used in the live audio pipeline.
+- Existing listening evidence came from one person and is not general user
+  validation.
 - Live Use/Test input and output must expose a common sample rate. Voice Lab
   preview independently negotiates and prepares audio for the selected output.
 - CPAL 0.15 device IDs are deterministic friendly-name fingerprints, not WASAPI

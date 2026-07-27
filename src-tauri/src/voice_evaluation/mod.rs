@@ -1,10 +1,10 @@
-mod analysis;
+pub(crate) mod analysis;
 mod cli;
 mod fixtures;
-mod manifest;
+pub(crate) mod manifest;
 mod report;
 mod runner;
-mod world;
+pub(crate) mod world;
 
 pub use cli::cli_main;
 pub use fixtures::generate_example;

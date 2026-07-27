@@ -354,7 +354,7 @@ pub fn resolve_case_input(corpus_root: &Path, relative: &str) -> Result<PathBuf,
     Ok(canonical)
 }
 
-fn validate_relative_path(value: &str, label: &str) -> Result<(), String> {
+pub(crate) fn validate_relative_path(value: &str, label: &str) -> Result<(), String> {
     let path = Path::new(value);
     let valid = !value.is_empty()
         && !path.is_absolute()

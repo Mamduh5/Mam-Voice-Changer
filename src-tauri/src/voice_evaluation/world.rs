@@ -564,7 +564,7 @@ fn native_call(call: impl FnOnce(*mut c_char, usize) -> c_int) -> Result<(), Wor
     })
 }
 
-fn validate_supported_parameters(parameters: DspParameters) -> Result<(), WorldError> {
+pub(crate) fn validate_supported_parameters(parameters: DspParameters) -> Result<(), WorldError> {
     let defaults = DspParameters::default();
     let unsupported = [
         (parameters.age_character != 0.0, "ageCharacter"),

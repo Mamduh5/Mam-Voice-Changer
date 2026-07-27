@@ -7,6 +7,7 @@ mod state;
 mod voice_dataset;
 pub mod voice_evaluation;
 mod voice_lab;
+pub mod voice_listening;
 mod voice_model;
 
 use tauri::{Emitter, Manager};

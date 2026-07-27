@@ -9,3 +9,4 @@ __pycache__/
 .venv/
 .DS_Store
 local-experiments/mam-voice-listening-round-1/corpus/*
+local-experiments

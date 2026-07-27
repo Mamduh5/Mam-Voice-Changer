@@ -190,9 +190,15 @@ Incomplete ratings, fewer than three trials in a category, one-source
 categories, and missing tags are explicitly flagged.
 
 `administrator/render-metrics.csv` links every trial and renderer to existing
-evaluator metrics where available: pitch error, formant error, V/UV
-disagreement, unvoiced HF LSD, waveform correlation, clipping, non-finite
-samples, duration delta, and render RTF. Real-speech formant error can remain
+evaluator metrics where available. Pitch-analysis v2 records its estimator and
+metric versions, paired source/output medians, median per-frame ratio and error,
+absolute/P10/P90 errors, paired coverage, confidence exclusions, octave
+ambiguity, and the shared-source-track fingerprint. The previous
+normalized-autocorrelation error, source/output medians, and paired-frame count
+remain available only in explicitly named `legacy_*` diagnostic columns. It
+also includes formant error, V/UV disagreement, unvoiced HF LSD, waveform
+correlation, clipping, non-finite samples, duration delta, and render RTF.
+Real-speech formant error can remain
 unavailable because the listening manifest does not invent synthetic formant
 bands. Objective and subjective values are linked descriptively; the tool does
 not claim correlation or causation.

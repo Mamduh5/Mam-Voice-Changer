@@ -187,11 +187,32 @@ Numerical metrics:
 
 Pitch metrics:
 
-- median input and output F0 over paired reliable voiced frames;
-- `measuredPitchRatio = medianOutputF0 / medianInputF0`;
+- deterministic offline YIN/CMNDF F0 with a 40 ms Hann window, 10 ms hop,
+  explicit confidence, energy/noise gates, parabolic lag interpolation, and
+  bounded 50-1000 Hz support at 44.1 and 48 kHz;
+- YIN's first plausible threshold-crossing local minimum is primary. A bounded
+  no-crossing fallback, materially stronger subharmonic evidence, and adjacent
+  reliable-frame transition cost stabilize ambiguous tracks without imposing a
+  speech-only ceiling;
+- one source F0/voicing/confidence track is analyzed and reused for every
+  renderer of the same input;
+- median input and output F0 over the same paired reliable frames, as descriptive
+  fields;
+- `measuredRatio_i = outputF0_i / sourceF0_i`;
+- `measuredPitchRatio = median(measuredRatio_i)`;
 - declared expected ratio;
-- `pitchErrorCents = 1200 * log2(measuredRatio / expectedRatio)`;
-- paired voiced-frame count and coverage.
+- `errorCents_i = 1200 * log2(measuredRatio_i / expectedRatio)`;
+- `pitchErrorCents = median(errorCents_i)`;
+- mean/median absolute error, P10/P90 error, confidence summaries, paired and
+  unpaired counts, coverage, and octave/large-error diagnostics.
+
+The previous ratio of independently summarized medians was invalid when harmonic
+order or renderer voicing changed the effective populations. Normalized
+autocorrelation is retained only in clearly labeled legacy diagnostic fields.
+At least three reliable paired frames are required; otherwise pitch is
+unavailable and any required expectation fails. The expected transform ratio is
+never used to select an F0 candidate, octave errors are not reduced modulo 1200
+cents, and estimates are not automatically doubled or halved.
 
 Voiced/unvoiced metrics:
 
@@ -274,17 +295,23 @@ requiring waveform identity.
 
 The output directory contains:
 
-- `report.json`: schema version 2, tool version, timestamp, build mode, analysis
-  configuration, case metrics, expectation results, summary, warnings, and optional
-  baseline comparison;
+- `report.json`: schema version 3, tool version, timestamp, build mode, analysis
+  configuration, explicit `yinCmndf` estimator-v2 and
+  `medianPairedFrameRatio` metric-v2 metadata, case metrics, expectation results,
+  summary, warnings, and optional baseline comparison;
 - `cases.csv`: one deterministic ID-sorted row per case with important scalar
   metrics;
 - `report.md`: expectation totals and a compact pitch, voicing, consonant,
   formant, numerical-safety, and performance table;
 - `rendered/<case-id>.wav`, unless disabled.
 
-A baseline must be a valid schema-v1 or schema-v2 evaluator report with unique
-case ID/renderer pairs. Schema-v1 cases migrate to `existingDsp`. Comparison
+A baseline must be a valid schema-v1, schema-v2, or schema-v3 evaluator report
+with unique case ID/renderer pairs. Schema-v1 cases migrate to `existingDsp`.
+Schemas 1 and 2 without pitch-analysis metadata are treated as legacy
+normalized-autocorrelation/ratio-of-medians reports. Unknown estimator or metric
+versions fail clearly. When versions differ, the comparison records
+`pitchAnalysisVersionMismatch` and does not classify pitch as an improvement or
+regression; compatible non-pitch deterministic metrics remain comparable. Comparison
 matches stable IDs plus renderer identity and reports added/missing cases plus improvement,
 regression, or unchanged classification for pitch error, voicing disagreement,
 unvoiced LSD, high-frequency preservation error relative to 1.0, formant-ratio
@@ -316,8 +343,14 @@ Do not add copyrighted third-party recordings to the repository.
 ## Limitations
 
 F0 and voicing estimates can fail on vocal fry, strong breathiness, whispering,
-irregular phonation, simultaneous voices, and noise. Synthetic results do not
+irregular phonation, music, overlapping speakers, and noisy speech. Real-speech
+pitch can therefore remain marginal or unavailable even with broad F0 support.
+Synthetic results do not
 establish naturalness, intelligibility, or listener preference. No PESQ, STOI,
 MOSNet, neural quality predictor, or automatic Mean Opinion Score is included.
 A controlled human listening protocol and real device/routing tests remain
 required before product-quality claims.
+
+These analysis changes do not modify renderer audio, live voicing, Signalsmith,
+WORLD, or any DSP behavior. Objective pitch accuracy does not establish listener
+preference.

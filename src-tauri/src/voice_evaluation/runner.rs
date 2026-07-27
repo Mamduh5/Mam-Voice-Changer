@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     time::Instant,
@@ -34,6 +35,7 @@ pub fn evaluate_manifest_file(
     let manifest = EvaluationManifest::from_json(&manifest_contents)?;
     let corpus_root = manifest.resolve_corpus_root(manifest_path)?;
     let mut cases = Vec::with_capacity(manifest.cases.len());
+    let mut source_analyses = BTreeMap::new();
     let mut ordered = manifest.cases.clone();
     ordered.sort_by(|left, right| left.id.cmp(&right.id));
     for case in &ordered {
@@ -42,6 +44,7 @@ pub fn evaluate_manifest_file(
             &corpus_root,
             &options.output_directory,
             options.no_rendered_audio,
+            &mut source_analyses,
         )?);
     }
 
@@ -66,6 +69,7 @@ fn evaluate_case(
     corpus_root: &Path,
     output_directory: &Path,
     no_rendered_audio: bool,
+    source_analyses: &mut BTreeMap<PathBuf, AudioAnalysis>,
 ) -> Result<CaseReport, String> {
     let input_path = resolve_case_input(corpus_root, &case.input)?;
     let input = wav::import(&input_path)
@@ -95,21 +99,29 @@ fn evaluate_case(
     };
     let elapsed = started.elapsed();
 
-    let input_analysis = AudioAnalysis::new(&input.samples, input.sample_rate, input.channels)?;
+    if !source_analyses.contains_key(&input_path) {
+        source_analyses.insert(
+            input_path.clone(),
+            AudioAnalysis::new(&input.samples, input.sample_rate, input.channels)?,
+        );
+    }
+    let input_analysis = source_analyses
+        .get(&input_path)
+        .ok_or_else(|| "Source analysis cache did not retain the input track.".to_owned())?;
     let output_analysis = AudioAnalysis::new(
         &rendered_clip.samples,
         rendered_clip.sample_rate,
         rendered_clip.channels,
     )?;
     let (numerical, pitch, voicing, spectral, consonant, formants) = compare_audio(
-        &input_analysis,
+        input_analysis,
         &output_analysis,
         &case.segments,
         case.expected_pitch_ratio,
         &case.formant_bands,
         case.parameters.formant_shift_semitones,
     );
-    let (input_rate, input_channels, input_frames, _) = audio_shape(&input_analysis);
+    let (input_rate, input_channels, input_frames, _) = audio_shape(input_analysis);
     let (output_rate, output_channels, output_frames, _) = audio_shape(&output_analysis);
     let duration_seconds = input_frames as f64 / f64::from(input_rate);
     let render_seconds = elapsed.as_secs_f64();
@@ -368,6 +380,15 @@ mod tests {
             .unwrap();
         assert_eq!(existing_summary.failed_expectations, 0);
         assert_eq!(report.cross_renderer_comparisons.len(), 13);
+        assert_eq!(report.pitch_analysis.pitch_estimator, "yinCmndf");
+        assert_eq!(
+            find(&report, "pitch-up-twelve")
+                .pitch
+                .source_track_fingerprint,
+            find(&report, "pitch-up-twelve-world")
+                .pitch
+                .source_track_fingerprint
+        );
         for id in ["pitch-up-twelve", "pitch-down-twelve", "pitch-up-seven"] {
             assert!(find(&report, id).pitch.pitch_error_cents.unwrap().abs() < 45.0);
             assert!(

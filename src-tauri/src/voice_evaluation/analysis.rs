@@ -17,6 +17,13 @@ pub const SPECTRAL_MAXIMUM_HZ: f64 = 10_000.0;
 pub const HIGH_FREQUENCY_MINIMUM_HZ: f64 = 3_000.0;
 const FFT_SIZE: usize = 2_048;
 const MINIMUM_PITCH_FRAMES: usize = 3;
+const YIN_THRESHOLD: f64 = 0.20;
+const YIN_FALLBACK_THRESHOLD: f64 = 0.35;
+const YIN_MINIMUM_CONFIDENCE: f64 = 0.65;
+const MAXIMUM_VOICED_ZERO_CROSSING_RATE: f64 = 0.35;
+const OCTAVE_TOLERANCE_CENTS: f64 = 100.0;
+const LARGE_ERROR_CENTS: f64 = 100.0;
+const TEMPORAL_TRANSITION_WEIGHT: f64 = 0.12;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -85,7 +92,7 @@ pub struct NumericalMetrics {
     pub output_clipping_ratio: f64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PitchMetrics {
     pub median_input_f0_hz: Option<f64>,
@@ -95,6 +102,48 @@ pub struct PitchMetrics {
     pub pitch_error_cents: Option<f64>,
     pub voiced_frame_count: usize,
     pub f0_estimation_coverage: f64,
+    #[serde(default)]
+    pub total_source_frames: usize,
+    #[serde(default)]
+    pub reliable_source_voiced_frames: usize,
+    #[serde(default)]
+    pub paired_reliable_frames: usize,
+    #[serde(default)]
+    pub unpaired_source_voiced_frames: usize,
+    #[serde(default)]
+    pub low_confidence_exclusions: usize,
+    #[serde(default)]
+    pub mean_absolute_pitch_error_cents: Option<f64>,
+    #[serde(default)]
+    pub median_absolute_pitch_error_cents: Option<f64>,
+    #[serde(default)]
+    pub p10_pitch_error_cents: Option<f64>,
+    #[serde(default)]
+    pub p90_pitch_error_cents: Option<f64>,
+    #[serde(default)]
+    pub median_source_confidence: Option<f64>,
+    #[serde(default)]
+    pub median_output_confidence: Option<f64>,
+    #[serde(default)]
+    pub median_paired_confidence: Option<f64>,
+    #[serde(default)]
+    pub octave_doubling_count: usize,
+    #[serde(default)]
+    pub octave_halving_count: usize,
+    #[serde(default)]
+    pub large_non_octave_error_count: usize,
+    #[serde(default)]
+    pub octave_ambiguity_count: usize,
+    #[serde(default)]
+    pub source_track_fingerprint: String,
+    #[serde(default)]
+    pub legacy_pitch_error_cents: Option<f64>,
+    #[serde(default)]
+    pub legacy_source_median_f0_hz: Option<f64>,
+    #[serde(default)]
+    pub legacy_output_median_f0_hz: Option<f64>,
+    #[serde(default)]
+    pub legacy_paired_frames: usize,
     pub unavailable_reason: Option<String>,
 }
 
@@ -167,8 +216,20 @@ pub struct AudioAnalysis {
 struct FrameAnalysis {
     center_frame: usize,
     f0_hz: Option<f64>,
+    confidence: f64,
     voiced: bool,
+    low_confidence_candidate: bool,
+    octave_ambiguous: bool,
+    candidates: Vec<PitchCandidate>,
+    legacy_f0_hz: Option<f64>,
+    legacy_voiced: bool,
     spectrum: Vec<f64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PitchCandidate {
+    f0_hz: f64,
+    confidence: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -216,6 +277,7 @@ impl AudioAnalysis {
                 ));
             }
         }
+        stabilize_pitch_track(&mut frames);
         let sample_count = samples.len();
         Ok(Self {
             samples,
@@ -312,24 +374,82 @@ pub fn compare_audio(
         .collect::<Vec<_>>();
     let mut input_f0 = Vec::new();
     let mut output_f0 = Vec::new();
+    let mut measured_ratios = Vec::new();
+    let mut pitch_errors = Vec::new();
+    let mut source_confidences = Vec::new();
+    let mut output_confidences = Vec::new();
+    let mut paired_confidences = Vec::new();
+    let mut octave_ambiguity_count = 0_usize;
     for (source, transformed) in &voiced_candidates {
         if let (Some(source_f0), Some(output_f0_value)) = (source.f0_hz, transformed.f0_hz) {
             input_f0.push(source_f0);
             output_f0.push(output_f0_value);
+            source_confidences.push(source.confidence);
+            output_confidences.push(transformed.confidence);
+            paired_confidences.push(source.confidence.min(transformed.confidence));
+            let ratio = output_f0_value / source_f0.max(SPECTRAL_EPSILON);
+            measured_ratios.push(ratio);
+            if let Some(expected) = expected_pitch_ratio {
+                pitch_errors.push(cents(ratio / expected));
+            }
+            octave_ambiguity_count +=
+                usize::from(source.octave_ambiguous || transformed.octave_ambiguous);
         }
     }
     let voiced_frame_count = input_f0.len();
     let coverage = voiced_frame_count as f64 / voiced_candidates.len().max(1) as f64;
-    let (median_input_f0_hz, median_output_f0_hz, measured_pitch_ratio, pitch_error_cents) =
-        if voiced_frame_count >= MINIMUM_PITCH_FRAMES {
-            let input_median = median(&input_f0);
-            let output_median = median(&output_f0);
-            let ratio = output_median / input_median.max(SPECTRAL_EPSILON);
-            let error = expected_pitch_ratio.map(|expected| cents(ratio / expected));
-            (Some(input_median), Some(output_median), Some(ratio), error)
-        } else {
-            (None, None, None, None)
-        };
+    let sufficient = voiced_frame_count >= MINIMUM_PITCH_FRAMES;
+    let median_input_f0_hz = sufficient.then(|| median(&input_f0));
+    let median_output_f0_hz = sufficient.then(|| median(&output_f0));
+    let measured_pitch_ratio = sufficient.then(|| median(&measured_ratios));
+    let pitch_error_cents =
+        (sufficient && expected_pitch_ratio.is_some()).then(|| median(&pitch_errors));
+    let absolute_errors = pitch_errors
+        .iter()
+        .map(|value| value.abs())
+        .collect::<Vec<_>>();
+    let octave_doubling_count = pitch_errors
+        .iter()
+        .filter(|error| (**error - 1_200.0).abs() <= OCTAVE_TOLERANCE_CENTS)
+        .count();
+    let octave_halving_count = pitch_errors
+        .iter()
+        .filter(|error| (**error + 1_200.0).abs() <= OCTAVE_TOLERANCE_CENTS)
+        .count();
+    let large_non_octave_error_count = pitch_errors
+        .iter()
+        .filter(|error| {
+            error.abs() > LARGE_ERROR_CENTS
+                && (**error - 1_200.0).abs() > OCTAVE_TOLERANCE_CENTS
+                && (**error + 1_200.0).abs() > OCTAVE_TOLERANCE_CENTS
+        })
+        .count();
+    let low_confidence_exclusions = paired
+        .iter()
+        .filter(|(source, transformed)| {
+            source.low_confidence_candidate
+                || (source.voiced && transformed.low_confidence_candidate)
+        })
+        .count();
+
+    let legacy_pairs = paired
+        .iter()
+        .filter_map(|(source, transformed)| {
+            (source.legacy_voiced && transformed.legacy_voiced)
+                .then(|| source.legacy_f0_hz.zip(transformed.legacy_f0_hz))
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    let legacy_input = legacy_pairs.iter().map(|pair| pair.0).collect::<Vec<_>>();
+    let legacy_output = legacy_pairs.iter().map(|pair| pair.1).collect::<Vec<_>>();
+    let legacy_source_median_f0_hz = (!legacy_input.is_empty()).then(|| median(&legacy_input));
+    let legacy_output_median_f0_hz = (!legacy_output.is_empty()).then(|| median(&legacy_output));
+    let legacy_pitch_error_cents = legacy_source_median_f0_hz
+        .zip(legacy_output_median_f0_hz)
+        .zip(expected_pitch_ratio)
+        .map(|((source, output), expected)| {
+            cents((output / source.max(SPECTRAL_EPSILON)) / expected)
+        });
     let pitch = PitchMetrics {
         median_input_f0_hz,
         median_output_f0_hz,
@@ -338,8 +458,32 @@ pub fn compare_audio(
         pitch_error_cents,
         voiced_frame_count,
         f0_estimation_coverage: coverage,
-        unavailable_reason: (voiced_frame_count < MINIMUM_PITCH_FRAMES)
-            .then(|| "notEnoughVoicedFrames".to_owned()),
+        total_source_frames: paired.len(),
+        reliable_source_voiced_frames: voiced_candidates.len(),
+        paired_reliable_frames: voiced_frame_count,
+        unpaired_source_voiced_frames: voiced_candidates.len().saturating_sub(voiced_frame_count),
+        low_confidence_exclusions,
+        mean_absolute_pitch_error_cents: (sufficient && !absolute_errors.is_empty())
+            .then(|| absolute_errors.iter().sum::<f64>() / absolute_errors.len() as f64),
+        median_absolute_pitch_error_cents: (sufficient && !absolute_errors.is_empty())
+            .then(|| median(&absolute_errors)),
+        p10_pitch_error_cents: (sufficient && !pitch_errors.is_empty())
+            .then(|| percentile(&pitch_errors, 0.10)),
+        p90_pitch_error_cents: (sufficient && !pitch_errors.is_empty())
+            .then(|| percentile(&pitch_errors, 0.90)),
+        median_source_confidence: median_option(&source_confidences),
+        median_output_confidence: median_option(&output_confidences),
+        median_paired_confidence: median_option(&paired_confidences),
+        octave_doubling_count,
+        octave_halving_count,
+        large_non_octave_error_count,
+        octave_ambiguity_count,
+        source_track_fingerprint: source_track_fingerprint(input),
+        legacy_pitch_error_cents,
+        legacy_source_median_f0_hz,
+        legacy_output_median_f0_hz,
+        legacy_paired_frames: legacy_pairs.len(),
+        unavailable_reason: (!sufficient).then(|| "notEnoughVoicedFrames".to_owned()),
     };
 
     let compared_frames = paired.len();
@@ -477,20 +621,188 @@ fn analyze_frame(samples: &[f64], sample_rate: u32, center_frame: usize) -> Fram
     }
     let rms = (energy / samples.len() as f64).sqrt();
     let zero_crossing_rate = zero_crossings as f64 / (samples.len() - 1) as f64;
-    let (f0_hz, periodicity) = estimate_f0(&windowed, sample_rate);
+    let candidates = yin_candidates(&windowed, sample_rate, MIN_F0_HZ, MAX_F0_HZ);
+    let selected = select_yin_candidate(&candidates);
+    let confidence = selected.map_or(0.0, |candidate| candidate.confidence);
     let voiced = rms >= VOICING_RMS_THRESHOLD
+        && zero_crossing_rate < MAXIMUM_VOICED_ZERO_CROSSING_RATE
+        && confidence >= YIN_MINIMUM_CONFIDENCE;
+    let octave_ambiguous = selected.is_some_and(|selected| {
+        candidates.iter().any(|candidate| {
+            candidate.f0_hz != selected.f0_hz
+                && (cents(candidate.f0_hz / selected.f0_hz).abs() - 1_200.0).abs()
+                    <= OCTAVE_TOLERANCE_CENTS
+                && candidate.confidence + 0.10 >= selected.confidence
+        })
+    });
+    let (legacy_f0, periodicity) = estimate_f0_legacy(&windowed, sample_rate);
+    let legacy_voiced = rms >= VOICING_RMS_THRESHOLD
         && periodicity >= VOICING_PERIODICITY_THRESHOLD
-        && zero_crossing_rate < 0.35;
+        && zero_crossing_rate < MAXIMUM_VOICED_ZERO_CROSSING_RATE;
     let spectrum = magnitude_spectrum(&windowed);
     FrameAnalysis {
         center_frame,
-        f0_hz: voiced.then_some(f0_hz),
+        f0_hz: voiced.then(|| selected.unwrap().f0_hz),
+        confidence,
         voiced,
+        low_confidence_candidate: !candidates.is_empty() && !voiced,
+        octave_ambiguous,
+        candidates,
+        legacy_f0_hz: legacy_voiced.then_some(legacy_f0),
+        legacy_voiced,
         spectrum,
     }
 }
 
-fn estimate_f0(samples: &[f64], sample_rate: u32) -> (f64, f64) {
+fn yin_candidates(
+    samples: &[f64],
+    sample_rate: u32,
+    minimum_f0_hz: f64,
+    maximum_f0_hz: f64,
+) -> Vec<PitchCandidate> {
+    if samples.len() < 4
+        || !minimum_f0_hz.is_finite()
+        || !maximum_f0_hz.is_finite()
+        || minimum_f0_hz <= 0.0
+        || maximum_f0_hz <= minimum_f0_hz
+    {
+        return Vec::new();
+    }
+    let minimum_lag = (f64::from(sample_rate) / maximum_f0_hz).floor().max(1.0) as usize;
+    let maximum_lag = ((f64::from(sample_rate) / minimum_f0_hz).ceil() as usize)
+        .min(samples.len().saturating_sub(2));
+    if maximum_lag <= minimum_lag {
+        return Vec::new();
+    }
+
+    let mut difference = vec![0.0; maximum_lag + 1];
+    for lag in 1..=maximum_lag {
+        let mut sum = 0.0;
+        for index in 0..samples.len() - lag {
+            let delta = samples[index] - samples[index + lag];
+            sum += delta * delta;
+        }
+        difference[lag] = if sum.is_finite() {
+            sum.max(0.0)
+        } else {
+            f64::INFINITY
+        };
+    }
+    let mut cumulative = 0.0;
+    let mut cmndf = vec![1.0; maximum_lag + 1];
+    for lag in 1..=maximum_lag {
+        cumulative += difference[lag];
+        cmndf[lag] = if cumulative > f64::EPSILON && cumulative.is_finite() {
+            (difference[lag] * lag as f64 / cumulative).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+    }
+
+    let mut candidates = Vec::new();
+    for lag in minimum_lag..=maximum_lag {
+        let left = lag
+            .checked_sub(1)
+            .filter(|value| *value >= minimum_lag)
+            .map_or(f64::INFINITY, |value| cmndf[value]);
+        let right = if lag < maximum_lag {
+            cmndf[lag + 1]
+        } else {
+            f64::INFINITY
+        };
+        if cmndf[lag] <= left && cmndf[lag] <= right && (cmndf[lag] < left || cmndf[lag] < right) {
+            let interpolated_lag = parabolic_minimum(lag, &cmndf);
+            let confidence = (1.0 - cmndf[lag]).clamp(0.0, 1.0);
+            let f0_hz = f64::from(sample_rate) / interpolated_lag;
+            if f0_hz.is_finite()
+                && (minimum_f0_hz..=maximum_f0_hz).contains(&f0_hz)
+                && confidence.is_finite()
+            {
+                candidates.push(PitchCandidate { f0_hz, confidence });
+            }
+        }
+    }
+    candidates
+}
+
+fn select_yin_candidate(candidates: &[PitchCandidate]) -> Option<PitchCandidate> {
+    let initial = candidates
+        .iter()
+        .copied()
+        .find(|candidate| 1.0 - candidate.confidence <= YIN_THRESHOLD)
+        .or_else(|| {
+            candidates
+                .iter()
+                .copied()
+                .filter(|candidate| 1.0 - candidate.confidence <= YIN_FALLBACK_THRESHOLD)
+                .max_by(|left, right| left.confidence.total_cmp(&right.confidence))
+        })?;
+    Some(
+        candidates
+            .iter()
+            .copied()
+            .filter(|candidate| {
+                let harmonic_order = initial.f0_hz / candidate.f0_hz;
+                (2.0..=4.0).contains(&harmonic_order)
+                    && (harmonic_order - harmonic_order.round()).abs() <= 0.08
+                    && candidate.confidence >= initial.confidence + 0.05
+            })
+            .max_by(|left, right| left.confidence.total_cmp(&right.confidence))
+            .unwrap_or(initial),
+    )
+}
+
+fn parabolic_minimum(lag: usize, values: &[f64]) -> f64 {
+    if lag == 0 || lag + 1 >= values.len() {
+        return lag as f64;
+    }
+    let left = values[lag - 1];
+    let center = values[lag];
+    let right = values[lag + 1];
+    let denominator = left - 2.0 * center + right;
+    if !denominator.is_finite() || denominator.abs() <= f64::EPSILON {
+        lag as f64
+    } else {
+        (lag as f64 + 0.5 * (left - right) / denominator).clamp(lag as f64 - 1.0, lag as f64 + 1.0)
+    }
+}
+
+fn stabilize_pitch_track(frames: &mut [FrameAnalysis]) {
+    for _ in 0..2 {
+        let snapshot = frames.iter().map(|frame| frame.f0_hz).collect::<Vec<_>>();
+        for index in 1..frames.len().saturating_sub(1) {
+            let (Some(previous), Some(next), Some(current)) =
+                (snapshot[index - 1], snapshot[index + 1], snapshot[index])
+            else {
+                continue;
+            };
+            let transition_cost = |candidate: PitchCandidate| {
+                let previous_octaves = (candidate.f0_hz / previous).log2().abs();
+                let next_octaves = (candidate.f0_hz / next).log2().abs();
+                1.0 - candidate.confidence
+                    + TEMPORAL_TRANSITION_WEIGHT * (previous_octaves + next_octaves)
+            };
+            let current_cost = transition_cost(PitchCandidate {
+                f0_hz: current,
+                confidence: frames[index].confidence,
+            });
+            if let Some(best) = frames[index]
+                .candidates
+                .iter()
+                .copied()
+                .filter(|candidate| candidate.confidence >= YIN_MINIMUM_CONFIDENCE)
+                .min_by(|left, right| transition_cost(*left).total_cmp(&transition_cost(*right)))
+            {
+                if transition_cost(best) + 0.02 < current_cost {
+                    frames[index].f0_hz = Some(best.f0_hz);
+                    frames[index].confidence = best.confidence;
+                }
+            }
+        }
+    }
+}
+
+fn estimate_f0_legacy(samples: &[f64], sample_rate: u32) -> (f64, f64) {
     let minimum_lag = (f64::from(sample_rate) / MAX_F0_HZ).floor().max(1.0) as usize;
     let maximum_lag =
         ((f64::from(sample_rate) / MIN_F0_HZ).ceil() as usize).min(samples.len().saturating_sub(2));
@@ -819,6 +1131,35 @@ fn median(values: &[f64]) -> f64 {
     }
 }
 
+fn percentile(values: &[f64], quantile: f64) -> f64 {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let position = quantile.clamp(0.0, 1.0) * sorted.len().saturating_sub(1) as f64;
+    let lower = position.floor() as usize;
+    let upper = position.ceil() as usize;
+    let fraction = position - lower as f64;
+    sorted[lower] * (1.0 - fraction) + sorted[upper] * fraction
+}
+
+fn source_track_fingerprint(analysis: &AudioAnalysis) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let mut update = |value: u64| {
+        for byte in value.to_le_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    update(u64::from(analysis.sample_rate));
+    update(analysis.frames.len() as u64);
+    for frame in &analysis.frames {
+        update(frame.center_frame as u64);
+        update(frame.f0_hz.map(f64::to_bits).unwrap_or_default());
+        update(frame.confidence.to_bits());
+        update(u64::from(frame.voiced));
+    }
+    format!("{hash:016x}")
+}
+
 fn cents(ratio: f64) -> f64 {
     1_200.0 * ratio.max(SPECTRAL_EPSILON).log2()
 }
@@ -855,18 +1196,206 @@ mod tests {
 
     use super::*;
 
-    fn harmonic(frequency: f32, frames: usize) -> Vec<f32> {
+    fn harmonic_at(frequency: f32, frames: usize, sample_rate: u32) -> Vec<f32> {
         (0..frames)
             .map(|index| {
                 (1..=6)
                     .map(|harmonic| {
-                        (TAU_F32 * frequency * harmonic as f32 * index as f32 / 48_000.0).sin()
+                        (TAU_F32 * frequency * harmonic as f32 * index as f32 / sample_rate as f32)
+                            .sin()
                             / harmonic as f32
                     })
                     .sum::<f32>()
                     * 0.1
             })
             .collect()
+    }
+
+    fn harmonic(frequency: f32, frames: usize) -> Vec<f32> {
+        harmonic_at(frequency, frames, 48_000)
+    }
+
+    fn median_track(analysis: &AudioAnalysis) -> f64 {
+        median(
+            &analysis
+                .frames
+                .iter()
+                .filter_map(|frame| frame.f0_hz)
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    fn weighted_harmonic(
+        frequency: f32,
+        frames: usize,
+        sample_rate: u32,
+        weights: &[f32],
+    ) -> Vec<f32> {
+        (0..frames)
+            .map(|index| {
+                weights
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, weight)| {
+                        let harmonic = offset + 1;
+                        weight
+                            * (TAU_F32 * frequency * harmonic as f32 * index as f32
+                                / sample_rate as f32)
+                                .sin()
+                    })
+                    .sum::<f32>()
+                    * 0.1
+            })
+            .collect()
+    }
+
+    fn track_frame(center_frame: usize, f0_hz: f64) -> FrameAnalysis {
+        FrameAnalysis {
+            center_frame,
+            f0_hz: Some(f0_hz),
+            confidence: 0.95,
+            voiced: true,
+            low_confidence_candidate: false,
+            octave_ambiguous: false,
+            candidates: Vec::new(),
+            legacy_f0_hz: Some(f0_hz),
+            legacy_voiced: true,
+            spectrum: vec![0.0; FFT_SIZE / 2 + 1],
+        }
+    }
+
+    fn analysis_from_track(track: &[f64]) -> AudioAnalysis {
+        AudioAnalysis {
+            samples: vec![0.0; 48_000],
+            mono: vec![0.0; 48_000],
+            frames: track
+                .iter()
+                .enumerate()
+                .map(|(index, f0)| track_frame(index * 480 + 960, *f0))
+                .collect(),
+            sample_rate: 48_000,
+            channels: 1,
+            sample_count: 48_000,
+            non_finite_samples: 0,
+        }
+    }
+
+    #[test]
+    fn yin_tracks_harmonic_fundamentals_at_supported_rates_and_frequencies() {
+        for sample_rate in [44_100, 48_000] {
+            for expected in [90.0_f64, 220.0, 400.0, 800.0] {
+                let samples = harmonic_at(expected as f32, sample_rate as usize / 2, sample_rate);
+                let analysis = AudioAnalysis::new(&samples, sample_rate, 1).unwrap();
+                let measured = median_track(&analysis);
+                assert!(
+                    cents(measured / expected).abs() < 25.0,
+                    "{sample_rate} Hz / {expected} Hz measured {measured} Hz"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn yin_prefers_present_fundamental_over_stronger_second_or_third_harmonic() {
+        for weights in [[0.30, 1.0, 0.20, 0.10], [0.30, 0.20, 1.0, 0.10]] {
+            let samples = weighted_harmonic(180.0, 24_000, 48_000, &weights);
+            let analysis = AudioAnalysis::new(&samples, 48_000, 1).unwrap();
+            let measured = median_track(&analysis);
+            assert!(
+                cents(measured / 180.0).abs() < 35.0,
+                "measured {measured} Hz for weights {weights:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn yin_tracks_slow_contour_without_systematic_octave_jumps() {
+        let sample_rate = 48_000_u32;
+        let mut phase = 0.0_f32;
+        let samples = (0..sample_rate as usize)
+            .map(|index| {
+                let progress = index as f32 / sample_rate as f32;
+                let frequency = 160.0 + 80.0 * progress;
+                phase += TAU_F32 * frequency / sample_rate as f32;
+                (phase.sin() + 0.4 * (2.0 * phase).sin() + 0.2 * (3.0 * phase).sin()) * 0.08
+            })
+            .collect::<Vec<_>>();
+        let analysis = AudioAnalysis::new(&samples, sample_rate, 1).unwrap();
+        let voiced = analysis
+            .frames
+            .iter()
+            .filter_map(|frame| frame.f0_hz)
+            .collect::<Vec<_>>();
+        assert!(voiced.len() > 80);
+        assert!(voiced
+            .windows(2)
+            .all(|pair| cents(pair[1] / pair[0]).abs() < 150.0));
+    }
+
+    #[test]
+    fn yin_rejects_noise_between_voiced_regions() {
+        let sample_rate = 48_000_u32;
+        let voiced = harmonic_at(180.0, 12_000, sample_rate);
+        let mut state = 0x1234_5678_u32;
+        let noise = (0..12_000)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                ((state >> 8) as f32 / 16_777_215.0 - 0.5) * 0.2
+            })
+            .collect::<Vec<_>>();
+        let samples = [voiced.as_slice(), noise.as_slice(), voiced.as_slice()].concat();
+        let analysis = AudioAnalysis::new(&samples, sample_rate, 1).unwrap();
+        let middle_voiced = analysis
+            .frames
+            .iter()
+            .filter(|frame| (12_000..24_000).contains(&frame.center_frame) && frame.voiced)
+            .count();
+        let outer_voiced = analysis
+            .frames
+            .iter()
+            .filter(|frame| !(12_000..24_000).contains(&frame.center_frame) && frame.voiced)
+            .count();
+        assert!(middle_voiced <= 2);
+        assert!(outer_voiced > 35);
+    }
+
+    #[test]
+    fn paired_frame_metric_avoids_ratio_of_medians_failure() {
+        let source = analysis_from_track(&[10.0, 100.0, 1_000.0, 1_001.0, 1_002.0]);
+        let output = analysis_from_track(&[20.0, 200.0, 2_000.0, 10.01, 10.02]);
+        let (_, pitch, _, _, _, _) = compare_audio(&source, &output, &[], Some(2.0), &[], 0.0);
+        assert!(pitch.pitch_error_cents.unwrap().abs() < f64::EPSILON);
+        assert_eq!(pitch.measured_pitch_ratio, Some(2.0));
+        assert!(pitch.legacy_pitch_error_cents.unwrap().abs() > 1_000.0);
+    }
+
+    #[test]
+    fn source_track_is_shared_by_fingerprint_and_analysis_is_deterministic() {
+        let samples = harmonic(220.0, 24_000);
+        let source_a = AudioAnalysis::new(&samples, 48_000, 1).unwrap();
+        let source_b = AudioAnalysis::new(&samples, 48_000, 1).unwrap();
+        let output_a = AudioAnalysis::new(&harmonic(330.0, 24_000), 48_000, 1).unwrap();
+        let output_b = AudioAnalysis::new(&harmonic(440.0, 24_000), 48_000, 1).unwrap();
+        let (_, pitch_a, _, _, _, _) =
+            compare_audio(&source_a, &output_a, &[], Some(1.5), &[], 0.0);
+        let (_, pitch_b, _, _, _, _) =
+            compare_audio(&source_b, &output_b, &[], Some(2.0), &[], 0.0);
+        assert_eq!(
+            pitch_a.source_track_fingerprint,
+            pitch_b.source_track_fingerprint
+        );
+        assert_eq!(
+            source_a
+                .frames
+                .iter()
+                .map(|frame| frame.f0_hz)
+                .collect::<Vec<_>>(),
+            source_b
+                .frames
+                .iter()
+                .map(|frame| frame.f0_hz)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]

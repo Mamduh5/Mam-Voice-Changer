@@ -19,9 +19,60 @@ use super::{
     world::WorldRenderMetadata,
 };
 
-pub const REPORT_SCHEMA_VERSION: u32 = 2;
-pub const PREVIOUS_REPORT_SCHEMA_VERSION: u32 = 1;
+pub const REPORT_SCHEMA_VERSION: u32 = 3;
+pub const PREVIOUS_REPORT_SCHEMA_VERSION: u32 = 2;
+pub const LEGACY_REPORT_SCHEMA_VERSION: u32 = 1;
 pub const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PitchAnalysisMetadata {
+    pub pitch_estimator: String,
+    pub pitch_estimator_version: u32,
+    pub pitch_metric: String,
+    pub pitch_metric_version: u32,
+}
+
+impl PitchAnalysisMetadata {
+    pub fn current() -> Self {
+        Self {
+            pitch_estimator: "yinCmndf".to_owned(),
+            pitch_estimator_version: 2,
+            pitch_metric: "medianPairedFrameRatio".to_owned(),
+            pitch_metric_version: 2,
+        }
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        match (
+            self.pitch_estimator.as_str(),
+            self.pitch_estimator_version,
+            self.pitch_metric.as_str(),
+            self.pitch_metric_version,
+        ) {
+            ("normalizedAutocorrelation", 1, "ratioOfMedians", 1)
+            | ("yinCmndf", 2, "medianPairedFrameRatio", 2) => Ok(()),
+            _ => Err(format!(
+                "Unsupported pitch analysis version: estimator '{}' v{}, metric '{}' v{}.",
+                self.pitch_estimator,
+                self.pitch_estimator_version,
+                self.pitch_metric,
+                self.pitch_metric_version
+            )),
+        }
+    }
+}
+
+impl Default for PitchAnalysisMetadata {
+    fn default() -> Self {
+        Self {
+            pitch_estimator: "normalizedAutocorrelation".to_owned(),
+            pitch_estimator_version: 1,
+            pitch_metric: "ratioOfMedians".to_owned(),
+            pitch_metric_version: 1,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -32,6 +83,8 @@ pub struct EvaluationReport {
     pub build_mode: String,
     pub source_manifest: String,
     pub analysis_configuration: AnalysisConfiguration,
+    #[serde(default)]
+    pub pitch_analysis: PitchAnalysisMetadata,
     pub cases: Vec<CaseReport>,
     pub summary: ReportSummary,
     #[serde(default)]
@@ -139,6 +192,8 @@ pub struct RelativeExpectationResult {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BaselineComparison {
     pub schema_version: u32,
+    #[serde(default)]
+    pub pitch_analysis_version_mismatch: bool,
     pub cases: Vec<BaselineCaseComparison>,
     pub added_cases: Vec<String>,
     pub missing_cases: Vec<String>,
@@ -191,6 +246,7 @@ impl EvaluationReport {
             build_mode,
             source_manifest,
             analysis_configuration: AnalysisConfiguration::default(),
+            pitch_analysis: PitchAnalysisMetadata::current(),
             cases,
             summary,
             renderer_summaries,
@@ -210,13 +266,17 @@ impl EvaluationReport {
             .map_err(|error| format!("Baseline report is not valid: {error}"))?;
         if !matches!(
             report.schema_version,
-            PREVIOUS_REPORT_SCHEMA_VERSION | REPORT_SCHEMA_VERSION
+            LEGACY_REPORT_SCHEMA_VERSION | PREVIOUS_REPORT_SCHEMA_VERSION | REPORT_SCHEMA_VERSION
         ) {
             return Err(format!(
-                "Unsupported baseline report schema version {}. Supported versions are {} and {}.",
-                report.schema_version, PREVIOUS_REPORT_SCHEMA_VERSION, REPORT_SCHEMA_VERSION
+                "Unsupported baseline report schema version {}. Supported versions are {}, {}, and {}.",
+                report.schema_version,
+                LEGACY_REPORT_SCHEMA_VERSION,
+                PREVIOUS_REPORT_SCHEMA_VERSION,
+                REPORT_SCHEMA_VERSION
             ));
         }
+        report.pitch_analysis.validate()?;
         let mut ids = BTreeSet::new();
         if report
             .cases
@@ -227,7 +287,7 @@ impl EvaluationReport {
                 "Baseline report contains duplicate case ids for the same renderer.".to_owned(),
             );
         }
-        if report.schema_version == PREVIOUS_REPORT_SCHEMA_VERSION {
+        if report.schema_version != REPORT_SCHEMA_VERSION {
             report.schema_version = REPORT_SCHEMA_VERSION;
             report.renderer_summaries =
                 summarize_renderers(&report.cases, &report.relative_expectations);
@@ -370,6 +430,7 @@ pub fn compare_baseline(
     current: &EvaluationReport,
     baseline: &EvaluationReport,
 ) -> BaselineComparison {
+    let pitch_analysis_version_mismatch = current.pitch_analysis != baseline.pitch_analysis;
     let current_cases = current
         .cases
         .iter()
@@ -399,9 +460,11 @@ pub fn compare_baseline(
             continue;
         };
         let mut metrics = Vec::new();
-        for (metric, baseline_value, current_value, lower_is_better) in
-            comparable_metrics(baseline_case, current_case)
-        {
+        for (metric, baseline_value, current_value, lower_is_better) in comparable_metrics(
+            baseline_case,
+            current_case,
+            !pitch_analysis_version_mismatch,
+        ) {
             let delta = current_value - baseline_value;
             let tolerance = 1.0e-9_f64.max(baseline_value.abs() * 1.0e-9);
             let classification = if delta.abs() <= tolerance {
@@ -430,6 +493,7 @@ pub fn compare_baseline(
     }
     BaselineComparison {
         schema_version: REPORT_SCHEMA_VERSION,
+        pitch_analysis_version_mismatch,
         cases,
         added_cases,
         missing_cases,
@@ -442,15 +506,18 @@ pub fn compare_baseline(
 fn comparable_metrics(
     baseline: &CaseReport,
     current: &CaseReport,
+    compare_pitch: bool,
 ) -> Vec<(String, f64, f64, bool)> {
     let mut metrics = Vec::new();
-    push_optional(
-        &mut metrics,
-        "pitchErrorCents",
-        baseline.pitch.pitch_error_cents.map(f64::abs),
-        current.pitch.pitch_error_cents.map(f64::abs),
-        true,
-    );
+    if compare_pitch {
+        push_optional(
+            &mut metrics,
+            "pitchErrorCents",
+            baseline.pitch.pitch_error_cents.map(f64::abs),
+            current.pitch.pitch_error_cents.map(f64::abs),
+            true,
+        );
+    }
     push_optional(
         &mut metrics,
         "voicedUnvoicedDisagreement",
@@ -539,7 +606,7 @@ pub fn write_reports(report: &EvaluationReport, output: &Path) -> Result<(), Str
 
 fn csv(report: &EvaluationReport) -> String {
     let mut output = String::from(
-        "id,renderer,comparisonGroup,description,passedExpectations,failedExpectations,pitchErrorCents,voicingDisagreement,unvoicedLsdDb,unvoicedCorrelation,hfEnergyRatio,formantRatioErrorCents,outputClippingRatio,outputNonFinite,durationDeltaFrames,realTimeFactor,worldRevision,worldRawSynthesisFrames,worldDurationAdjustment,worldChannelPolicy\n",
+        "id,renderer,comparisonGroup,description,passedExpectations,failedExpectations,pitchEstimator,pitchEstimatorVersion,pitchMetric,pitchMetricVersion,pitchErrorCents,measuredPitchRatio,meanAbsolutePitchErrorCents,medianAbsolutePitchErrorCents,p10PitchErrorCents,p90PitchErrorCents,totalSourceFrames,reliableSourceVoicedFrames,pairedReliableFrames,pairedCoverage,unpairedSourceVoicedFrames,lowConfidenceExclusions,medianPairedConfidence,octaveDoublingCount,octaveHalvingCount,largeNonOctaveErrorCount,octaveAmbiguityCount,sourceTrackFingerprint,legacyPitchErrorCents,voicingDisagreement,unvoicedLsdDb,unvoicedCorrelation,hfEnergyRatio,formantRatioErrorCents,outputClippingRatio,outputNonFinite,durationDeltaFrames,realTimeFactor,worldRevision,worldRawSynthesisFrames,worldDurationAdjustment,worldChannelPolicy\n",
     );
     for case in &report.cases {
         let passed = case
@@ -558,7 +625,29 @@ fn csv(report: &EvaluationReport) -> String {
             csv_field(&case.description),
             passed.to_string(),
             failed.to_string(),
+            report.pitch_analysis.pitch_estimator.clone(),
+            report.pitch_analysis.pitch_estimator_version.to_string(),
+            report.pitch_analysis.pitch_metric.clone(),
+            report.pitch_analysis.pitch_metric_version.to_string(),
             optional_number(case.pitch.pitch_error_cents),
+            optional_number(case.pitch.measured_pitch_ratio),
+            optional_number(case.pitch.mean_absolute_pitch_error_cents),
+            optional_number(case.pitch.median_absolute_pitch_error_cents),
+            optional_number(case.pitch.p10_pitch_error_cents),
+            optional_number(case.pitch.p90_pitch_error_cents),
+            case.pitch.total_source_frames.to_string(),
+            case.pitch.reliable_source_voiced_frames.to_string(),
+            case.pitch.paired_reliable_frames.to_string(),
+            format_number(case.pitch.f0_estimation_coverage),
+            case.pitch.unpaired_source_voiced_frames.to_string(),
+            case.pitch.low_confidence_exclusions.to_string(),
+            optional_number(case.pitch.median_paired_confidence),
+            case.pitch.octave_doubling_count.to_string(),
+            case.pitch.octave_halving_count.to_string(),
+            case.pitch.large_non_octave_error_count.to_string(),
+            case.pitch.octave_ambiguity_count.to_string(),
+            case.pitch.source_track_fingerprint.clone(),
+            optional_number(case.pitch.legacy_pitch_error_cents),
             format_number(case.voicing.voiced_unvoiced_disagreement_ratio),
             optional_number(case.spectral.unvoiced_log_spectral_distance_db),
             optional_number(case.consonant.unvoiced_waveform_correlation),
@@ -593,12 +682,16 @@ fn csv(report: &EvaluationReport) -> String {
 
 fn markdown(report: &EvaluationReport) -> String {
     let mut output = format!(
-        "# Voice evaluation report\n\n- Cases: {}\n- Passed expectations: {}\n- Failed expectations: {}\n- Unavailable metrics: {}\n- Build mode: {}\n\n",
+        "# Voice evaluation report\n\n- Cases: {}\n- Passed expectations: {}\n- Failed expectations: {}\n- Unavailable metrics: {}\n- Build mode: {}\n- Pitch estimator: `{}` v{}\n- Pitch metric: `{}` v{}\n\n",
         report.summary.total_cases,
         report.summary.passed_expectations,
         report.summary.failed_expectations,
         report.summary.unavailable_metrics,
-        report.build_mode
+        report.build_mode,
+        report.pitch_analysis.pitch_estimator,
+        report.pitch_analysis.pitch_estimator_version,
+        report.pitch_analysis.pitch_metric,
+        report.pitch_analysis.pitch_metric_version,
     );
     output.push_str("## Cases\n\n");
     output.push_str("| Case | Renderer | Group | Pitch error (cents) | V/UV disagreement | HF ratio | Formant error (cents) | Non-finite | RTF | Result |\n");
@@ -685,7 +778,8 @@ fn markdown(report: &EvaluationReport) -> String {
     output.push_str("- Real-time factor varies by machine and build mode.\n");
     if let Some(baseline) = &report.baseline_comparison {
         output.push_str(&format!(
-            "\n## Baseline comparison\n\n- Improvements: {}\n- Regressions: {}\n- Unchanged: {}\n- Added cases: {}\n- Missing cases: {}\n",
+            "\n## Baseline comparison\n\n- Pitch analysis version mismatch: {}\n- Improvements: {}\n- Regressions: {}\n- Unchanged: {}\n- Added cases: {}\n- Missing cases: {}\n",
+            baseline.pitch_analysis_version_mismatch,
             baseline.improvements,
             baseline.regressions,
             baseline.unchanged,
@@ -1025,6 +1119,7 @@ mod tests {
                 voiced_frame_count: 50,
                 f0_estimation_coverage: 1.0,
                 unavailable_reason: None,
+                ..PitchMetrics::default()
             },
             voicing: VoicingMetrics {
                 source_voiced_frame_ratio: 1.0,
@@ -1115,6 +1210,16 @@ mod tests {
             .iter()
             .flat_map(|case| &case.metrics)
             .all(|metric| metric.metric != "realTimeFactor"));
+
+        let mut legacy_pitch = baseline.clone();
+        legacy_pitch.pitch_analysis = PitchAnalysisMetadata::default();
+        let versioned = compare_baseline(&current, &legacy_pitch);
+        assert!(versioned.pitch_analysis_version_mismatch);
+        assert!(versioned
+            .cases
+            .iter()
+            .flat_map(|case| &case.metrics)
+            .all(|metric| metric.metric != "pitchErrorCents"));
     }
 
     #[test]
@@ -1185,17 +1290,32 @@ mod tests {
         .unwrap();
         legacy["schemaVersion"] = serde_json::Value::from(1);
         let root = legacy.as_object_mut().unwrap();
+        root.remove("pitchAnalysis");
         root.remove("rendererSummaries");
         root.remove("crossRendererComparisons");
         root.remove("relativeExpectations");
-        let case = root["cases"][0].as_object_mut().unwrap();
-        case.remove("renderer");
-        case.remove("comparisonGroup");
-        case.remove("parameters");
-        case.remove("world");
+        let legacy_case = root["cases"][0].as_object_mut().unwrap();
+        legacy_case.remove("renderer");
+        legacy_case.remove("comparisonGroup");
+        legacy_case.remove("parameters");
+        legacy_case.remove("world");
         let migrated =
             EvaluationReport::from_json(&serde_json::to_string(&legacy).unwrap()).unwrap();
         assert_eq!(migrated.schema_version, REPORT_SCHEMA_VERSION);
         assert_eq!(migrated.cases[0].renderer, EvaluationRenderer::ExistingDsp);
+        assert_eq!(migrated.pitch_analysis, PitchAnalysisMetadata::default());
+
+        let mut future = serde_json::to_value(EvaluationReport::new(
+            "manifest.json".to_owned(),
+            "debug".to_owned(),
+            vec![case("future")],
+        ))
+        .unwrap();
+        future["pitchAnalysis"]["pitchEstimatorVersion"] = serde_json::Value::from(99);
+        assert!(
+            EvaluationReport::from_json(&serde_json::to_string(&future).unwrap())
+                .unwrap_err()
+                .contains("Unsupported pitch analysis version")
+        );
     }
 }

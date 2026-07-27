@@ -16,6 +16,7 @@ use crate::{
     voice_evaluation::{
         analysis::{compare_audio, AudioAnalysis},
         world::WorldReferenceProcessor,
+        PitchAnalysisMetadata,
     },
     voice_lab::{
         clip::AudioClip,
@@ -55,6 +56,8 @@ pub(crate) struct AdministratorKey {
     pub schema_version: u32,
     pub study: ListeningStudy,
     pub seed: u64,
+    #[serde(default)]
+    pub pitch_analysis: PitchAnalysisMetadata,
     pub trials: Vec<TrialKey>,
 }
 
@@ -97,6 +100,28 @@ struct RenderedTrial {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ObjectiveMetrics {
     pub pitch_error_cents: Option<f64>,
+    pub median_source_f0_hz: Option<f64>,
+    pub median_output_f0_hz: Option<f64>,
+    pub measured_pitch_ratio: Option<f64>,
+    pub mean_absolute_pitch_error_cents: Option<f64>,
+    pub median_absolute_pitch_error_cents: Option<f64>,
+    pub p10_pitch_error_cents: Option<f64>,
+    pub p90_pitch_error_cents: Option<f64>,
+    pub total_source_frames: usize,
+    pub reliable_source_voiced_frames: usize,
+    pub paired_reliable_frames: usize,
+    pub paired_coverage: f64,
+    pub unpaired_source_voiced_frames: usize,
+    pub low_confidence_exclusions: usize,
+    pub octave_doubling_count: usize,
+    pub octave_halving_count: usize,
+    pub large_non_octave_error_count: usize,
+    pub octave_ambiguity_count: usize,
+    pub source_track_fingerprint: String,
+    pub legacy_pitch_error_cents: Option<f64>,
+    pub legacy_source_median_f0_hz: Option<f64>,
+    pub legacy_output_median_f0_hz: Option<f64>,
+    pub legacy_paired_frames: usize,
     pub formant_error_cents: Option<f64>,
     pub voiced_unvoiced_disagreement: f64,
     pub unvoiced_high_frequency_lsd_db: Option<f64>,
@@ -285,11 +310,13 @@ fn render_trial(
         ("b".to_owned(), hash_file(&b_path)?),
     ]);
     let duration_seconds = input.frames() as f64 / f64::from(input.sample_rate);
+    let input_analysis = AudioAnalysis::new(&input.samples, input.sample_rate, input.channels)?;
     let metrics = vec![
         (
             Renderer::ExistingDsp,
             objective_metrics(
-                &input,
+                &input_analysis,
+                input.frames(),
                 &existing,
                 parameters.pitch_semitones,
                 existing_elapsed / duration_seconds.max(f64::EPSILON),
@@ -298,7 +325,8 @@ fn render_trial(
         (
             Renderer::WorldReference,
             objective_metrics(
-                &input,
+                &input_analysis,
+                input.frames(),
                 &world,
                 parameters.pitch_semitones,
                 world_elapsed / duration_seconds.max(f64::EPSILON),
@@ -398,16 +426,16 @@ fn scaled_clip(clip: &AudioClip, gain: f32) -> Result<AudioClip, String> {
 }
 
 fn objective_metrics(
-    input: &AudioClip,
+    input_analysis: &AudioAnalysis,
+    input_frames: usize,
     output: &AudioClip,
     pitch_semitones: f32,
     real_time_factor: f64,
 ) -> Result<ObjectiveMetrics, String> {
-    let input_analysis = AudioAnalysis::new(&input.samples, input.sample_rate, input.channels)?;
     let output_analysis = AudioAnalysis::new(&output.samples, output.sample_rate, output.channels)?;
     let expected_pitch_ratio = 2.0_f64.powf(f64::from(pitch_semitones) / 12.0);
     let (numerical, pitch, voicing, spectral, consonant, formants) = compare_audio(
-        &input_analysis,
+        input_analysis,
         &output_analysis,
         &[],
         Some(expected_pitch_ratio),
@@ -416,13 +444,35 @@ fn objective_metrics(
     );
     Ok(ObjectiveMetrics {
         pitch_error_cents: pitch.pitch_error_cents,
+        median_source_f0_hz: pitch.median_input_f0_hz,
+        median_output_f0_hz: pitch.median_output_f0_hz,
+        measured_pitch_ratio: pitch.measured_pitch_ratio,
+        mean_absolute_pitch_error_cents: pitch.mean_absolute_pitch_error_cents,
+        median_absolute_pitch_error_cents: pitch.median_absolute_pitch_error_cents,
+        p10_pitch_error_cents: pitch.p10_pitch_error_cents,
+        p90_pitch_error_cents: pitch.p90_pitch_error_cents,
+        total_source_frames: pitch.total_source_frames,
+        reliable_source_voiced_frames: pitch.reliable_source_voiced_frames,
+        paired_reliable_frames: pitch.paired_reliable_frames,
+        paired_coverage: pitch.f0_estimation_coverage,
+        unpaired_source_voiced_frames: pitch.unpaired_source_voiced_frames,
+        low_confidence_exclusions: pitch.low_confidence_exclusions,
+        octave_doubling_count: pitch.octave_doubling_count,
+        octave_halving_count: pitch.octave_halving_count,
+        large_non_octave_error_count: pitch.large_non_octave_error_count,
+        octave_ambiguity_count: pitch.octave_ambiguity_count,
+        source_track_fingerprint: pitch.source_track_fingerprint,
+        legacy_pitch_error_cents: pitch.legacy_pitch_error_cents,
+        legacy_source_median_f0_hz: pitch.legacy_source_median_f0_hz,
+        legacy_output_median_f0_hz: pitch.legacy_output_median_f0_hz,
+        legacy_paired_frames: pitch.legacy_paired_frames,
         formant_error_cents: crate::voice_evaluation::analysis::median_formant_error(&formants),
         voiced_unvoiced_disagreement: voicing.voiced_unvoiced_disagreement_ratio,
         unvoiced_high_frequency_lsd_db: spectral.high_frequency_unvoiced_log_spectral_distance_db,
         waveform_correlation: consonant.unvoiced_waveform_correlation,
         clipping_ratio: numerical.output_clipping_ratio,
         non_finite_count: numerical.output_non_finite_samples,
-        duration_delta_frames: output.frames() as i64 - input.frames() as i64,
+        duration_delta_frames: output.frames() as i64 - input_frames as i64,
         real_time_factor,
     })
 }
@@ -482,6 +532,7 @@ fn write_administrator_files(
         schema_version: PACKAGE_SCHEMA_VERSION,
         study: manifest.study.clone(),
         seed,
+        pitch_analysis: PitchAnalysisMetadata::current(),
         trials: trials.iter().map(|trial| trial.key.clone()).collect(),
     };
     write_json(&administrator.join("key.json"), &key)?;
@@ -490,7 +541,7 @@ fn write_administrator_files(
     resolved.corpus_root = ".".to_owned();
     write_json(&administrator.join("manifest-resolved.json"), &resolved)?;
 
-    let mut metrics = "trial_id,source_clip_id,renderer,pitch_error_cents,formant_error_cents,voiced_unvoiced_disagreement,unvoiced_hf_lsd_db,waveform_correlation,clipping_ratio,non_finite_count,duration_delta_frames,render_rtf\n".to_owned();
+    let mut metrics = "trial_id,source_clip_id,renderer,pitch_estimator_version,pitch_metric_version,pitch_error_cents,median_source_f0_hz,median_output_f0_hz,measured_pitch_ratio,mean_absolute_pitch_error_cents,median_absolute_pitch_error_cents,p10_pitch_error_cents,p90_pitch_error_cents,total_source_frames,reliable_source_voiced_frames,paired_reliable_frames,paired_coverage,unpaired_source_voiced_frames,low_confidence_exclusions,octave_doubling_count,octave_halving_count,large_non_octave_error_count,octave_ambiguity_count,source_track_fingerprint,legacy_pitch_error_cents,legacy_source_median_f0_hz,legacy_output_median_f0_hz,legacy_paired_frames,formant_error_cents,voiced_unvoiced_disagreement,unvoiced_hf_lsd_db,waveform_correlation,clipping_ratio,non_finite_count,duration_delta_frames,render_rtf\n".to_owned();
     for trial in trials {
         for (renderer, values) in &trial.metrics {
             append_csv_row(
@@ -499,7 +550,35 @@ fn write_administrator_files(
                     &trial.key.trial_id,
                     &trial.key.source_clip_id,
                     renderer.as_str(),
+                    &PitchAnalysisMetadata::current()
+                        .pitch_estimator_version
+                        .to_string(),
+                    &PitchAnalysisMetadata::current()
+                        .pitch_metric_version
+                        .to_string(),
                     &optional_number(values.pitch_error_cents),
+                    &optional_number(values.median_source_f0_hz),
+                    &optional_number(values.median_output_f0_hz),
+                    &optional_number(values.measured_pitch_ratio),
+                    &optional_number(values.mean_absolute_pitch_error_cents),
+                    &optional_number(values.median_absolute_pitch_error_cents),
+                    &optional_number(values.p10_pitch_error_cents),
+                    &optional_number(values.p90_pitch_error_cents),
+                    &values.total_source_frames.to_string(),
+                    &values.reliable_source_voiced_frames.to_string(),
+                    &values.paired_reliable_frames.to_string(),
+                    &format_number(values.paired_coverage),
+                    &values.unpaired_source_voiced_frames.to_string(),
+                    &values.low_confidence_exclusions.to_string(),
+                    &values.octave_doubling_count.to_string(),
+                    &values.octave_halving_count.to_string(),
+                    &values.large_non_octave_error_count.to_string(),
+                    &values.octave_ambiguity_count.to_string(),
+                    &values.source_track_fingerprint,
+                    &optional_number(values.legacy_pitch_error_cents),
+                    &optional_number(values.legacy_source_median_f0_hz),
+                    &optional_number(values.legacy_output_median_f0_hz),
+                    &values.legacy_paired_frames.to_string(),
                     &optional_number(values.formant_error_cents),
                     &format_number(values.voiced_unvoiced_disagreement),
                     &optional_number(values.unvoiced_high_frequency_lsd_db),

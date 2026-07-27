@@ -184,6 +184,15 @@ enum NativeWorldResult {}
 unsafe extern "C" {
     #[cfg(test)]
     fn mam_world_checked_matrix_length(rows: usize, columns: usize, length: *mut usize) -> c_int;
+    #[cfg(test)]
+    fn mam_world_warp_spectral_envelope(
+        source: *const f64,
+        bins: usize,
+        formant_semitones: f64,
+        destination: *mut f64,
+        error: *mut c_char,
+        error_capacity: usize,
+    ) -> c_int;
     fn mam_world_analyze(
         samples: *const f32,
         sample_count: usize,
@@ -725,6 +734,70 @@ mod tests {
             .unwrap()
     }
 
+    const TEST_FFT_SIZE: usize = 4_096;
+    const TEST_BINS: usize = TEST_FFT_SIZE / 2 + 1;
+    const TEST_SAMPLE_RATE: f64 = 48_000.0;
+
+    fn synthetic_envelope(peaks: &[(f64, f64, f64)]) -> Vec<f64> {
+        let bin_hz = TEST_SAMPLE_RATE / TEST_FFT_SIZE as f64;
+        (0..TEST_BINS)
+            .map(|bin| {
+                let frequency = bin as f64 * bin_hz;
+                peaks.iter().fold(1.0e-9, |value, (center, width, height)| {
+                    value + height * (-0.5 * ((frequency - center) / width).powi(2)).exp()
+                })
+            })
+            .collect()
+    }
+
+    fn warp_envelope(source: &[f64], semitones: f64) -> Vec<f64> {
+        let mut destination = vec![0.0; source.len()];
+        let mut error = [0 as c_char; ERROR_CAPACITY];
+        let status = unsafe {
+            mam_world_warp_spectral_envelope(
+                source.as_ptr(),
+                source.len(),
+                semitones,
+                destination.as_mut_ptr(),
+                error.as_mut_ptr(),
+                error.len(),
+            )
+        };
+        assert_eq!(
+            status,
+            0,
+            "{}",
+            unsafe { CStr::from_ptr(error.as_ptr()) }.to_string_lossy()
+        );
+        destination
+    }
+
+    fn envelope_peak_hz(envelope: &[f64], minimum_hz: f64, maximum_hz: f64) -> f64 {
+        let bin_hz = TEST_SAMPLE_RATE / TEST_FFT_SIZE as f64;
+        let minimum = (minimum_hz / bin_hz).ceil() as usize;
+        let maximum = ((maximum_hz / bin_hz).floor() as usize).min(envelope.len() - 1);
+        let peak = (minimum..=maximum)
+            .max_by(|left, right| envelope[*left].total_cmp(&envelope[*right]))
+            .unwrap();
+        peak as f64 * bin_hz
+    }
+
+    fn assert_peak_near(measured: f64, expected: f64) {
+        let bin_hz = TEST_SAMPLE_RATE / TEST_FFT_SIZE as f64;
+        assert!(
+            (measured - expected).abs() <= bin_hz * 1.5,
+            "measured {measured:.3} Hz, expected {expected:.3} Hz"
+        );
+    }
+
+    fn assert_envelopes_close(left: &[f64], right: &[f64]) {
+        assert_eq!(left.len(), right.len());
+        for (left, right) in left.iter().zip(right) {
+            let tolerance = 1.0e-15_f64.max(right.abs() * 1.0e-12);
+            assert!((left - right).abs() <= tolerance);
+        }
+    }
+
     fn parameters() -> DspParameters {
         DspParameters {
             dry_wet: 1.0,
@@ -861,21 +934,94 @@ mod tests {
     }
 
     #[test]
+    fn native_envelope_warp_is_symmetric_immutable_and_identity_safe() {
+        let source = synthetic_envelope(&[(700.0, 35.0, 1.0)]);
+        let original = source.clone();
+        for semitones in [0.0_f64, 4.0, -4.0, 6.0, -6.0] {
+            let output = warp_envelope(&source, semitones);
+            let ratio = 2.0_f64.powf(semitones / 12.0);
+            let measured = envelope_peak_hz(&output, 200.0, 1_400.0);
+            assert_peak_near(measured, 700.0 * ratio);
+            assert!(output.iter().all(|value| value.is_finite() && *value > 0.0));
+        }
+        assert_eq!(source, original);
+        let identity = warp_envelope(&source, 0.0);
+        assert_envelopes_close(&identity, &source);
+        assert_envelopes_close(&warp_envelope(&identity, 0.0), &identity);
+    }
+
+    #[test]
+    fn native_two_peak_warp_preserves_direction_order_and_source() {
+        let source = synthetic_envelope(&[(700.0, 35.0, 1.0), (1_300.0, 45.0, 0.8)]);
+        let original = source.clone();
+        for semitones in [4.0_f64, -4.0] {
+            let output = warp_envelope(&source, semitones);
+            let ratio = 2.0_f64.powf(semitones / 12.0);
+            let first = envelope_peak_hz(&output, 500.0 * ratio, 900.0 * ratio);
+            let second = envelope_peak_hz(&output, 1_100.0 * ratio, 1_500.0 * ratio);
+            assert_peak_near(first, 700.0 * ratio);
+            assert_peak_near(second, 1_300.0 * ratio);
+            assert_eq!(first < second, 700.0 * ratio < 1_300.0 * ratio);
+            if semitones > 0.0 {
+                assert!(first > 700.0 && second > 1_300.0);
+            } else {
+                assert!(first < 700.0 && second < 1_300.0);
+            }
+        }
+        assert_eq!(source, original);
+    }
+
+    #[test]
+    fn native_envelope_warp_boundaries_remain_positive_and_clamped() {
+        let source = synthetic_envelope(&[
+            (120.0, 18.0, 1.0),
+            (1_100.0, 40.0, 0.8),
+            (18_000.0, 100.0, 0.6),
+        ]);
+        for semitones in [6.0_f64, -6.0] {
+            let output = warp_envelope(&source, semitones);
+            assert!(output.iter().all(|value| value.is_finite() && *value > 0.0));
+            assert_eq!(output.len(), source.len());
+        }
+    }
+
+    #[test]
     fn envelope_warp_moves_feature_peaks_without_changing_f0_voicing() {
         let samples = formant_vowel(48_000, 24_000);
         let mut upward =
             WorldAnalysis::analyze(&samples, 48_000, WorldConfiguration::default()).unwrap();
         let source_f0 = upward.features().unwrap().f0.to_vec();
+        let source_aperiodicity = upward.features().unwrap().aperiodicity.to_vec();
         let source_peak = mean_peak_bin(&upward.features().unwrap(), 400.0, 1_050.0);
         upward.transform(0.0, 4.0).unwrap();
         let upward_features = upward.features().unwrap();
         assert!(mean_peak_bin(&upward_features, 400.0, 1_050.0) > source_peak);
         assert_eq!(upward_features.f0, source_f0);
+        assert_eq!(upward_features.aperiodicity, source_aperiodicity);
 
         let mut downward =
             WorldAnalysis::analyze(&samples, 48_000, WorldConfiguration::default()).unwrap();
         downward.transform(0.0, -4.0).unwrap();
         assert!(mean_peak_bin(&downward.features().unwrap(), 400.0, 1_050.0) < source_peak);
+    }
+
+    #[test]
+    fn positive_and_negative_formant_renders_are_bit_identical() {
+        let input =
+            AudioClip::new("formant-vowel", 48_000, 1, formant_vowel(48_000, 48_000)).unwrap();
+        for semitones in [4.0_f32, -4.0] {
+            let mut render_parameters = parameters();
+            render_parameters.formant_shift_semitones = semitones;
+            let first = WorldReferenceProcessor::default()
+                .render(&input, render_parameters)
+                .unwrap();
+            let second = WorldReferenceProcessor::default()
+                .render(&input, render_parameters)
+                .unwrap();
+            assert_eq!(first.clip.samples, second.clip.samples);
+            assert_eq!(first.clip.frames(), input.frames());
+            assert_eq!(first.clip.sample_rate, input.sample_rate);
+        }
     }
 
     #[test]

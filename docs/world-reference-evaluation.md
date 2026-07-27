@@ -86,6 +86,25 @@ Nyquist at the boundaries; no invalid extrapolation is performed. Formant
 warping never changes F0 or applies the pitch ratio again. The first experiment
 does not frequency-warp D4C aperiodicity, and this policy is recorded.
 
+Each spectral-envelope row is copied before the warp. Interpolation reads only
+from that immutable source row and writes to the result row, so the low-to-high
+output loop cannot recursively consume values written earlier in the same
+transform. Numerical single-peak and two-peak tests cover zero, positive, and
+negative shifts, preserve peak order, verify source immutability, and exercise
+DC/Nyquist clamping.
+
+The initial positive-formant evaluation failure was not in-place warp
+contamination. The generated F1 and F2 measurement bands overlap, and after an
+upward warp the stronger F1 resonance enters the F2 band. The original evaluator
+selected the global maximum of each band independently, so it could report that
+F1 energy as the transformed F2 peak. Output formant measurement now tracks a
+prominent local peak nearest the frequency predicted from the unchanged source
+peak and requested ratio. This keeps the declared bands and approximate
+synthetic-envelope method while preventing one formant from being relabeled as
+another. Positive/negative direction tests and synthesized-output gates cover
+both bands. The 100-cent formant threshold, generated fixtures, formant bands,
+comparison groups, and all other evaluator expectations remain unchanged.
+
 WORLD consonant preservation is an offline waveform blend:
 
 ```text

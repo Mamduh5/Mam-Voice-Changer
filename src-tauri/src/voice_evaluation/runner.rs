@@ -430,16 +430,27 @@ mod tests {
         assert!(formant_down.pitch.pitch_error_cents.unwrap().abs() < 10.0);
         assert!(formant_up_world.pitch.pitch_error_cents.unwrap().abs() <= 15.0);
         assert!(formant_down_world.pitch.pitch_error_cents.unwrap().abs() <= 15.0);
-        assert!(formant_up_world
-            .expectations
-            .iter()
-            .any(|expectation| expectation.metric == "formantRatio"
-                && expectation.measured.is_some()));
-        assert!(formant_down_world
-            .expectations
-            .iter()
-            .filter(|expectation| expectation.metric == "formantRatio")
-            .all(|expectation| expectation.passed));
+        for formant in &formant_up_world.formants {
+            assert!(formant.output_peak_hz.unwrap() > formant.input_peak_hz.unwrap());
+            assert!(formant.ratio_error_cents.unwrap().abs() <= 100.0);
+        }
+        for formant in &formant_down_world.formants {
+            assert!(formant.output_peak_hz.unwrap() < formant.input_peak_hz.unwrap());
+            assert!(formant.ratio_error_cents.unwrap().abs() <= 100.0);
+        }
+        assert!(
+            super::super::analysis::median_formant_error(&formant_up_world.formants).unwrap()
+                <= 100.0
+        );
+        assert!(
+            super::super::analysis::median_formant_error(&formant_down_world.formants).unwrap()
+                <= 100.0
+        );
+        for formant_case in [formant_up_world, formant_down_world] {
+            assert_eq!(formant_case.structural.duration_delta_frames, 0);
+            assert_eq!(formant_case.numerical.output_clipping_ratio, 0.0);
+            assert_eq!(formant_case.numerical.output_non_finite_samples, 0);
+        }
 
         let mono_44 = find(&report, "neutral-44100-mono");
         assert_eq!(mono_44.structural.input_sample_rate, 44_100);

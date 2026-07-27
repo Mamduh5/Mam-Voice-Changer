@@ -148,6 +148,38 @@ std::size_t NaturalSynthesisLength(
   return static_cast<std::size_t>(frames);
 }
 
+bool WarpSpectralEnvelopeRow(
+    const double *source,
+    std::size_t bins,
+    double ratio,
+    double *destination) noexcept {
+  if (source == nullptr || destination == nullptr || bins < 2 ||
+      !std::isfinite(ratio) || ratio <= 0.0) {
+    return false;
+  }
+  for (std::size_t output_bin = 0; output_bin < bins; ++output_bin) {
+    const double source_bin =
+        std::min(
+            static_cast<double>(bins - 1),
+            static_cast<double>(output_bin) / ratio);
+    const std::size_t lower =
+        static_cast<std::size_t>(std::floor(source_bin));
+    const std::size_t upper = std::min(lower + 1, bins - 1);
+    const double fraction = source_bin - static_cast<double>(lower);
+    const double lower_log = std::log(std::max(
+        source[lower], std::numeric_limits<double>::min()));
+    const double upper_log = std::log(std::max(
+        source[upper], std::numeric_limits<double>::min()));
+    const double transformed =
+        std::exp(lower_log + (upper_log - lower_log) * fraction);
+    if (!std::isfinite(transformed) || transformed <= 0.0) {
+      return false;
+    }
+    destination[output_bin] = transformed;
+  }
+  return true;
+}
+
 }  // namespace
 
 extern "C" {
@@ -163,6 +195,38 @@ int mam_world_checked_matrix_length(
   return CheckedMultiply(rows, columns, length)
       ? MAM_WORLD_OK
       : MAM_WORLD_OVERFLOW;
+}
+
+int mam_world_warp_spectral_envelope(
+    const double *source,
+    std::size_t bins,
+    double formant_semitones,
+    double *destination,
+    char *error,
+    std::size_t error_capacity) noexcept {
+  ClearError(error, error_capacity);
+  if (source == nullptr || destination == nullptr || bins < 2 ||
+      !std::isfinite(formant_semitones) ||
+      formant_semitones < -6.0 || formant_semitones > 6.0) {
+    SetError(error, error_capacity, "WORLD envelope warp arguments are invalid.");
+    return MAM_WORLD_INVALID_ARGUMENT;
+  }
+  try {
+    const double ratio = std::pow(2.0, formant_semitones / 12.0);
+    const std::vector<double> immutable_source(source, source + bins);
+    if (!WarpSpectralEnvelopeRow(
+            immutable_source.data(), bins, ratio, destination)) {
+      SetError(error, error_capacity, "WORLD envelope warp produced invalid values.");
+      return MAM_WORLD_MALFORMED_RESULT;
+    }
+    return MAM_WORLD_OK;
+  } catch (const std::bad_alloc &) {
+    SetError(error, error_capacity, "WORLD envelope warp allocation failed.");
+    return MAM_WORLD_ALLOCATION_FAILED;
+  } catch (...) {
+    SetError(error, error_capacity, "WORLD envelope warp failed with a contained native exception.");
+    return MAM_WORLD_EXCEPTION;
+  }
 }
 
 int mam_world_analyze(
@@ -397,21 +461,10 @@ int mam_world_transform(
         double *destination =
             result->spectral_envelope.data() + frame * bins;
         std::copy(destination, destination + bins, source.begin());
-        for (std::size_t output_bin = 0; output_bin < bins; ++output_bin) {
-          const double source_bin =
-              std::min(
-                  static_cast<double>(bins - 1),
-                  static_cast<double>(output_bin) / ratio);
-          const std::size_t lower =
-              static_cast<std::size_t>(std::floor(source_bin));
-          const std::size_t upper = std::min(lower + 1, bins - 1);
-          const double fraction = source_bin - static_cast<double>(lower);
-          const double lower_log = std::log(std::max(
-              source[lower], std::numeric_limits<double>::min()));
-          const double upper_log = std::log(std::max(
-              source[upper], std::numeric_limits<double>::min()));
-          destination[output_bin] =
-              std::exp(lower_log + (upper_log - lower_log) * fraction);
+        if (!WarpSpectralEnvelopeRow(
+                source.data(), bins, ratio, destination)) {
+          SetError(error, error_capacity, "WORLD formant warp produced invalid values.");
+          return MAM_WORLD_MALFORMED_RESULT;
         }
       }
     }

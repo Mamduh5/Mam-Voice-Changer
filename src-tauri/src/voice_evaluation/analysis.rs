@@ -428,11 +428,17 @@ pub fn compare_audio(
     };
 
     let expected_formant_ratio = 2.0_f64.powf(f64::from(formant_semitones) / 12.0);
+    let input_formant_peaks = formant_bands
+        .iter()
+        .map(|band| envelope_peak(input, segments, band, None))
+        .collect::<Vec<_>>();
     let formants = formant_bands
         .iter()
+        .zip(input_formant_peaks)
         .map(|band| {
-            let input_peak = envelope_peak(input, segments, band);
-            let output_peak = envelope_peak(output, segments, band);
+            let (band, input_peak) = band;
+            let expected_output_peak = input_peak.map(|peak| peak * expected_formant_ratio);
+            let output_peak = envelope_peak(output, segments, band, expected_output_peak);
             let measured_ratio = input_peak
                 .zip(output_peak)
                 .map(|(source, transformed)| transformed / source);
@@ -707,6 +713,7 @@ fn envelope_peak(
     analysis: &AudioAnalysis,
     segments: &[AnalysisSegment],
     band: &FormantBand,
+    preferred_hz: Option<f64>,
 ) -> Option<f64> {
     let selected = analysis
         .frames
@@ -739,20 +746,59 @@ fn envelope_peak(
             average[start..=end].iter().sum::<f64>() / (end - start + 1) as f64
         })
         .collect::<Vec<_>>();
-    let minimum_bin = frequency_bin(band.minimum_hz, analysis.sample_rate);
+    envelope_peak_from_spectrum(&smoothed, analysis.sample_rate, band, preferred_hz)
+}
+
+fn envelope_peak_from_spectrum(
+    smoothed: &[f64],
+    sample_rate: u32,
+    band: &FormantBand,
+    preferred_hz: Option<f64>,
+) -> Option<f64> {
+    let minimum_bin = frequency_bin(band.minimum_hz, sample_rate);
     let maximum_bin =
-        frequency_bin(band.maximum_hz, analysis.sample_rate).min(smoothed.len().saturating_sub(1));
-    let (offset, peak) = smoothed[minimum_bin..=maximum_bin]
+        frequency_bin(band.maximum_hz, sample_rate).min(smoothed.len().saturating_sub(1));
+    let (global_offset, global_peak) = smoothed[minimum_bin..=maximum_bin]
         .iter()
         .copied()
         .enumerate()
         .max_by(|left, right| left.1.total_cmp(&right.1))?;
     let floor = smoothed[minimum_bin..=maximum_bin].iter().sum::<f64>()
         / (maximum_bin - minimum_bin + 1) as f64;
-    if peak <= SPECTRAL_EPSILON || peak < floor * 1.05 {
+    if global_peak <= SPECTRAL_EPSILON || global_peak < floor * 1.05 {
         return None;
     }
-    Some((minimum_bin + offset) as f64 * f64::from(analysis.sample_rate) / FFT_SIZE as f64)
+    let global_bin = minimum_bin + global_offset;
+    let selected_bin = preferred_hz
+        .filter(|preferred| preferred.is_finite() && *preferred > 0.0)
+        .and_then(|preferred| {
+            (minimum_bin..=maximum_bin)
+                .filter(|bin| {
+                    let value = smoothed[*bin];
+                    let left = bin
+                        .checked_sub(1)
+                        .filter(|left| *left >= minimum_bin)
+                        .map_or(f64::NEG_INFINITY, |left| smoothed[left]);
+                    let right = if *bin < maximum_bin {
+                        smoothed[*bin + 1]
+                    } else {
+                        f64::NEG_INFINITY
+                    };
+                    value >= floor * 1.05
+                        && value >= left
+                        && value >= right
+                        && (value > left || value > right)
+                })
+                .min_by(|left, right| {
+                    let frequency =
+                        |bin: usize| bin as f64 * f64::from(sample_rate) / FFT_SIZE as f64;
+                    let left_distance = (frequency(*left) / preferred).ln().abs();
+                    let right_distance = (frequency(*right) / preferred).ln().abs();
+                    left_distance.total_cmp(&right_distance)
+                })
+        })
+        .unwrap_or(global_bin);
+    Some(selected_bin as f64 * f64::from(sample_rate) / FFT_SIZE as f64)
 }
 
 fn mean_option(values: &[f64]) -> Option<f64> {
@@ -870,6 +916,30 @@ mod tests {
             formants[0].unavailable_reason.as_deref(),
             Some("ambiguousOrMissingEnvelopePeak")
         );
+    }
+
+    #[test]
+    fn target_aware_formant_peak_ignores_stronger_overlapping_resonance() {
+        let sample_rate = 48_000;
+        let mut spectrum = vec![1.0; FFT_SIZE / 2 + 1];
+        let bin = |frequency: f64| frequency_bin(frequency, sample_rate);
+        let contaminating_f1 = bin(960.0);
+        let expected_f2 = bin(1_650.0);
+        for (center, height) in [(contaminating_f1, 10.0), (expected_f2, 7.0)] {
+            spectrum[center - 1] = height * 0.8;
+            spectrum[center] = height;
+            spectrum[center + 1] = height * 0.8;
+        }
+        let band = FormantBand {
+            label: "F2-like".to_owned(),
+            minimum_hz: 900.0,
+            maximum_hz: 1_900.0,
+        };
+        let global = envelope_peak_from_spectrum(&spectrum, sample_rate, &band, None).unwrap();
+        let tracked =
+            envelope_peak_from_spectrum(&spectrum, sample_rate, &band, Some(1_650.0)).unwrap();
+        assert!((global - 960.0).abs() <= f64::from(sample_rate) / FFT_SIZE as f64);
+        assert!((tracked - 1_650.0).abs() <= f64::from(sample_rate) / FFT_SIZE as f64);
     }
 
     #[test]

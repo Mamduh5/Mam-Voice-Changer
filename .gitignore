@@ -8,3 +8,4 @@ __pycache__/
 .pytest_cache/
 .venv/
 .DS_Store
+local-experiments/mam-voice-listening-round-1/corpus/*

@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::dsp::chain::DspParameters;
 
-pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const MANIFEST_SCHEMA_VERSION: u32 = 2;
+pub const PREVIOUS_MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const MAX_CASES: usize = 128;
 const MAX_ID_CHARS: usize = 64;
 const MAX_DESCRIPTION_CHARS: usize = 512;
@@ -30,6 +31,10 @@ pub struct EvaluationCase {
     pub id: String,
     pub description: String,
     pub input: String,
+    #[serde(default)]
+    pub renderer: EvaluationRenderer,
+    #[serde(default)]
+    pub comparison_group: Option<String>,
     pub parameters: DspParameters,
     #[serde(default)]
     pub expected_pitch_ratio: Option<f64>,
@@ -41,6 +46,25 @@ pub struct EvaluationCase {
     pub expectations: MetricExpectations,
     #[serde(default)]
     pub tags: Vec<String>,
+}
+
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum EvaluationRenderer {
+    #[default]
+    ExistingDsp,
+    WorldReference,
+}
+
+impl EvaluationRenderer {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExistingDsp => "existingDsp",
+            Self::WorldReference => "worldReference",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -89,6 +113,29 @@ pub struct MetricExpectations {
 
 impl EvaluationManifest {
     pub fn from_json(contents: &str) -> Result<Self, String> {
+        let value: serde_json::Value = serde_json::from_str(contents)
+            .map_err(|error| format!("Evaluation manifest is not valid JSON: {error}"))?;
+        let schema_version = value
+            .get("schemaVersion")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| {
+                "Evaluation manifest schemaVersion must be an unsigned integer.".to_owned()
+            })?;
+        if schema_version == u64::from(PREVIOUS_MANIFEST_SCHEMA_VERSION)
+            && value
+                .get("cases")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|cases| {
+                    cases.iter().any(|case| {
+                        case.get("renderer").is_some() || case.get("comparisonGroup").is_some()
+                    })
+                })
+        {
+            return Err(
+                "Evaluation manifest schema version 1 cannot select a renderer or comparison group; use schema version 2."
+                    .to_owned(),
+            );
+        }
         let manifest: Self = serde_json::from_str(contents)
             .map_err(|error| format!("Evaluation manifest is not valid JSON: {error}"))?;
         manifest.validate_structure()?;
@@ -96,10 +143,13 @@ impl EvaluationManifest {
     }
 
     pub fn validate_structure(&self) -> Result<(), String> {
-        if self.schema_version != MANIFEST_SCHEMA_VERSION {
+        if !matches!(
+            self.schema_version,
+            PREVIOUS_MANIFEST_SCHEMA_VERSION | MANIFEST_SCHEMA_VERSION
+        ) {
             return Err(format!(
-                "Unsupported evaluation manifest schema version {}. Expected {}.",
-                self.schema_version, MANIFEST_SCHEMA_VERSION
+                "Unsupported evaluation manifest schema version {}. Supported versions are {} and {}.",
+                self.schema_version, PREVIOUS_MANIFEST_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION
             ));
         }
         validate_relative_path(&self.corpus_root, "corpusRoot")?;
@@ -114,6 +164,15 @@ impl EvaluationManifest {
         }
         let mut ids = HashSet::with_capacity(self.cases.len());
         for case in &self.cases {
+            if self.schema_version == PREVIOUS_MANIFEST_SCHEMA_VERSION
+                && (case.renderer != EvaluationRenderer::ExistingDsp
+                    || case.comparison_group.is_some())
+            {
+                return Err(
+                    "Evaluation manifest schema version 1 supports only the implicit existingDsp renderer and no comparison groups."
+                        .to_owned(),
+                );
+            }
             case.validate()?;
             if !ids.insert(case.id.as_str()) {
                 return Err(format!("Evaluation case id '{}' is duplicated.", case.id));
@@ -143,6 +202,14 @@ impl EvaluationCase {
         }
         validate_visible_string(&self.description, MAX_DESCRIPTION_CHARS, "description")?;
         validate_relative_path(&self.input, "input")?;
+        if let Some(group) = &self.comparison_group {
+            if !is_safe_id(group) {
+                return Err(format!(
+                    "Evaluation comparison group '{}' must be 1-{MAX_ID_CHARS} ASCII letters, digits, '-' or '_'.",
+                    group
+                ));
+            }
+        }
         self.parameters.validate()?;
         if self
             .expected_pitch_ratio
@@ -332,6 +399,8 @@ mod tests {
             id: id.to_owned(),
             description: "test case".to_owned(),
             input: "fixture.wav".to_owned(),
+            renderer: EvaluationRenderer::ExistingDsp,
+            comparison_group: None,
             parameters: DspParameters::default(),
             expected_pitch_ratio: None,
             segments: Vec::new(),
@@ -382,8 +451,8 @@ mod tests {
     fn rejects_unknown_fields_and_path_traversal() {
         let json = serde_json::to_string(&manifest()).unwrap();
         let unknown = json.replacen(
-            "\"schemaVersion\":1",
-            "\"schemaVersion\":1,\"unknown\":true",
+            "\"schemaVersion\":2",
+            "\"schemaVersion\":2,\"unknown\":true",
             1,
         );
         assert!(EvaluationManifest::from_json(&unknown).is_err());
@@ -394,5 +463,34 @@ mod tests {
         invalid = manifest();
         invalid.corpus_root = "C:/private".to_owned();
         assert!(invalid.validate_structure().is_err());
+    }
+
+    #[test]
+    fn schema_one_defaults_to_existing_dsp_and_schema_two_selects_world() {
+        let mut legacy = manifest();
+        legacy.schema_version = PREVIOUS_MANIFEST_SCHEMA_VERSION;
+        let mut value = serde_json::to_value(&legacy).unwrap();
+        let case = value["cases"][0].as_object_mut().unwrap();
+        case.remove("renderer");
+        case.remove("comparisonGroup");
+        let json = serde_json::to_string(&value).unwrap();
+        let parsed = EvaluationManifest::from_json(&json).unwrap();
+        assert_eq!(parsed.cases[0].renderer, EvaluationRenderer::ExistingDsp);
+
+        let mut current = manifest();
+        current.cases[0].renderer = EvaluationRenderer::WorldReference;
+        current.cases[0].comparison_group = Some("neutral".to_owned());
+        let json = serde_json::to_string(&current).unwrap();
+        assert_eq!(
+            EvaluationManifest::from_json(&json).unwrap().cases[0].renderer,
+            EvaluationRenderer::WorldReference
+        );
+
+        let legacy_with_renderer = json.replacen("\"schemaVersion\":2", "\"schemaVersion\":1", 1);
+        assert!(EvaluationManifest::from_json(&legacy_with_renderer).is_err());
+        assert!(EvaluationManifest::from_json(
+            &json.replace("\"worldReference\"", "\"unknownRenderer\"")
+        )
+        .is_err());
     }
 }

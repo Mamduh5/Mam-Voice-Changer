@@ -7,16 +7,20 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use crate::dsp::chain::DspParameters;
+
 use super::{
     analysis::{
         median_formant_error, median_formant_ratio, AnalysisConfiguration, ConsonantMetrics,
         FormantMetric, NumericalMetrics, PerformanceMetrics, PitchMetrics, SpectralMetrics,
         StructuralMetrics, VoicingMetrics,
     },
-    manifest::MetricExpectations,
+    manifest::{EvaluationRenderer, MetricExpectations},
+    world::WorldRenderMetadata,
 };
 
-pub const REPORT_SCHEMA_VERSION: u32 = 1;
+pub const REPORT_SCHEMA_VERSION: u32 = 2;
+pub const PREVIOUS_REPORT_SCHEMA_VERSION: u32 = 1;
 pub const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -30,6 +34,12 @@ pub struct EvaluationReport {
     pub analysis_configuration: AnalysisConfiguration,
     pub cases: Vec<CaseReport>,
     pub summary: ReportSummary,
+    #[serde(default)]
+    pub renderer_summaries: Vec<RendererSummary>,
+    #[serde(default)]
+    pub cross_renderer_comparisons: Vec<CrossRendererComparison>,
+    #[serde(default)]
+    pub relative_expectations: Vec<RelativeExpectationResult>,
     pub baseline_comparison: Option<BaselineComparison>,
     pub warnings: Vec<String>,
 }
@@ -40,6 +50,12 @@ pub struct CaseReport {
     pub id: String,
     pub description: String,
     pub input: String,
+    #[serde(default)]
+    pub renderer: EvaluationRenderer,
+    #[serde(default)]
+    pub comparison_group: Option<String>,
+    #[serde(default)]
+    pub parameters: DspParameters,
     pub tags: Vec<String>,
     pub structural: StructuralMetrics,
     pub numerical: NumericalMetrics,
@@ -52,6 +68,8 @@ pub struct CaseReport {
     pub expectations: Vec<ExpectationResult>,
     pub unavailable_metrics: Vec<String>,
     pub rendered_audio: Option<String>,
+    #[serde(default)]
+    pub world: Option<WorldRenderMetadata>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -74,6 +92,49 @@ pub struct ReportSummary {
     pub unavailable_metrics: usize,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RendererSummary {
+    pub renderer: EvaluationRenderer,
+    pub total_cases: usize,
+    pub passed_expectations: usize,
+    pub failed_expectations: usize,
+    pub unavailable_metrics: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CrossRendererComparison {
+    pub comparison_group: String,
+    pub cases: Vec<CrossRendererCaseMetrics>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CrossRendererCaseMetrics {
+    pub case_id: String,
+    pub renderer: EvaluationRenderer,
+    pub pitch_error_cents: Option<f64>,
+    pub formant_ratio_error_cents: Option<f64>,
+    pub voiced_unvoiced_disagreement: f64,
+    pub unvoiced_high_frequency_lsd_db: Option<f64>,
+    pub unvoiced_correlation: Option<f64>,
+    pub clipping_ratio: f64,
+    pub rms_change_db: Option<f64>,
+    pub duration_delta_frames: i64,
+    pub real_time_factor: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RelativeExpectationResult {
+    pub renderer: EvaluationRenderer,
+    pub metric: String,
+    pub case_ids: Vec<String>,
+    pub passed: bool,
+    pub explanation: String,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BaselineComparison {
@@ -90,6 +151,8 @@ pub struct BaselineComparison {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BaselineCaseComparison {
     pub case_id: String,
+    #[serde(default)]
+    pub renderer: EvaluationRenderer,
     pub metrics: Vec<MetricComparison>,
 }
 
@@ -114,7 +177,10 @@ pub enum ChangeClassification {
 impl EvaluationReport {
     pub fn new(source_manifest: String, build_mode: String, mut cases: Vec<CaseReport>) -> Self {
         cases.sort_by(|left, right| left.id.cmp(&right.id));
-        let summary = summarize(&cases);
+        let relative_expectations = evaluate_relative_expectations(&cases);
+        let summary = summarize(&cases, &relative_expectations);
+        let renderer_summaries = summarize_renderers(&cases, &relative_expectations);
+        let cross_renderer_comparisons = cross_renderer_comparisons(&cases);
         Self {
             schema_version: REPORT_SCHEMA_VERSION,
             tool_version: TOOL_VERSION.to_owned(),
@@ -127,6 +193,9 @@ impl EvaluationReport {
             analysis_configuration: AnalysisConfiguration::default(),
             cases,
             summary,
+            renderer_summaries,
+            cross_renderer_comparisons,
+            relative_expectations,
             baseline_comparison: None,
             warnings: vec![
                 "Objective metrics do not establish subjective naturalness or intelligibility."
@@ -137,17 +206,32 @@ impl EvaluationReport {
     }
 
     pub fn from_json(contents: &str) -> Result<Self, String> {
-        let report: Self = serde_json::from_str(contents)
+        let mut report: Self = serde_json::from_str(contents)
             .map_err(|error| format!("Baseline report is not valid: {error}"))?;
-        if report.schema_version != REPORT_SCHEMA_VERSION {
+        if !matches!(
+            report.schema_version,
+            PREVIOUS_REPORT_SCHEMA_VERSION | REPORT_SCHEMA_VERSION
+        ) {
             return Err(format!(
-                "Unsupported baseline report schema version {}. Expected {}.",
-                report.schema_version, REPORT_SCHEMA_VERSION
+                "Unsupported baseline report schema version {}. Supported versions are {} and {}.",
+                report.schema_version, PREVIOUS_REPORT_SCHEMA_VERSION, REPORT_SCHEMA_VERSION
             ));
         }
         let mut ids = BTreeSet::new();
-        if report.cases.iter().any(|case| !ids.insert(&case.id)) {
-            return Err("Baseline report contains duplicate case ids.".to_owned());
+        if report
+            .cases
+            .iter()
+            .any(|case| !ids.insert((case.id.as_str(), case.renderer)))
+        {
+            return Err(
+                "Baseline report contains duplicate case ids for the same renderer.".to_owned(),
+            );
+        }
+        if report.schema_version == PREVIOUS_REPORT_SCHEMA_VERSION {
+            report.schema_version = REPORT_SCHEMA_VERSION;
+            report.renderer_summaries =
+                summarize_renderers(&report.cases, &report.relative_expectations);
+            report.cross_renderer_comparisons = cross_renderer_comparisons(&report.cases);
         }
         Ok(report)
     }
@@ -289,29 +373,29 @@ pub fn compare_baseline(
     let current_cases = current
         .cases
         .iter()
-        .map(|case| (case.id.as_str(), case))
+        .map(|case| ((case.id.as_str(), case.renderer), case))
         .collect::<BTreeMap<_, _>>();
     let baseline_cases = baseline
         .cases
         .iter()
-        .map(|case| (case.id.as_str(), case))
+        .map(|case| ((case.id.as_str(), case.renderer), case))
         .collect::<BTreeMap<_, _>>();
     let added_cases = current_cases
         .keys()
-        .filter(|id| !baseline_cases.contains_key(**id))
-        .map(|id| (*id).to_owned())
+        .filter(|id| !baseline_cases.contains_key(*id))
+        .map(|(id, renderer)| format!("{id}@{}", renderer.as_str()))
         .collect::<Vec<_>>();
     let missing_cases = baseline_cases
         .keys()
-        .filter(|id| !current_cases.contains_key(**id))
-        .map(|id| (*id).to_owned())
+        .filter(|id| !current_cases.contains_key(*id))
+        .map(|(id, renderer)| format!("{id}@{}", renderer.as_str()))
         .collect::<Vec<_>>();
     let mut cases = Vec::new();
     let mut improvements = 0;
     let mut regressions = 0;
     let mut unchanged = 0;
-    for (id, current_case) in &current_cases {
-        let Some(baseline_case) = baseline_cases.get(id) else {
+    for ((id, renderer), current_case) in &current_cases {
+        let Some(baseline_case) = baseline_cases.get(&(*id, *renderer)) else {
             continue;
         };
         let mut metrics = Vec::new();
@@ -340,6 +424,7 @@ pub fn compare_baseline(
         }
         cases.push(BaselineCaseComparison {
             case_id: (*id).to_owned(),
+            renderer: *renderer,
             metrics,
         });
     }
@@ -454,7 +539,7 @@ pub fn write_reports(report: &EvaluationReport, output: &Path) -> Result<(), Str
 
 fn csv(report: &EvaluationReport) -> String {
     let mut output = String::from(
-        "id,description,passedExpectations,failedExpectations,pitchErrorCents,voicingDisagreement,unvoicedLsdDb,hfEnergyRatio,formantRatioErrorCents,outputClippingRatio,outputNonFinite,durationDeltaFrames,realTimeFactor\n",
+        "id,renderer,comparisonGroup,description,passedExpectations,failedExpectations,pitchErrorCents,voicingDisagreement,unvoicedLsdDb,unvoicedCorrelation,hfEnergyRatio,formantRatioErrorCents,outputClippingRatio,outputNonFinite,durationDeltaFrames,realTimeFactor,worldRevision,worldRawSynthesisFrames,worldDurationAdjustment,worldChannelPolicy\n",
     );
     for case in &report.cases {
         let passed = case
@@ -465,18 +550,40 @@ fn csv(report: &EvaluationReport) -> String {
         let failed = case.expectations.len() - passed;
         let values = [
             csv_field(&case.id),
+            case.renderer.as_str().to_owned(),
+            case.comparison_group
+                .as_deref()
+                .map(csv_field)
+                .unwrap_or_default(),
             csv_field(&case.description),
             passed.to_string(),
             failed.to_string(),
             optional_number(case.pitch.pitch_error_cents),
             format_number(case.voicing.voiced_unvoiced_disagreement_ratio),
             optional_number(case.spectral.unvoiced_log_spectral_distance_db),
+            optional_number(case.consonant.unvoiced_waveform_correlation),
             optional_number(case.consonant.unvoiced_high_frequency_energy_ratio),
             optional_number(median_formant_error(&case.formants)),
             format_number(case.numerical.output_clipping_ratio),
             case.numerical.output_non_finite_samples.to_string(),
             case.structural.duration_delta_frames.to_string(),
             format_number(case.performance.real_time_factor),
+            case.world
+                .as_ref()
+                .map(|world| world.revision.clone())
+                .unwrap_or_default(),
+            case.world
+                .as_ref()
+                .map(|world| world.raw_synthesis_frames.to_string())
+                .unwrap_or_default(),
+            case.world
+                .as_ref()
+                .map(|world| world.duration_adjustment.as_str().to_owned())
+                .unwrap_or_default(),
+            case.world
+                .as_ref()
+                .map(|world| world.channel_policy.as_str().to_owned())
+                .unwrap_or_default(),
         ];
         output.push_str(&values.join(","));
         output.push('\n');
@@ -493,8 +600,9 @@ fn markdown(report: &EvaluationReport) -> String {
         report.summary.unavailable_metrics,
         report.build_mode
     );
-    output.push_str("| Case | Pitch error (cents) | V/UV disagreement | HF ratio | Formant error (cents) | Non-finite | RTF | Result |\n");
-    output.push_str("| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
+    output.push_str("## Cases\n\n");
+    output.push_str("| Case | Renderer | Group | Pitch error (cents) | V/UV disagreement | HF ratio | Formant error (cents) | Non-finite | RTF | Result |\n");
+    output.push_str("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
     for case in &report.cases {
         let failed = case
             .expectations
@@ -502,8 +610,10 @@ fn markdown(report: &EvaluationReport) -> String {
             .filter(|result| !result.passed)
             .count();
         output.push_str(&format!(
-            "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
             case.id,
+            case.renderer.as_str(),
+            case.comparison_group.as_deref().unwrap_or(""),
             optional_number(case.pitch.pitch_error_cents),
             format_number(case.voicing.voiced_unvoiced_disagreement_ratio),
             optional_number(case.consonant.unvoiced_high_frequency_energy_ratio),
@@ -512,6 +622,56 @@ fn markdown(report: &EvaluationReport) -> String {
             format_number(case.performance.real_time_factor),
             if failed == 0 { "pass" } else { "fail" }
         ));
+    }
+    output.push_str("\n## Renderer summaries\n\n");
+    output.push_str(
+        "| Renderer | Cases | Passed expectations | Failed expectations | Unavailable metrics |\n",
+    );
+    output.push_str("| --- | ---: | ---: | ---: | ---: |\n");
+    for summary in &report.renderer_summaries {
+        output.push_str(&format!(
+            "| {} | {} | {} | {} | {} |\n",
+            summary.renderer.as_str(),
+            summary.total_cases,
+            summary.passed_expectations,
+            summary.failed_expectations,
+            summary.unavailable_metrics
+        ));
+    }
+    output.push_str("\n## Relative expectations\n\n");
+    for expectation in &report.relative_expectations {
+        output.push_str(&format!(
+            "- `{}` / `{}`: {} — {}\n",
+            expectation.renderer.as_str(),
+            expectation.metric,
+            if expectation.passed { "pass" } else { "fail" },
+            expectation.explanation
+        ));
+    }
+    output.push_str("\n## Cross-renderer comparisons\n\n");
+    output.push_str("These paired measurements are descriptive and do not declare a winner.\n\n");
+    output.push_str("| Group | Case | Renderer | Pitch error | Formant error | V/UV | Unvoiced HF LSD | Unvoiced correlation | Clipping | RMS change | Duration delta | RTF |\n");
+    output.push_str(
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n",
+    );
+    for comparison in &report.cross_renderer_comparisons {
+        for case in &comparison.cases {
+            output.push_str(&format!(
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+                comparison.comparison_group,
+                case.case_id,
+                case.renderer.as_str(),
+                optional_number(case.pitch_error_cents),
+                optional_number(case.formant_ratio_error_cents),
+                format_number(case.voiced_unvoiced_disagreement),
+                optional_number(case.unvoiced_high_frequency_lsd_db),
+                optional_number(case.unvoiced_correlation),
+                format_number(case.clipping_ratio),
+                optional_number(case.rms_change_db),
+                case.duration_delta_frames,
+                format_number(case.real_time_factor),
+            ));
+        }
     }
     output.push_str("\n## Metric limitations\n\n");
     output
@@ -536,24 +696,200 @@ fn markdown(report: &EvaluationReport) -> String {
     output
 }
 
-fn summarize(cases: &[CaseReport]) -> ReportSummary {
+fn summarize(
+    cases: &[CaseReport],
+    relative_expectations: &[RelativeExpectationResult],
+) -> ReportSummary {
     ReportSummary {
         total_cases: cases.len(),
         passed_expectations: cases
             .iter()
             .flat_map(|case| &case.expectations)
             .filter(|expectation| expectation.passed)
-            .count(),
+            .count()
+            + relative_expectations
+                .iter()
+                .filter(|expectation| expectation.passed)
+                .count(),
         failed_expectations: cases
             .iter()
             .flat_map(|case| &case.expectations)
             .filter(|expectation| !expectation.passed)
-            .count(),
+            .count()
+            + relative_expectations
+                .iter()
+                .filter(|expectation| !expectation.passed)
+                .count(),
         unavailable_metrics: cases
             .iter()
             .map(|case| case.unavailable_metrics.len())
             .sum(),
     }
+}
+
+fn summarize_renderers(
+    cases: &[CaseReport],
+    relative_expectations: &[RelativeExpectationResult],
+) -> Vec<RendererSummary> {
+    let mut groups = BTreeMap::<EvaluationRenderer, Vec<&CaseReport>>::new();
+    for case in cases {
+        groups.entry(case.renderer).or_default().push(case);
+    }
+    groups
+        .into_iter()
+        .map(|(renderer, cases)| RendererSummary {
+            renderer,
+            total_cases: cases.len(),
+            passed_expectations: cases
+                .iter()
+                .flat_map(|case| &case.expectations)
+                .filter(|expectation| expectation.passed)
+                .count()
+                + relative_expectations
+                    .iter()
+                    .filter(|expectation| expectation.renderer == renderer && expectation.passed)
+                    .count(),
+            failed_expectations: cases
+                .iter()
+                .flat_map(|case| &case.expectations)
+                .filter(|expectation| !expectation.passed)
+                .count()
+                + relative_expectations
+                    .iter()
+                    .filter(|expectation| expectation.renderer == renderer && !expectation.passed)
+                    .count(),
+            unavailable_metrics: cases
+                .iter()
+                .map(|case| case.unavailable_metrics.len())
+                .sum(),
+        })
+        .collect()
+}
+
+fn evaluate_relative_expectations(cases: &[CaseReport]) -> Vec<RelativeExpectationResult> {
+    let preservation = |amount: f32| {
+        cases.iter().find(|case| {
+            case.renderer == EvaluationRenderer::WorldReference
+                && case.tags.iter().any(|tag| tag == "preservation")
+                && (case.parameters.consonant_preservation - amount).abs() <= f32::EPSILON
+        })
+    };
+    let (Some(none), Some(half), Some(full)) =
+        (preservation(0.0), preservation(0.5), preservation(1.0))
+    else {
+        return Vec::new();
+    };
+    let case_ids = vec![none.id.clone(), half.id.clone(), full.id.clone()];
+    let correlation_improves = match (
+        none.consonant.unvoiced_waveform_correlation,
+        full.consonant.unvoiced_waveform_correlation,
+    ) {
+        (Some(none), Some(full)) => full > none,
+        _ => false,
+    };
+    let spectral_improves = match (
+        none.spectral
+            .high_frequency_unvoiced_log_spectral_distance_db,
+        full.spectral
+            .high_frequency_unvoiced_log_spectral_distance_db,
+    ) {
+        (Some(none), Some(full)) => full < none,
+        _ => false,
+    };
+    let correlation_between = match (
+        none.consonant.unvoiced_waveform_correlation,
+        half.consonant.unvoiced_waveform_correlation,
+        full.consonant.unvoiced_waveform_correlation,
+    ) {
+        (Some(none), Some(half), Some(full)) => half > none.min(full) && half < none.max(full),
+        _ => false,
+    };
+    let spectral_between = match (
+        none.spectral
+            .high_frequency_unvoiced_log_spectral_distance_db,
+        half.spectral
+            .high_frequency_unvoiced_log_spectral_distance_db,
+        full.spectral
+            .high_frequency_unvoiced_log_spectral_distance_db,
+    ) {
+        (Some(none), Some(half), Some(full)) => half > none.min(full) && half < none.max(full),
+        _ => false,
+    };
+    vec![
+        RelativeExpectationResult {
+            renderer: EvaluationRenderer::WorldReference,
+            metric: "preservationImprovesUnvoicedCorrelation".to_owned(),
+            case_ids: case_ids.clone(),
+            passed: correlation_improves,
+            explanation:
+                "Preservation 1.0 must have higher aligned unvoiced correlation than 0.0."
+                    .to_owned(),
+        },
+        RelativeExpectationResult {
+            renderer: EvaluationRenderer::WorldReference,
+            metric: "preservationImprovesUnvoicedSpectralSimilarity".to_owned(),
+            case_ids: case_ids.clone(),
+            passed: spectral_improves,
+            explanation:
+                "Preservation 1.0 must have lower high-frequency unvoiced LSD than 0.0."
+                    .to_owned(),
+        },
+        RelativeExpectationResult {
+            renderer: EvaluationRenderer::WorldReference,
+            metric: "preservationHalfIsIntermediate".to_owned(),
+            case_ids,
+            passed: correlation_between || spectral_between,
+            explanation:
+                "Preservation 0.5 must fall strictly between 0.0 and 1.0 for correlation or high-frequency LSD."
+                    .to_owned(),
+        },
+    ]
+}
+
+fn cross_renderer_comparisons(cases: &[CaseReport]) -> Vec<CrossRendererComparison> {
+    let mut groups = BTreeMap::<&str, Vec<&CaseReport>>::new();
+    for case in cases {
+        if let Some(group) = &case.comparison_group {
+            groups.entry(group).or_default().push(case);
+        }
+    }
+    groups
+        .into_iter()
+        .filter(|(_, cases)| {
+            cases
+                .iter()
+                .map(|case| case.renderer)
+                .collect::<BTreeSet<_>>()
+                .len()
+                > 1
+        })
+        .map(|(comparison_group, mut cases)| {
+            cases.sort_by_key(|case| (case.renderer, case.id.as_str()));
+            CrossRendererComparison {
+                comparison_group: comparison_group.to_owned(),
+                cases: cases
+                    .into_iter()
+                    .map(|case| CrossRendererCaseMetrics {
+                        case_id: case.id.clone(),
+                        renderer: case.renderer,
+                        pitch_error_cents: case.pitch.pitch_error_cents.map(f64::abs),
+                        formant_ratio_error_cents: median_formant_error(&case.formants),
+                        voiced_unvoiced_disagreement: case
+                            .voicing
+                            .voiced_unvoiced_disagreement_ratio,
+                        unvoiced_high_frequency_lsd_db: case
+                            .spectral
+                            .high_frequency_unvoiced_log_spectral_distance_db,
+                        unvoiced_correlation: case.consonant.unvoiced_waveform_correlation,
+                        clipping_ratio: case.numerical.output_clipping_ratio,
+                        rms_change_db: case.numerical.rms_change_db,
+                        duration_delta_frames: case.structural.duration_delta_frames,
+                        real_time_factor: case.performance.real_time_factor,
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
 }
 
 fn maximum_u64(
@@ -651,6 +987,9 @@ mod tests {
             id: id.to_owned(),
             description: "comma, quote \" and private D:\\secret".to_owned(),
             input: "fixtures/test.wav".to_owned(),
+            renderer: EvaluationRenderer::ExistingDsp,
+            comparison_group: None,
+            parameters: DspParameters::default(),
             tags: Vec::new(),
             structural: StructuralMetrics {
                 input_sample_rate: 48_000,
@@ -719,6 +1058,7 @@ mod tests {
             expectations: Vec::new(),
             unavailable_metrics: Vec::new(),
             rendered_audio: None,
+            world: None,
         }
     }
 
@@ -737,7 +1077,7 @@ mod tests {
             passed: true,
             explanation: None,
         });
-        report.summary = summarize(&report.cases);
+        report.summary = summarize(&report.cases, &report.relative_expectations);
         assert_eq!(report.cases[0].id, "a");
         assert_eq!(report.summary.passed_expectations, 1);
         let json = serde_json::to_string(&report).unwrap();
@@ -766,8 +1106,8 @@ mod tests {
             vec![improved, case("added")],
         );
         let comparison = compare_baseline(&current, &baseline);
-        assert_eq!(comparison.added_cases, ["added"]);
-        assert_eq!(comparison.missing_cases, ["missing"]);
+        assert_eq!(comparison.added_cases, ["added@existingDsp"]);
+        assert_eq!(comparison.missing_cases, ["missing@existingDsp"]);
         assert!(comparison.improvements > 0);
         assert!(comparison.regressions > 0);
         assert!(comparison
@@ -775,5 +1115,87 @@ mod tests {
             .iter()
             .flat_map(|case| &case.metrics)
             .all(|metric| metric.metric != "realTimeFactor"));
+    }
+
+    #[test]
+    fn renderer_identity_cross_groups_and_legacy_reports_are_safe() {
+        let mut existing = case("neutral-existing");
+        existing.comparison_group = Some("neutral".to_owned());
+        let mut world = case("neutral-world");
+        world.renderer = EvaluationRenderer::WorldReference;
+        world.comparison_group = Some("neutral".to_owned());
+        world.world = Some(WorldRenderMetadata::default());
+        let report = EvaluationReport::new(
+            "manifest.json".to_owned(),
+            "release".to_owned(),
+            vec![existing.clone(), world],
+        );
+        assert_eq!(report.renderer_summaries.len(), 2);
+        assert_eq!(report.cross_renderer_comparisons.len(), 1);
+        assert_eq!(report.cross_renderer_comparisons[0].cases.len(), 2);
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(json.contains("\"renderer\":\"worldReference\""));
+        assert!(json.contains("\"world\":"));
+        assert!(csv(&report).contains("worldReference"));
+        assert!(markdown(&report).contains("Cross-renderer comparisons"));
+
+        let baseline = EvaluationReport::new(
+            "manifest.json".to_owned(),
+            "release".to_owned(),
+            vec![existing],
+        );
+        let comparison = compare_baseline(
+            &EvaluationReport::new(
+                "manifest.json".to_owned(),
+                "release".to_owned(),
+                vec![case("neutral-existing")],
+            ),
+            &baseline,
+        );
+        assert!(comparison
+            .cases
+            .iter()
+            .all(|case| { case.renderer == EvaluationRenderer::ExistingDsp }));
+        let mut renderer_changed = case("stable-id");
+        renderer_changed.renderer = EvaluationRenderer::WorldReference;
+        let identity_comparison = compare_baseline(
+            &EvaluationReport::new(
+                "manifest.json".to_owned(),
+                "release".to_owned(),
+                vec![renderer_changed],
+            ),
+            &EvaluationReport::new(
+                "manifest.json".to_owned(),
+                "release".to_owned(),
+                vec![case("stable-id")],
+            ),
+        );
+        assert!(identity_comparison.cases.is_empty());
+        assert_eq!(
+            identity_comparison.added_cases,
+            ["stable-id@worldReference"]
+        );
+        assert_eq!(identity_comparison.missing_cases, ["stable-id@existingDsp"]);
+
+        let mut legacy = serde_json::to_value(EvaluationReport::new(
+            "manifest.json".to_owned(),
+            "debug".to_owned(),
+            vec![case("legacy")],
+        ))
+        .unwrap();
+        legacy["schemaVersion"] = serde_json::Value::from(1);
+        let root = legacy.as_object_mut().unwrap();
+        root.remove("rendererSummaries");
+        root.remove("crossRendererComparisons");
+        root.remove("relativeExpectations");
+        let case = root["cases"][0].as_object_mut().unwrap();
+        case.remove("renderer");
+        case.remove("comparisonGroup");
+        case.remove("parameters");
+        case.remove("world");
+        let migrated =
+            EvaluationReport::from_json(&serde_json::to_string(&legacy).unwrap()).unwrap();
+        assert_eq!(migrated.schema_version, REPORT_SCHEMA_VERSION);
+        assert_eq!(migrated.cases[0].renderer, EvaluationRenderer::ExistingDsp);
     }
 }

@@ -42,7 +42,7 @@ fn cli_generation_reports_exit_codes_and_baseline_are_end_to_end() {
     value["cases"]
         .as_array_mut()
         .unwrap()
-        .retain(|case| case["id"] == "neutral");
+        .retain(|case| matches!(case["id"].as_str(), Some("neutral" | "neutral-world")));
     fs::write(&manifest, serde_json::to_string_pretty(&value).unwrap()).unwrap();
 
     let baseline_output = root.join("baseline");
@@ -60,12 +60,15 @@ fn cli_generation_reports_exit_codes_and_baseline_are_end_to_end() {
         String::from_utf8_lossy(&passing.stderr)
     );
     assert!(String::from_utf8_lossy(&passing.stdout).contains("neutral: PASS"));
+    assert!(String::from_utf8_lossy(&passing.stdout).contains("neutral-world: PASS"));
     for report in ["report.json", "cases.csv", "report.md"] {
         assert!(baseline_output.join(report).is_file());
     }
     assert!(!baseline_output.join("rendered").exists());
     let report_contents = fs::read_to_string(baseline_output.join("report.json")).unwrap();
     assert!(!report_contents.contains(&root.to_string_lossy().to_string()));
+    assert!(report_contents.contains("\"renderer\": \"worldReference\""));
+    assert!(report_contents.contains("\"crossRendererComparisons\""));
 
     let comparison_output = root.join("comparison");
     let comparison = run(&[

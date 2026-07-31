@@ -10,8 +10,8 @@ use crate::{
 };
 
 use super::manifest::{
-    AnalysisSegment, EvaluationCase, EvaluationManifest, FormantBand, MetricExpectations,
-    SegmentKind, MANIFEST_SCHEMA_VERSION,
+    AnalysisSegment, EvaluationCase, EvaluationManifest, EvaluationRenderer, FormantBand,
+    MetricExpectations, SegmentKind, MANIFEST_SCHEMA_VERSION,
 };
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -214,6 +214,8 @@ fn pitch_case(id: &str, description: &str, semitones: f32) -> EvaluationCase {
         id: id.to_owned(),
         description: description.to_owned(),
         input: "fixtures/harmonic-220.wav".to_owned(),
+        renderer: EvaluationRenderer::ExistingDsp,
+        comparison_group: Some(id.to_owned()),
         parameters,
         expected_pitch_ratio: Some(expected),
         segments: voiced_segment(1_750),
@@ -231,6 +233,8 @@ fn preservation_case(amount: f32) -> EvaluationCase {
         id: format!("preservation-{}", (amount * 10.0) as u32),
         description: format!("Vowel-fricative-vowel with consonant preservation {amount:.1}"),
         input: "fixtures/vowel-fricative-vowel.wav".to_owned(),
+        renderer: EvaluationRenderer::ExistingDsp,
+        comparison_group: Some(format!("preservation-{}", (amount * 10.0) as u32)),
         parameters,
         expected_pitch_ratio: Some(2.0_f64.powf(7.0 / 12.0)),
         segments: vec![
@@ -270,6 +274,8 @@ fn formant_case(id: &str, semitones: f32) -> EvaluationCase {
         id: id.to_owned(),
         description: format!("Synthetic vowel formant shift {semitones:+.0} semitones"),
         input: "fixtures/formant-vowel.wav".to_owned(),
+        renderer: EvaluationRenderer::ExistingDsp,
+        comparison_group: Some(id.to_owned()),
         parameters,
         expected_pitch_ratio: Some(1.0),
         segments: voiced_segment(1_750),
@@ -299,6 +305,8 @@ fn example_manifest() -> EvaluationManifest {
         id: "neutral".to_owned(),
         description: "Neutral deterministic DSP baseline".to_owned(),
         input: "fixtures/harmonic-220.wav".to_owned(),
+        renderer: EvaluationRenderer::ExistingDsp,
+        comparison_group: Some("neutral".to_owned()),
         parameters: evaluation_parameters(),
         expected_pitch_ratio: Some(1.0),
         segments: voiced_segment(1_750),
@@ -314,6 +322,8 @@ fn example_manifest() -> EvaluationManifest {
         id: "silence-safety".to_owned(),
         description: "Silence numerical-safety baseline".to_owned(),
         input: "fixtures/silence.wav".to_owned(),
+        renderer: EvaluationRenderer::ExistingDsp,
+        comparison_group: Some("silence-safety".to_owned()),
         parameters: evaluation_parameters(),
         expected_pitch_ratio: None,
         segments: vec![AnalysisSegment {
@@ -330,6 +340,8 @@ fn example_manifest() -> EvaluationManifest {
         id: "neutral-44100-mono".to_owned(),
         description: "Neutral 44.1 kHz mono structural baseline".to_owned(),
         input: "fixtures/harmonic-220-44100.wav".to_owned(),
+        renderer: EvaluationRenderer::ExistingDsp,
+        comparison_group: Some("neutral-44100-mono".to_owned()),
         parameters: evaluation_parameters(),
         expected_pitch_ratio: Some(1.0),
         segments: voiced_segment(900),
@@ -341,6 +353,8 @@ fn example_manifest() -> EvaluationManifest {
         id: "neutral-48000-stereo".to_owned(),
         description: "Neutral 48 kHz linked-stereo structural baseline".to_owned(),
         input: "fixtures/stereo-linked-220.wav".to_owned(),
+        renderer: EvaluationRenderer::ExistingDsp,
+        comparison_group: Some("neutral-48000-stereo".to_owned()),
         parameters: evaluation_parameters(),
         expected_pitch_ratio: Some(1.0),
         segments: voiced_segment(900),
@@ -348,32 +362,76 @@ fn example_manifest() -> EvaluationManifest {
         expectations: common_expectations(),
         tags: vec!["synthetic".to_owned(), "stereo".to_owned()],
     };
+    let mut dry_wet_parameters = evaluation_parameters();
+    dry_wet_parameters.dry_wet = 0.5;
+    let dry_wet = EvaluationCase {
+        id: "dry-wet-half".to_owned(),
+        description: "Explicit half-dry structural blend".to_owned(),
+        input: "fixtures/harmonic-220.wav".to_owned(),
+        renderer: EvaluationRenderer::ExistingDsp,
+        comparison_group: Some("dry-wet-half".to_owned()),
+        parameters: dry_wet_parameters,
+        expected_pitch_ratio: Some(1.0),
+        segments: voiced_segment(1_750),
+        formant_bands: Vec::new(),
+        expectations: common_expectations(),
+        tags: vec!["synthetic".to_owned(), "dry-wet".to_owned()],
+    };
+    let existing = vec![
+        neutral,
+        pitch_case("pitch-up-twelve", "One-octave upward pitch shift", 12.0),
+        pitch_case(
+            "pitch-down-twelve",
+            "One-octave downward pitch shift",
+            -12.0,
+        ),
+        pitch_case(
+            "pitch-up-seven",
+            "Seven-semitone equal-tempered pitch shift",
+            7.0,
+        ),
+        formant_case("formant-up-four", 4.0),
+        formant_case("formant-down-four", -4.0),
+        preservation_case(0.0),
+        preservation_case(0.5),
+        preservation_case(1.0),
+        sample_rate_case,
+        stereo_case,
+        silence,
+        dry_wet,
+    ];
+    let mut cases = existing.clone();
+    cases.extend(existing.into_iter().map(world_variant));
     EvaluationManifest {
         schema_version: MANIFEST_SCHEMA_VERSION,
         corpus_root: ".".to_owned(),
-        cases: vec![
-            neutral,
-            pitch_case("pitch-up-twelve", "One-octave upward pitch shift", 12.0),
-            pitch_case(
-                "pitch-down-twelve",
-                "One-octave downward pitch shift",
-                -12.0,
-            ),
-            pitch_case(
-                "pitch-up-seven",
-                "Seven-semitone equal-tempered pitch shift",
-                7.0,
-            ),
-            formant_case("formant-up-four", 4.0),
-            formant_case("formant-down-four", -4.0),
-            preservation_case(0.0),
-            preservation_case(0.5),
-            preservation_case(1.0),
-            sample_rate_case,
-            stereo_case,
-            silence,
-        ],
+        cases,
     }
+}
+
+fn world_variant(mut case: EvaluationCase) -> EvaluationCase {
+    case.id = format!("{}-world", case.id);
+    case.description = format!("{} using experimental WORLD", case.description);
+    case.renderer = EvaluationRenderer::WorldReference;
+    case.tags.push("world-reference".to_owned());
+    case.expectations.maximum_duration_delta_frames = Some(0);
+    case.expectations.maximum_non_finite_samples = Some(0);
+    case.expectations.maximum_output_clipping_ratio = Some(0.0);
+    case.expectations.maximum_voiced_unvoiced_disagreement =
+        (!case.segments.is_empty()).then_some(0.10);
+    if case.parameters.pitch_semitones != 0.0 {
+        case.expectations.maximum_pitch_error_cents = Some(35.0);
+    } else if case.expected_pitch_ratio == Some(1.0) {
+        case.expectations.maximum_neutral_f0_drift_cents = Some(15.0);
+    }
+    if case.parameters.formant_shift_semitones != 0.0 {
+        let ratio = 2.0_f64.powf(f64::from(case.parameters.formant_shift_semitones) / 12.0);
+        let tolerance = 2.0_f64.powf(100.0 / 1_200.0);
+        case.expectations.minimum_formant_ratio = Some(ratio / tolerance);
+        case.expectations.maximum_formant_ratio = Some(ratio * tolerance);
+        case.expectations.maximum_neutral_f0_drift_cents = Some(15.0);
+    }
+    case
 }
 
 #[cfg(test)]
@@ -399,7 +457,7 @@ mod tests {
             .chunks_exact(2)
             .all(|frame| frame[0].to_bits() == frame[1].to_bits()));
         let manifest = example_manifest();
-        assert_eq!(manifest.cases.len(), 12);
+        assert_eq!(manifest.cases.len(), 26);
         let preservation = manifest
             .cases
             .iter()
@@ -421,5 +479,17 @@ mod tests {
             .cases
             .iter()
             .any(|case| case.tags.iter().any(|tag| tag == "vocal-aging-disabled")));
+        assert_eq!(
+            manifest
+                .cases
+                .iter()
+                .filter(|case| case.renderer == EvaluationRenderer::WorldReference)
+                .count(),
+            13
+        );
+        assert!(manifest
+            .cases
+            .iter()
+            .all(|case| case.comparison_group.is_some()));
     }
 }

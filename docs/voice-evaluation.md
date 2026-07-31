@@ -3,10 +3,11 @@
 ## Purpose and boundary
 
 `voice-eval` establishes a repeatable objective baseline for the existing
-deterministic DSP chain. It imports local WAV files, renders them through the same
-`ExistingDspOfflineProcessor` used by Voice Lab, performs offline analysis, checks
-declared expectations, and writes JSON, CSV, Markdown, and optional rendered WAV
-outputs.
+deterministic DSP chain and an explicitly selected experimental WORLD offline
+reference. Existing manifests still render through the same
+`ExistingDspOfflineProcessor` used by Voice Lab. WORLD's separate boundary and
+limitations are documented in
+[`world-reference-evaluation.md`](world-reference-evaluation.md).
 
 The evaluator does not start Tauri, open an audio device, access the network, use
 Python, load a model, or change live settings. Analysis is isolated under
@@ -36,8 +37,8 @@ cargo run --release --manifest-path src-tauri/Cargo.toml --bin voice-eval -- `
 Optional flags:
 
 - `--no-rendered-audio` omits `rendered/<case-id>.wav` while retaining metrics.
-- `--baseline <report.json>` compares deterministic quality metrics with an older
-  schema-v1 report.
+- `--baseline <report.json>` compares deterministic quality metrics with a
+  schema-v1 or schema-v2 report.
 - Without `--fail-on-expectation`, failed expectations are reported but return
   exit code 0.
 
@@ -46,18 +47,21 @@ the CLI, manifest, input, rendering, baseline, or report operation was invalid.
 
 ## Manifest schema
 
-The schema version is 1. Unknown fields are rejected at every level. A manifest
+The current schema version is 2. Schema 1 remains supported as implicit
+`existingDsp`. Unknown fields are rejected at every level. A manifest
 contains 1–128 cases:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "corpusRoot": ".",
   "cases": [
     {
       "id": "pitch-up-seven",
       "description": "220 Hz harmonic fixture shifted upward seven semitones",
       "input": "fixtures/harmonic-220.wav",
+      "renderer": "existingDsp",
+      "comparisonGroup": "pitch-up-seven",
       "parameters": {
         "pitchSemitones": 7.0,
         "formantShiftSemitones": 0.0,
@@ -270,7 +274,7 @@ requiring waveform identity.
 
 The output directory contains:
 
-- `report.json`: schema version 1, tool version, timestamp, build mode, analysis
+- `report.json`: schema version 2, tool version, timestamp, build mode, analysis
   configuration, case metrics, expectation results, summary, warnings, and optional
   baseline comparison;
 - `cases.csv`: one deterministic ID-sorted row per case with important scalar
@@ -279,8 +283,9 @@ The output directory contains:
   formant, numerical-safety, and performance table;
 - `rendered/<case-id>.wav`, unless disabled.
 
-A baseline must be a valid schema-v1 evaluator report with unique case IDs.
-Comparison matches stable IDs and reports added/missing cases plus improvement,
+A baseline must be a valid schema-v1 or schema-v2 evaluator report with unique
+case ID/renderer pairs. Schema-v1 cases migrate to `existingDsp`. Comparison
+matches stable IDs plus renderer identity and reports added/missing cases plus improvement,
 regression, or unchanged classification for pitch error, voicing disagreement,
 unvoiced LSD, high-frequency preservation error relative to 1.0, formant-ratio
 error, clipping, non-finite output, and absolute duration delta. Timestamp,

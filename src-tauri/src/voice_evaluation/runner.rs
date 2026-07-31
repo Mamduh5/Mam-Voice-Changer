@@ -6,11 +6,12 @@ use std::{
 
 use super::{
     analysis::{audio_shape, compare_audio, AudioAnalysis, PerformanceMetrics, StructuralMetrics},
-    manifest::{resolve_case_input, EvaluationCase, EvaluationManifest},
+    manifest::{resolve_case_input, EvaluationCase, EvaluationManifest, EvaluationRenderer},
     report::{
         compare_baseline, evaluate_expectations, unavailable_metrics, write_reports, CaseReport,
         EvaluationReport,
     },
+    world::{WorldReferenceProcessor, WorldRenderMetadata},
 };
 use crate::voice_lab::{
     offline::{ExistingDspOfflineProcessor, OfflineVoiceProcessor},
@@ -72,17 +73,33 @@ fn evaluate_case(
     validate_segments(case, input.frames(), input.sample_rate)?;
 
     let started = Instant::now();
-    let mut processor = ExistingDspOfflineProcessor;
-    let rendered = processor
-        .render(&input, case.parameters)
-        .map_err(|error| format!("Case '{}' rendering failed: {error}", case.id))?;
+    let (rendered_clip, reported_latency_frames, mut world_metadata): (
+        _,
+        usize,
+        Option<WorldRenderMetadata>,
+    ) = match case.renderer {
+        EvaluationRenderer::ExistingDsp => {
+            let mut processor = ExistingDspOfflineProcessor;
+            let rendered = processor
+                .render(&input, case.parameters)
+                .map_err(|error| format!("Case '{}' rendering failed: {error}", case.id))?;
+            (rendered.clip, rendered.metadata.latency_frames, None)
+        }
+        EvaluationRenderer::WorldReference => {
+            let mut processor = WorldReferenceProcessor::default();
+            let rendered = processor
+                .render(&input, case.parameters)
+                .map_err(|error| format!("Case '{}' rendering failed: {error}", case.id))?;
+            (rendered.clip, 0, Some(rendered.metadata))
+        }
+    };
     let elapsed = started.elapsed();
 
     let input_analysis = AudioAnalysis::new(&input.samples, input.sample_rate, input.channels)?;
     let output_analysis = AudioAnalysis::new(
-        &rendered.clip.samples,
-        rendered.clip.sample_rate,
-        rendered.clip.channels,
+        &rendered_clip.samples,
+        rendered_clip.sample_rate,
+        rendered_clip.channels,
     )?;
     let (numerical, pitch, voicing, spectral, consonant, formants) = compare_audio(
         &input_analysis,
@@ -104,9 +121,8 @@ fn evaluate_case(
         input_frames,
         output_frames,
         duration_delta_frames: output_frames as i64 - input_frames as i64,
-        reported_dsp_latency_frames: rendered.metadata.latency_frames,
-        reported_dsp_latency_ms: rendered.metadata.latency_frames as f64 * 1_000.0
-            / f64::from(input_rate),
+        reported_dsp_latency_frames: reported_latency_frames,
+        reported_dsp_latency_ms: reported_latency_frames as f64 * 1_000.0 / f64::from(input_rate),
         input_sanitized: false,
     };
     let performance = PerformanceMetrics {
@@ -117,6 +133,10 @@ fn evaluate_case(
             / duration_seconds.max(f64::EPSILON),
         build_mode: build_mode(),
     };
+    if let Some(world) = &mut world_metadata {
+        world.render_wall_time_ms = performance.render_wall_time_ms;
+        world.real_time_factor = performance.real_time_factor;
+    }
     let rendered_audio = if no_rendered_audio {
         None
     } else {
@@ -127,7 +147,7 @@ fn evaluate_case(
             .ok_or_else(|| "Rendered output path has no parent.".to_owned())?;
         fs::create_dir_all(parent)
             .map_err(|error| format!("Cannot create rendered output directory: {error}"))?;
-        wav::export(&target, &rendered.clip)
+        wav::export(&target, &rendered_clip)
             .map_err(|error| format!("Case '{}' output failed: {error}", case.id))?;
         Some(relative)
     };
@@ -135,6 +155,9 @@ fn evaluate_case(
         id: case.id.clone(),
         description: case.description.clone(),
         input: case.input.clone(),
+        renderer: case.renderer,
+        comparison_group: case.comparison_group.clone(),
+        parameters: case.parameters,
         tags: case.tags.clone(),
         structural,
         numerical,
@@ -147,6 +170,7 @@ fn evaluate_case(
         expectations: Vec::new(),
         unavailable_metrics: Vec::new(),
         rendered_audio,
+        world: world_metadata,
     };
     report.expectations = evaluate_expectations(&case.expectations, &report);
     report.unavailable_metrics = unavailable_metrics(&report);
@@ -219,6 +243,8 @@ mod tests {
                 id: "missing".to_owned(),
                 description: "missing".to_owned(),
                 input: "missing.wav".to_owned(),
+                renderer: EvaluationRenderer::ExistingDsp,
+                comparison_group: None,
                 parameters: DspParameters::default(),
                 expected_pitch_ratio: None,
                 segments: Vec::new(),
@@ -300,6 +326,8 @@ mod tests {
             id: "segment".to_owned(),
             description: "segment".to_owned(),
             input: "short.wav".to_owned(),
+            renderer: EvaluationRenderer::ExistingDsp,
+            comparison_group: None,
             parameters: DspParameters::default(),
             expected_pitch_ratio: None,
             segments: vec![AnalysisSegment {
@@ -333,9 +361,23 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(report.summary.failed_expectations, 0);
+        let existing_summary = report
+            .renderer_summaries
+            .iter()
+            .find(|summary| summary.renderer == EvaluationRenderer::ExistingDsp)
+            .unwrap();
+        assert_eq!(existing_summary.failed_expectations, 0);
+        assert_eq!(report.cross_renderer_comparisons.len(), 13);
         for id in ["pitch-up-twelve", "pitch-down-twelve", "pitch-up-seven"] {
             assert!(find(&report, id).pitch.pitch_error_cents.unwrap().abs() < 45.0);
+            assert!(
+                find(&report, &format!("{id}-world"))
+                    .pitch
+                    .pitch_error_cents
+                    .unwrap()
+                    .abs()
+                    <= 35.0
+            );
         }
         assert_eq!(
             find(&report, "silence-safety")
@@ -378,12 +420,26 @@ mod tests {
 
         let formant_up = find(&report, "formant-up-four");
         let formant_down = find(&report, "formant-down-four");
+        let formant_up_world = find(&report, "formant-up-four-world");
+        let formant_down_world = find(&report, "formant-down-four-world");
         assert!(super::super::analysis::median_formant_ratio(&formant_up.formants).unwrap() > 1.0);
         assert!(
             super::super::analysis::median_formant_ratio(&formant_down.formants).unwrap() < 1.0
         );
         assert!(formant_up.pitch.pitch_error_cents.unwrap().abs() < 10.0);
         assert!(formant_down.pitch.pitch_error_cents.unwrap().abs() < 10.0);
+        assert!(formant_up_world.pitch.pitch_error_cents.unwrap().abs() <= 15.0);
+        assert!(formant_down_world.pitch.pitch_error_cents.unwrap().abs() <= 15.0);
+        assert!(formant_up_world
+            .expectations
+            .iter()
+            .any(|expectation| expectation.metric == "formantRatio"
+                && expectation.measured.is_some()));
+        assert!(formant_down_world
+            .expectations
+            .iter()
+            .filter(|expectation| expectation.metric == "formantRatio")
+            .all(|expectation| expectation.passed));
 
         let mono_44 = find(&report, "neutral-44100-mono");
         assert_eq!(mono_44.structural.input_sample_rate, 44_100);
@@ -396,6 +452,19 @@ mod tests {
             case.structural.duration_delta_frames == 0
                 && case.numerical.output_non_finite_samples == 0
         }));
+        assert!(report
+            .relative_expectations
+            .iter()
+            .all(|expectation| expectation.passed));
+        let silence_world = find(&report, "silence-safety-world");
+        assert!(silence_world.numerical.output_rms <= 1.0e-8);
+        assert!(report
+            .cases
+            .iter()
+            .filter(|case| case.renderer == EvaluationRenderer::WorldReference)
+            .all(|case| {
+                case.world.is_some() && case.voicing.voiced_unvoiced_disagreement_ratio <= 0.10
+            }));
         let _ = fs::remove_dir_all(root);
     }
 }

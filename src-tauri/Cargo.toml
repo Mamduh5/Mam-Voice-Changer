@@ -3,6 +3,7 @@ name = "mam-voice-changer"
 version = "0.1.0"
 description = "A local real-time voice changer"
 edition = "2021"
+default-run = "mam-voice-changer"
 
 [lib]
 name = "mam_voice_changer_lib"

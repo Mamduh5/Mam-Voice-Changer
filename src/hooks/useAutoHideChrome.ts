@@ -64,7 +64,10 @@ export function useAutoHideChrome() {
   const stateRef = useRef(state);
   const lastScrollY = useRef(0);
   const hideTimer = useRef<number | null>(null);
-  stateRef.current = state;
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const clearHideTimer = useCallback(() => {
     if (hideTimer.current !== null) window.clearTimeout(hideTimer.current);
@@ -82,9 +85,9 @@ export function useAutoHideChrome() {
     clearHideTimer();
     hideTimer.current = window.setTimeout(() => {
       if (stateRef.current.mode !== 'automatic') return;
-      const chromeHasFocus = [
-        ...document.querySelectorAll<HTMLElement>('[data-application-chrome]'),
-      ].some((chrome) => chrome.contains(document.activeElement));
+      const chromeHasFocus = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-application-chrome]'),
+      ).some((chrome) => chrome.contains(document.activeElement));
       if (!chromeHasFocus) dispatch({ type: 'AUTOMATIC_HIDE' });
     }, 800);
   }, [clearHideTimer]);

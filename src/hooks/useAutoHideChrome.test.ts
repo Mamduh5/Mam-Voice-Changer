@@ -51,10 +51,11 @@ describe('chromeReducer', () => {
 
 describe('isBackgroundChromeToggle', () => {
   it('accepts only a short click on the outer application background', () => {
-    const background = {};
+    const background = new EventTarget();
+    const other = new EventTarget();
 
     expect(isBackgroundChromeToggle(background, background, 0, false)).toBe(true);
-    expect(isBackgroundChromeToggle({}, background, 0, false)).toBe(false);
+    expect(isBackgroundChromeToggle(other, background, 0, false)).toBe(false);
     expect(isBackgroundChromeToggle(background, background, 5, false)).toBe(false);
     expect(isBackgroundChromeToggle(background, background, 0, true)).toBe(false);
   });
